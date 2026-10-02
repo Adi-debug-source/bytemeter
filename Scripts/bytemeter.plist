@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for the LaunchAgent that starts Bytemeter at login. install.sh writes
+  it to ~/Library/LaunchAgents/io.github.adi-debug-source.bytemeter.plist with
+  __HOME__ replaced by the real home folder, because launchd does not expand ~.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>io.github.adi-debug-source.bytemeter</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__HOME__/Applications/Bytemeter.app/Contents/MacOS/Bytemeter</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <!--
+    Restart after a crash, but not after a clean exit. With KeepAlive set to a
+    plain true, launchd relaunched the app seconds after Quit was chosen from
+    its menu, so Quit never stuck. Quit, and a second copy stepping aside for
+    the one already running, both exit with status 0.
+  -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/Bytemeter/bytemeter.err</string>
+</dict>
+</plist>

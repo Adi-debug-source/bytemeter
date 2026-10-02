@@ -2,3 +2,6 @@
 .swiftpm/
 *.xcodeproj
 .DS_Store
+
+# Built by install.sh --bundle-only for a release
+dist/

@@ -1,0 +1,29 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Builds
+        run: swift build -c release
+      - name: Self-test
+        run: swift run -c release BytemeterSelfTest
+      - name: Install script parses
+        run: bash -n install.sh
+      - name: The app builds from a clean clone
+        # The command a release and the Homebrew formula both build with, so
+        # this proves on every push that the repository can produce the app,
+        # not only the binary.
+        run: ./install.sh --bundle-only "$RUNNER_TEMP/bundle"
+      - name: The app is signed and well formed
+        run: |
+          app="$RUNNER_TEMP/bundle/Bytemeter.app"
+          codesign --verify --deep --strict "$app"
+          plutil -lint "$app/Contents/Info.plist" Scripts/Info.plist Scripts/bytemeter.plist
+          test -f "$app/Contents/Resources/AppIcon.icns"
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")" = "$(sed -n 's/^VERSION=//p' VERSION)"
