@@ -12,37 +12,46 @@ public struct RawCounter: Equatable {
     /// The counter the values came from. Nil for a baseline saved before
     /// sources were kept; see `Ledger.ingest` for how that is read.
     public var source: CounterSource?
+    /// True when the clock read earlier than `at` at this reading, so `at` is
+    /// the last good time held over rather than the clock's. See `Ledger.ingest`.
+    public var clockBehind: Bool
 
     public init(bytesIn: UInt64, bytesOut: UInt64, at: Int64, bootSession: String? = nil,
-                source: CounterSource? = nil) {
+                source: CounterSource? = nil, clockBehind: Bool = false) {
         self.bytesIn = bytesIn
         self.bytesOut = bytesOut
         self.at = at
         self.bootSession = bootSession
         self.source = source
+        self.clockBehind = clockBehind
     }
 
     /// "bytesIn,bytesOut,unixSeconds", then ",bootSession" when known, then
-    /// ",source" when known. The session field is left empty rather than
-    /// dropped when only the source is known, so the positions never shift.
+    /// ",source" when known, then ",behind" while the clock is behind. A field
+    /// with nothing to say is left empty rather than dropped when a later one
+    /// follows, so the positions never shift.
     public var encoded: String {
         var text = "\(bytesIn),\(bytesOut),\(at)"
-        if bootSession != nil || source != nil { text += "," + (bootSession ?? "") }
-        if let source { text += "," + source.rawValue }
+        if bootSession != nil || source != nil || clockBehind { text += "," + (bootSession ?? "") }
+        if source != nil || clockBehind { text += "," + (source?.rawValue ?? "") }
+        if clockBehind { text += ",behind" }
         return text
     }
 
-    /// Reads all three forms, so baselines saved by earlier versions still
-    /// load. A source this build does not know reads as unknown, not as a
-    /// refusal, so a newer build's baseline is not thrown away.
+    /// Reads every form, so baselines saved by earlier versions still load.
+    /// A source this build does not know reads as unknown, not as a refusal,
+    /// so a newer build's baseline is not thrown away. A sixth field is either
+    /// "behind" or empty; anything else is refused.
     public init?(encoded: String) {
         let parts = encoded.split(separator: ",", omittingEmptySubsequences: false)
-        guard (3...5).contains(parts.count),
+        guard (3...6).contains(parts.count),
               let bin = UInt64(parts[0]), let bout = UInt64(parts[1]), let at = Int64(parts[2])
         else { return nil }
+        if parts.count == 6 && !(parts[5].isEmpty || parts[5] == "behind") { return nil }
         let session = parts.count >= 4 && !parts[3].isEmpty ? String(parts[3]) : nil
-        let source = parts.count == 5 ? CounterSource(rawValue: String(parts[4])) : nil
-        self.init(bytesIn: bin, bytesOut: bout, at: at, bootSession: session, source: source)
+        let source = parts.count >= 5 ? CounterSource(rawValue: String(parts[4])) : nil
+        self.init(bytesIn: bin, bytesOut: bout, at: at, bootSession: session, source: source,
+                  clockBehind: parts.count == 6 && parts[5] == "behind")
     }
 }
 
@@ -148,14 +157,12 @@ public enum Ledger {
         var baselines: [String: RawCounter] = [:]
 
         for reading in readings {
-            let current = RawCounter(bytesIn: reading.bytesIn, bytesOut: reading.bytesOut, at: now,
-                                     bootSession: bootSession, source: reading.source)
-
             guard let prev = previous[reading.name] else {
                 // First time this interface has ever been seen. Its counter is
                 // cumulative since boot, and that lump has no time detail at
                 // all, so it must never be recorded as traffic. Baseline only.
-                baselines[reading.name] = current
+                baselines[reading.name] = RawCounter(bytesIn: reading.bytesIn, bytesOut: reading.bytesOut, at: now,
+                                                     bootSession: bootSession, source: reading.source)
                 events.append(LedgerEvent(
                     ts: now, kind: "baseline",
                     detail: "\(reading.name) first seen at \(reading.bytesIn) in, \(reading.bytesOut) out. "
@@ -163,8 +170,31 @@ public enum Ledger {
                 continue
             }
 
-            // Whatever happens below, the next reading is measured from this one.
-            baselines[reading.name] = current
+            // Whatever happens below, the next reading is measured from this
+            // one, and the time saved with it never goes backwards. While the
+            // clock reads earlier than the last reading, the last reading's
+            // time is kept: every reading under the wrong clock then books in
+            // that minute, not in the past, and when the clock is put right
+            // the next reading measures from it as normal. Each byte is still
+            // booked once, because the counters move on with every reading;
+            // only the minute is held. The events mark where a hold begins
+            // and ends, once each, not at every reading in between.
+            let behind = now < prev.at
+            baselines[reading.name] = RawCounter(bytesIn: reading.bytesIn, bytesOut: reading.bytesOut,
+                                                 at: behind ? prev.at : now, bootSession: bootSession,
+                                                 source: reading.source, clockBehind: behind)
+            if behind && !prev.clockBehind {
+                events.append(LedgerEvent(
+                    ts: now, kind: "clock_backwards",
+                    detail: "\(reading.name) reading is \(clampedElapsed(since: now, now: prev.at)) seconds earlier than "
+                          + "the last one, so the clock went back. Until it catches up, traffic is booked in the last "
+                          + "reading's minute rather than in the past."))
+            } else if !behind && prev.clockBehind {
+                events.append(LedgerEvent(
+                    ts: now, kind: "clock_caught_up",
+                    detail: "\(reading.name) the clock has caught up with the last good reading's time, so traffic is "
+                          + "booked at the clock's time again."))
+            }
 
             let fellBack = reading.bytesIn < prev.bytesIn || reading.bytesOut < prev.bytesOut
             let change = "\(reading.name) counter \(fellBack ? "fell" : "went") from \(prev.bytesIn)/\(prev.bytesOut) "
@@ -310,7 +340,8 @@ public enum Ledger {
     /// bytes in a minute that has already been and gone, years ago if the
     /// clock was far enough out, and that minute would then stand as the
     /// start of All time and of Month by month for good. So a reading whose
-    /// time is before the last one books at the last one's minute.
+    /// time is before the last one books at the last one's minute, and
+    /// `ingest` keeps that time in the baseline until the clock catches up.
     private static func place(iface: String, deltaIn: UInt64, deltaOut: UInt64,
                               since: Int64, now: Int64, reason: GapReason,
                               buckets: inout [BucketDelta], events: inout [LedgerEvent]) {
@@ -323,11 +354,6 @@ public enum Ledger {
 
         if nowMinute < prevMinute {
             buckets.append(BucketDelta(minute: prevMinute, iface: iface, bytesIn: deltaIn, bytesOut: deltaOut))
-            events.append(LedgerEvent(
-                ts: now, kind: "clock_backwards",
-                detail: "\(iface) reading is \(prevMinute - nowMinute) minutes earlier than the last one, so the "
-                      + "clock went back. \(deltaIn) in and \(deltaOut) out booked in the last reading's minute "
-                      + "rather than in the past."))
             return
         }
 

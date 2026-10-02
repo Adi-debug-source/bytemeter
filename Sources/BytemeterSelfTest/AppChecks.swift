@@ -172,6 +172,21 @@ private func checkCapInput() {
     for typed in ["1", "1.5", "100", "100000", "0.25"] {
         expect(CapInput.text(forBytes: CapInput.bytes(fromText: typed)), typed, "the field shows \(typed) back as typed")
     }
+    expect(CapInput.bytes(fromText: String(repeating: "9", count: 400)), largest, "400 digits clamp to the largest, not to no cap")
+    expect(CapInput.bytes(fromText: "1" + String(repeating: "0", count: 399) + ".5"), largest, "with a fraction after them too")
+    expect(CapInput.bytes(fromText: "000000000000000000000100"), 100_000_000_000, "leading zeros mean nothing")
+    expect(CapInput.bytes(fromText: "100000.5"), largest, "the largest plus a fraction is the largest")
+    expect(CapInput.bytes(fromText: "0.001"), 1_000_000, "0.001 GB is 1 MB")
+    expect(CapInput.text(forBytes: 1_000_000), "0.001", "and the field shows 0.001, what was stored")
+    expect(CapInput.bytes(fromText: "1.0000000005"), 1_000_000_001, "a fraction is exact to the byte, rounded on the tenth digit")
+    for typed in ["0.001", "0.000000001", "12.345678901", "99999.999999999", "0.5", "7"] {
+        expect(CapInput.text(forBytes: CapInput.bytes(fromText: typed)), typed, "the field shows \(typed) back exactly as stored")
+    }
+    var agrees = true
+    for stored: Int64 in [1, 999, 1_000_000, 1_500_000_000, 123_456_789_012, 99_999_999_999_999, largest] {
+        agrees = agrees && CapInput.bytes(fromText: CapInput.text(forBytes: stored)) == stored
+    }
+    check(agrees, "whatever is stored, what the field shows reads back as the same figure")
     expect(CapInput.text(forBytes: 0), "", "no cap shows an empty field")
     expect(CapInput.text(forBytes: .max), "100000", "a wild saved figure shows as the largest")
     expect(CapInput.clamp(.max), largest, "a saved figure above the range is brought down")

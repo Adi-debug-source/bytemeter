@@ -633,7 +633,11 @@ do {
            "a baseline with both reads back")
     check(RawCounter(encoded: "1,2,3,X,quantum").map { $0.source == nil && $0.bootSession == "X" } == true,
           "a source this build does not know reads as unknown rather than losing the baseline")
-    expect(RawCounter(encoded: "1,2,3,X,mib64,9"), nil, "six fields are refused")
+    expect(RawCounter(encoded: "1,2,3,X,mib64,9"), nil, "an unknown sixth field is refused")
+    expect(RawCounter(encoded: "1,2,3,X,mib64,behind,9"), nil, "seven fields are refused")
+    let heldCounter = RawCounter(bytesIn: 1, bytesOut: 2, at: 3, clockBehind: true)
+    expect(heldCounter.encoded, "1,2,3,,,behind", "a held baseline keeps every field's place")
+    expect(RawCounter(encoded: heldCounter.encoded), heldCounter, "and reads back held, so a hold survives a relaunch")
 
     // Through the database, and the hint for baselines saved by earlier versions.
     let db = makeDatabase()
@@ -674,6 +678,7 @@ do {
     let times: [Int64] = [Int64.min, Int64.min + 1, -61, -1, 0, 1, 600, 1_790_000_000, 1_790_000_095, Int64.max - 1, Int64.max]
     func count() -> UInt64 { next() % 3 == 0 ? next() : pick(counts) }
     var survived = 0
+    var timeWentBack = 0
     for _ in 0..<20_000 {
         let prev = RawCounter(bytesIn: count(), bytesOut: count(), at: pick(times), bootSession: pick(["A", "B", nil]),
                               source: pick([nil, .mib64, .ifdata32]))
@@ -682,8 +687,10 @@ do {
                                     reason: pick([.normal, .sleep, .relaunch]),
                                     bootTime: pick([nil] + times.map { Optional($0) }), bootSession: pick(["A", "B", nil]))
         survived += outcome.baselines.count
+        if let saved = outcome.baselines["en0"], saved.at < prev.at { timeWentBack += 1 }
     }
     expect(survived, 20_000, "twenty thousand awkward readings, extremes included, and not one traps")
+    expect(timeWentBack, 0, "and not one saves a baseline time earlier than the last")
     check(Ledger.spreadWindow(eventTs: Int64.min,
                               detail: "en0 gap of 9223372036854775807 seconds. 1 in and 1 out spread evenly across 2 minutes.") == nil,
           "a spread event whose times overflow gives no window rather than a trap")
@@ -826,6 +833,8 @@ do {
                                    iface: "en0", bytesIn: 5_000_000, bytesOut: 0)], ssid: ssidPlaceholder, idle: false)
     expect(Aggregator(db: peakDB, cal: cycle6).peakDayThisCycle(now: santiago.parseLocal("2026-09-07T00:30")!)?.label, "6 Sep",
            "the cycle's first day still counts when it began on a skipped midnight")
+    expect(Aggregator(db: peakDB, cal: cycle6).peakDownloadDayThisCycle(now: santiago.parseLocal("2026-09-07T00:30")!)?.label,
+           "6 Sep", "and so it does for the download peak the menu and dashboard show")
 }
 
 // MARK: - Engine fixes: hours on a clock change day
@@ -954,8 +963,9 @@ do {
     let nudgedPrev = ["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: 1_790_000_030, bootSession: "A", source: .mib64)]
     let nudged = Ledger.ingest(readings: [reading("en0", 6_000, 600)], previous: nudgedPrev, now: 1_790_000_028,
                                reason: .normal, bootTime: nil, bootSession: "A")
-    check(nudged.events.isEmpty && nudged.buckets.first?.minute == lastMinute,
-          "a clock nudged back a second or two within the minute is the ordinary case and says nothing")
+    check(nudged.buckets.first?.minute == lastMinute && nudged.baselines["en0"]?.at == 1_790_000_030
+          && nudged.baselines["en0"]?.clockBehind == true,
+          "a clock nudged back two seconds books in the same minute and keeps the later time")
     let db = makeDatabase()
     db.addBuckets(back.buckets, ssid: ssidPlaceholder, idle: false)
     expect(Aggregator(db: db, cal: london).earliestMinute(), lastMinute, "so All time still starts at the first real minute")
@@ -982,6 +992,115 @@ do {
     let longRows = Aggregator(db: long, cal: london).monthly(now: now)
     check(longRows.count == Aggregator.maxMonths && longRows.first?.label == "Nov 2016" && longRows.last?.label == "Oct 2026",
           "a longer history keeps the newest \(Aggregator.maxMonths) months, got \(longRows.count) from \(longRows.first?.label ?? "") to \(longRows.last?.label ?? "")")
+}
+
+// MARK: - Engine fixes: a clock that stays wrong books nothing in the past
+
+do {
+    // The reviewer's case: three readings under a clock set to 1 January 2001, then put right.
+    let goodMinute = Ledger.floorDiv(1_790_000_000, 60)
+    let db = makeDatabase()
+    db.saveBaselines(["en0": RawCounter(bytesIn: 1_000, bytesOut: 0, at: 1_790_000_000, bootSession: "A", source: .mib64)])
+    var raw: UInt64 = 1_000
+    var minutes: [[Int64]] = []
+    var kinds: [String] = []
+    var savedTimes: [Int64] = [1_790_000_000]
+    for t: Int64 in [978_350_400, 978_350_405, 978_350_410, 1_790_000_020] {
+        raw += 10_000
+        let out = Ledger.ingest(readings: [reading("en0", raw, 0)], previous: db.baselines(), now: t, reason: .normal,
+                                bootTime: 978_000_000, bootSession: "A")
+        check(db.transaction {
+            try db.writeBuckets(out.buckets, ssid: ssidPlaceholder, idle: false)
+            try db.writeBaselines(out.baselines)
+            try db.writeEvents(out.events)
+        }, "the reading at \(t) is written")
+        minutes.append(out.buckets.map(\.minute))
+        kinds += out.events.map(\.kind)
+        savedTimes.append(db.baselines()["en0"]?.at ?? 0)
+    }
+    expect(minutes, [[goodMinute], [goodMinute], [goodMinute], [Ledger.floorDiv(1_790_000_020, 60)]],
+           "every reading while the clock reads 2001 books in the last good minute, and the first after it is put right at its own")
+    check(zip(savedTimes, savedTimes.dropFirst()).allSatisfy { $0 <= $1 }, "the saved baseline time never goes backwards, got \(savedTimes)")
+    expect(kinds, ["clock_backwards", "clock_caught_up"], "the hold is logged once where it begins and once where it ends")
+    expect(sumIn(db), 40_000, "every byte is booked once")
+    let all = Aggregator(db: db, cal: london).allTime(now: Date(timeIntervalSince1970: 1_790_000_030))
+    expect(all.since, BytemeterCalendar.date(fromMinute: goodMinute), "All time still starts at the real first minute")
+    check(all.days < 1, "and has counted under a day, not 9,394, got \(all.days)")
+
+    // A clock that jumps forward for a reading, then back: every byte once, nothing before the last good minute.
+    var baselines = ["en0": RawCounter(bytesIn: 0, bytesOut: 0, at: 1_790_000_000, bootSession: "A", source: .mib64)]
+    var counter: UInt64 = 0
+    var booked: UInt64 = 0
+    var earliest = Int64.max
+    var times: [Int64] = [1_790_000_000]
+    for t: Int64 in [1_790_000_005, 1_790_000_010, 2_230_000_000, 1_790_000_015, 1_790_000_020, 1_790_000_025] {
+        counter += 7_777
+        let out = Ledger.ingest(readings: [reading("en0", counter, counter)], previous: baselines, now: t, reason: .normal,
+                                bootTime: nil, bootSession: "A")
+        booked += out.buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }
+        earliest = min(earliest, out.buckets.map(\.minute).min() ?? .max)
+        for (name, raw) in out.baselines { baselines[name] = raw }
+        times.append(baselines["en0"]?.at ?? 0)
+    }
+    expect(booked, counter, "a clock that jumps forward and back books every byte exactly once")
+    check(earliest >= goodMinute, "and nothing before the last good minute")
+    check(zip(times, times.dropFirst()).allSatisfy { $0 <= $1 }, "and its saved times never go backwards, got \(times)")
+}
+
+// MARK: - Engine fixes: averages and the projection count from when counting began
+
+do {
+    let megabyte: UInt64 = 1_000_000
+    /// 1 MB in every minute from `began` up to `now`: 60 MB an hour, 1.44 GB a day.
+    func steady(_ began: String, _ now: String) -> (Aggregator, Date) {
+        let db = makeDatabase()
+        let end = london.parseLocal(now)!
+        var rows: [BucketDelta] = []
+        var minute = BytemeterCalendar.minute(from: london.parseLocal(began)!)
+        while minute < BytemeterCalendar.minute(from: end) {
+            rows.append(BucketDelta(minute: minute, iface: "en0", bytesIn: megabyte, bytesOut: 0))
+            minute += 1
+        }
+        db.addBuckets(rows, ssid: ssidPlaceholder, idle: false)
+        return (Aggregator(db: db, cal: london), end)
+    }
+    func near(_ actual: UInt64, _ expected: Double, _ message: String) {
+        check(abs(Double(actual) - expected) <= expected * 0.005, "\(message): expected about \(UInt64(expected)), got \(actual)")
+    }
+
+    // The start of a month: counting began at 10:00 on 28 August, asked at 12:00 on the 29th.
+    let (month, monthNow) = steady("2026-08-28T10:00", "2026-08-29T12:00")
+    let began = london.parseLocal("2026-08-28T10:00")!
+    near(month.averagePerDay(london.thisCycle(monthNow), now: monthNow).bytesIn, 1_440 * Double(megabyte),
+         "per day this month counts the days since counting began")
+    near(month.averagePerDay(london.thisCycle(monthNow), now: monthNow).bytesIn, Double(month.allTime(now: monthNow).perDay.bytesIn),
+         "so in the first month it agrees with per day, all time")
+    let soFar = Double(month.totals(london.thisCycle(monthNow)).bytesIn)
+    let runway = london.endOfCycle(monthNow).timeIntervalSince(began) / monthNow.timeIntervalSince(began)
+    near(month.projection(now: monthNow).projected.bytesIn, soFar * runway,
+         "the projection runs the rate since counting began to the end of the month")
+
+    // The start of a week: counting began at 09:00 on Wednesday 30 September, asked at 21:00 on Friday 2 October.
+    let (week, weekNow) = steady("2026-09-30T09:00", "2026-10-02T21:00")
+    near(week.averagePerDay(london.thisWeek(weekNow), now: weekNow).bytesIn, 1_440 * Double(megabyte),
+         "per day this week counts the days since counting began, not since Monday")
+    near(week.averagePerDay(london.thisCycle(weekNow), now: weekNow).bytesIn, 1_440 * Double(megabyte),
+         "per day this month still counts from the 1st when counting began in September")
+    near(week.averagePerHourToday(now: weekNow).bytesIn, 60 * Double(megabyte),
+         "per hour today counts from midnight when counting began before today")
+
+    // The start of a day: counting began at 14:00, asked at 16:00.
+    let (day, dayNow) = steady("2026-10-02T14:00", "2026-10-02T16:00")
+    near(day.averagePerHourToday(now: dayNow).bytesIn, 60 * Double(megabyte),
+         "per hour today counts the hours since counting began, not since midnight")
+
+    // The menu and the dashboard read the same figures.
+    let snapshot = MenuSnapshot(aggregator: month, now: monthNow)
+    expect(snapshot.perDayMonth, month.averagePerDay(london.thisCycle(monthNow), now: monthNow), "the menu's per day this month")
+    expect(snapshot.perDayWeek, month.averagePerDay(london.thisWeek(monthNow), now: monthNow), "the menu's per day this week")
+    expect(snapshot.perHourToday, month.averagePerHourToday(now: monthNow), "the menu's per hour today")
+    expect(snapshot.projection, ProjectionWording(projected: month.projection(now: monthNow).projected, now: monthNow, cal: london),
+           "the menu's projection is worded from the same figure the dashboard uses")
 }
 
 // MARK: - Engine fixes: two processes migrating the same file

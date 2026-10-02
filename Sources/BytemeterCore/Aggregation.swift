@@ -264,21 +264,45 @@ public struct Aggregator {
 
     // MARK: - Derived figures
 
-    /// Average per hour so far today. Counts hours elapsed, not a flat 24, so
-    /// the figure means something at 09:00 as well as at 23:00.
+    /// When counting began within a period: the period's start, or the
+    /// earliest minute on record if that is later. Every average and the
+    /// projection divide by the time since this, not since the period
+    /// began, or a Mac counting since Tuesday would have its traffic spread
+    /// over a week it never measured. In the first month of a new install
+    /// that made the month's daily average and the projection read a
+    /// fraction of what they should. Rows after `now` are ignored, so a
+    /// figure asked as of an earlier moment gets that moment's answer.
+    public func countingStart(from periodStart: Date, now: Date) -> Date {
+        let start = BytemeterCalendar.minute(from: periodStart)
+        guard let first = earliestMinute(in: MinuteRange(start: 1, end: endMinute(now))), first > start else {
+            return periodStart
+        }
+        return BytemeterCalendar.date(fromMinute: first)
+    }
+
+    /// Average per hour so far today, over the hours counted: since midnight,
+    /// or since counting began if that was later today. Not a flat 24, so the
+    /// figure means something at 09:00 as well as at 23:00.
     public func averagePerHourToday(now: Date) -> Totals {
-        let elapsed = max(1.0, now.timeIntervalSince(cal.startOfDay(now)) / 3600.0)
+        let elapsed = max(1.0, now.timeIntervalSince(countingStart(from: cal.startOfDay(now), now: now)) / 3600.0)
         return divide(totals(cal.today(now)), by: elapsed)
     }
 
+    /// Average per day over a range ending now, such as this week or this
+    /// month, over the days counted: from the range's start, or from when
+    /// counting began if that was later.
     public func averagePerDay(_ range: MinuteRange, now: Date) -> Totals {
-        let days = max(1.0, Double(range.minutes) / (60.0 * 24.0))
+        let start = BytemeterCalendar.minute(from: countingStart(from: BytemeterCalendar.date(fromMinute: range.start),
+                                                                 now: now))
+        let days = max(1.0, Double(max(0, range.end - start)) / (60.0 * 24.0))
         return divide(totals(range), by: days)
     }
 
-    /// Where this cycle lands if the rest of it looks like the days so far.
+    /// Where this cycle lands if the rest of it looks like the days so far,
+    /// counting from the cycle's start or from when counting began, whichever
+    /// is later. The menu and the dashboard both use this one function.
     public func projection(now: Date) -> (projected: Totals, cycleEnd: Date) {
-        let start = cal.startOfCycle(now)
+        let start = countingStart(from: cal.startOfCycle(now), now: now)
         let end = cal.endOfCycle(now)
         let elapsedDays = max(1.0, now.timeIntervalSince(start) / 86_400.0)
         let totalDays = max(elapsedDays, end.timeIntervalSince(start) / 86_400.0)
