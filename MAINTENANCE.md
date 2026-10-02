@@ -220,6 +220,28 @@ After each release:
    in the menu bar.
 4. `brew audit --strict adi-debug-source/bytemeter/bytemeter` should be clean.
 
+## Screenshots
+
+The README images are made from a synthetic month, never from a real database, so they show nobody's usage or app list. They are reproducible byte for byte: the generator is deterministic for a given `--now`, and the dashboard renders as at `--as-of`.
+
+```bash
+swift build -c release
+python3 Scripts/make_demo_db.py /tmp/bytemeter-demo --now 2026-09-29T21:30 --force
+.build/release/Bytemeter --dashboard /tmp/bytemeter-demo --as-of 2026-09-29T21:30
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+  --user-data-dir="$(mktemp -d)" --hide-scrollbars --force-device-scale-factor=2 \
+  --window-size=1400,3600 --screenshot=/tmp/bytemeter-demo/page.png \
+  file:///tmp/bytemeter-demo/dashboard.html
+sips -c 1896 2360 --cropOffset 32 220   /tmp/bytemeter-demo/page.png --out docs/dashboard.png
+sips -c 852 2360  --cropOffset 1934 220 /tmp/bytemeter-demo/page.png --out docs/thirty-days.png
+sips -c 878 2336  --cropOffset 2788 232 /tmp/bytemeter-demo/page.png --out docs/heatmap.png
+sips -s format png -Z 256 Resources/AppIcon.icns --out docs/icon.png
+```
+
+1. Headless Chrome does not always exit after writing the file. Stop it once `page.png` exists.
+2. The crop offsets are twice the CSS boxes at 1400 pixels wide. If the dashboard's layout changes, measure them again.
+3. The menu image comes from the real menu running read-only against the same database: `.build/release/Bytemeter --demo /tmp/bytemeter-demo --as-of 2026-09-29T21:30`. Open the menu, capture it (Cmd+Shift+4, then Space, then click the menu), save it as `docs/menu.png`, and choose Quit from that menu to end it. The demo never writes and leaves a running Bytemeter alone.
+
 ## Known limits
 
 - **macOS 13 and later.**
