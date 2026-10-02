@@ -101,7 +101,7 @@ public enum MenuModel {
     }
 
     /// Shown under the actions, wrapped to the width of the figures.
-    public static let hint = "Right-click or two-finger click the figure to cycle today, week, month and all time."
+    public static let hint = "Right-click, two-finger click or Control-click the figure to cycle today, week, month and all time."
 
     /// Everything above the actions, in order.
     public static func information(_ data: MenuSnapshot, options: Options) -> [MenuLine] {

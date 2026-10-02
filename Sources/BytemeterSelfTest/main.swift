@@ -1213,7 +1213,7 @@ do {
           "all time carries its start date and day count, got: \(menuLater.compactMap { if case let .caption(t) = $0 { return t } else { return nil } })")
     check(menuLater.contains { if case .figure("Per day, all time", _, _, false) = $0 { return true } else { return false } },
           "the all time average is a grey row in Averages")
-    expect(MenuModel.hint, "Right-click or two-finger click the figure to cycle today, week, month and all time.",
+    expect(MenuModel.hint, "Right-click, two-finger click or Control-click the figure to cycle today, week, month and all time.",
            "the hint names the new clicks and all four modes")
     let live = MenuModel.information(MenuSnapshot(aggregator: a, now: asOf),
                                      options: MenuModel.Options(liveSpeed: true, rateIn: 2_100_000, rateOut: 0,
