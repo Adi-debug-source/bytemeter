@@ -52,12 +52,13 @@ enum DashboardGenerator {
           <dl class="hero-stats">
             \(statRow("This week, from Monday", data.thisWeek))
             \(statRow("Last 7 days", data.last7))
-            \(statRow("This month", data.thisMonth))
+            \(statRow(cal.cycleLabel(data.generatedAt), data.thisMonth))
             \(statRow("Last 30 days", data.last30))
             <div class="stat projection">
               <dt>On track for</dt>
               <dd>\(esc(Units.bytes(data.projected.total)))<span class="qualifier">by \(esc(cal.dayLabel(data.cycleEnd)))</span></dd>
             </div>
+            \(allTimeRow(data))
           </dl>
         </section>
         """
@@ -73,12 +74,12 @@ enum DashboardGenerator {
             <h2>Today by hour</h2>
             <p class="note">\(esc(peakHourNote(data)))</p>
           </div>
-          \(SVGKit.mirroredBars(values: hourValues, labelEvery: 2) { index in
+          \(SVGKit.mirroredBars(id: "hourly", values: hourValues, labelEvery: 2) { index in
               let totals = data.hourly[index]
-              return String(format: "%02d:00 to %02d:00, down %@, up %@", index, (index + 1) % 24,
-                            Units.bytes(totals.bytesIn), Units.bytes(totals.bytesOut))
+              return String(format: "%02d:00 to %02d:00, down %@, up %@.", index, (index + 1) % 24,
+                            Units.bytes(totals.bytesIn), Units.bytes(totals.bytesOut)) + estimateNote(totals)
           })
-          \(downUpLegend())
+          \(downUpLegend(estimated: SVGKit.barsShowEstimate(hourValues)))
         </section>
         """
 
@@ -89,11 +90,12 @@ enum DashboardGenerator {
             <h2>Last 30 days</h2>
             <p class="note">The dashed line is a seven day rolling average of downloads, so one heavy day does not read as a trend.</p>
           </div>
-          \(SVGKit.mirroredBars(values: dayValues, labelEvery: 3, rollingAverage: data.rollingAverage) { index in
+          \(SVGKit.mirroredBars(id: "daily", values: dayValues, labelEvery: 3, rollingAverage: data.rollingAverage) { index in
               let entry = data.daily[index]
-              return "\(cal.fullDayLabel(entry.date)), down \(Units.bytes(entry.totals.bytesIn)), up \(Units.bytes(entry.totals.bytesOut))"
+              return "\(cal.fullDayLabel(entry.date)), down \(Units.bytes(entry.totals.bytesIn)), "
+                   + "up \(Units.bytes(entry.totals.bytesOut))." + estimateNote(entry.totals)
           })
-          \(downUpLegend(includeAverage: true))
+          \(downUpLegend(includeAverage: true, estimated: SVGKit.barsShowEstimate(dayValues)))
         </section>
         """
 
@@ -104,8 +106,11 @@ enum DashboardGenerator {
             <h2>When the data actually goes</h2>
             <p class="note">Day of the week against hour of the day, over the last 30 days. Darker is quieter.</p>
           </div>
-          <div class="heat-wrap">\(SVGKit.heatmap(cells: data.heat))</div>
-          \(SVGKit.heatLegend(peak: heatPeak))
+          <div class="heat-wrap">\(SVGKit.heatmap(id: "heat", cells: data.heat) { estimateNote($0.totals) })</div>
+          \(SVGKit.heatLegend(peak: heatPeak, estimateKey: SVGKit.heatShowsEstimate(data.heat)
+              ? "<span class=\"key est-key\"><i class=\"swatch heat-est\"></i>Hatched from the bottom: the estimated "
+                + "share. \(asleepLine)</span>"
+              : ""))
         </section>
         """
 
@@ -141,9 +146,10 @@ enum DashboardGenerator {
             body += """
             <section class="panel">
               <div class="panel-head"><h2>Month by month</h2></div>
-              \(SVGKit.mirroredBars(values: monthValues, labelEvery: 1) { index in
+              \(SVGKit.mirroredBars(id: "monthly", values: monthValues, labelEvery: 1) { index in
                   let entry = data.monthly[index]
-                  return "\(entry.label), down \(Units.bytes(entry.totals.bytesIn)), up \(Units.bytes(entry.totals.bytesOut))"
+                  return "\(entry.label), down \(Units.bytes(entry.totals.bytesIn)), "
+                       + "up \(Units.bytes(entry.totals.bytesOut))." + estimateNote(entry.totals)
               })
             </section>
             """
@@ -161,6 +167,12 @@ enum DashboardGenerator {
               <p>Only physical interfaces are counted, so a VPN tunnel is never added on top of the Wi-Fi traffic
               it is already carrying. Units are decimal: 1 GB is 1,000,000,000 bytes, the way routers and
               internet providers count.</p>
+              <p>While the Mac sleeps, or Bytemeter is not running, the counters keep counting but nobody reads
+              them. The difference at the next reading is real traffic and every total includes it, but it cannot
+              be pinned to particular minutes, so it is spread evenly across the gap and drawn hatched. After a
+              restart the same applies from the moment the Mac started.</p>
+              <p>All time means since Bytemeter started counting. Whatever the Mac had already carried before
+              then has no timestamps, so it is left out rather than guessed at.</p>
               <p class="muted">Counter source: \(esc(data.counterSource == "mib64" ? "64 bit interface MIB" : data.counterSource)).</p>
             </div>
             <div>
@@ -189,6 +201,30 @@ enum DashboardGenerator {
         """
     }
 
+    /// The running total since counting began, set apart as the last row.
+    private static func allTimeRow(_ data: DashboardData) -> String {
+        guard let since = data.allTime.since else { return "" }
+        let all = data.allTime
+        return """
+        <div class="stat alltime">
+          <dt>All time<span class="since">since \(esc(data.cal.dateLabel(since))) · \(esc(all.daysText))</span></dt>
+          <dd>\(esc(Units.bytes(all.totals.bytesIn)))<span class="qualifier">up \(esc(Units.bytes(all.totals.bytesOut))) \
+        · \(esc(Units.bytes(all.perDay.bytesIn))) down a day</span></dd>
+        </div>
+        """
+    }
+
+    /// The one plain-language line that explains every hatched mark.
+    private static let asleepLine = "The Mac was asleep or Bytemeter was not running, "
+        + "so the traffic across that gap is spread evenly over it."
+
+    /// Added to a tooltip when part of the figure was spread across a gap.
+    private static func estimateNote(_ totals: Totals) -> String {
+        guard totals.estimatedTotal > 0 else { return "" }
+        return " Of this, \(Units.bytes(totals.estimatedIn)) down and \(Units.bytes(totals.estimatedOut)) up is estimated: "
+             + "the Mac was asleep or Bytemeter was not running, so it is spread evenly across the gap."
+    }
+
     private static func miniRow(_ label: String, _ value: UInt64, of total: UInt64) -> String {
         let share = total == 0 ? 0 : Int((Double(value) / Double(total) * 100).rounded())
         return """
@@ -196,13 +232,17 @@ enum DashboardGenerator {
         """
     }
 
-    private static func downUpLegend(includeAverage: Bool = false) -> String {
+    private static func downUpLegend(includeAverage: Bool = false, estimated: Bool) -> String {
         var items = """
         <span class="key"><i class="swatch solid"></i>Down, above the line</span>
         <span class="key"><i class="swatch soft"></i>Up, below the line, on the same scale</span>
         """
         if includeAverage {
             items += "<span class=\"key\"><i class=\"swatch dash\"></i>Seven day average</span>"
+        }
+        // Only on a chart that draws some, so a clean day carries no clutter.
+        if estimated {
+            items += "<span class=\"key est-key\"><i class=\"swatch est\"></i>Hatched: estimated. \(asleepLine)</span>"
         }
         return "<div class=\"legend keys\">\(items)</div>"
     }
@@ -327,6 +367,9 @@ enum DashboardGenerator {
         }
         for entry in data.daily { add("day", data.cal.fullDayLabel(entry.date), entry.totals) }
         for entry in data.monthly { add("month", entry.label, entry.totals) }
+        if let since = data.allTime.since {
+            add("all_time", "Since \(data.cal.dateLabel(since))", data.allTime.totals)
+        }
         for talker in data.topTalkersToday { add("process_today", talker.name, talker.totals) }
         for talker in data.topTalkersMonth { add("process_month", talker.name, talker.totals) }
         for entry in data.byInterface { add("interface_30d", entry.0, entry.1) }

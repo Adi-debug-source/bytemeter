@@ -21,6 +21,40 @@ enum SVGKit {
     /// tells you at a glance where nothing happens.
     static let heatRamp = ["#141a1d", "#123a38", "#14514c", "#176a62", "#1e8479", "#35a99f", "#5cc4b9"]
 
+    /// Estimated bytes are hatched rather than dimmed. A dimmer down bar would
+    /// read as an up bar, and on the heatmap a dimmer cell would read as a
+    /// quieter hour, which is exactly the false claim the mark exists to stop.
+    /// The ground under each hatch is opaque, so a hatched portion looks the
+    /// same whatever it is drawn over.
+    static let estimatedDownGround = "#163a37"
+    static let estimatedUpGround = "#10221f"
+    static let estimatedUpStripe = "rgba(53,169,159,0.62)"
+    static let heatHatch = "rgba(238,241,243,0.5)"
+
+    /// Hatch patterns for a bar chart. Ids are prefixed per chart because
+    /// every inline SVG on the page shares one id space.
+    private static func barHatchDefs(_ id: String) -> String {
+        """
+        <defs>
+        <pattern id="\(id)-est-down" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">\
+        <rect width="6" height="6" fill="\(estimatedDownGround)"/>\
+        <line x1="1.5" y1="0" x2="1.5" y2="6" stroke="\(accent)" stroke-width="2.2"/></pattern>
+        <pattern id="\(id)-est-up" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">\
+        <rect width="6" height="6" fill="\(estimatedUpGround)"/>\
+        <line x1="1.5" y1="0" x2="1.5" y2="6" stroke="\(estimatedUpStripe)" stroke-width="2"/></pattern>
+        </defs>
+        """
+    }
+
+    /// The heatmap's hatch has no ground of its own, so the cell's colour,
+    /// which is the hour's whole traffic, still shows through it.
+    private static func heatHatchDefs(_ id: String) -> String {
+        """
+        <defs><pattern id="\(id)-est-heat" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">\
+        <line x1="1" y1="0" x2="1" y2="5" stroke="\(heatHatch)" stroke-width="1.5"/></pattern></defs>
+        """
+    }
+
     static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
@@ -64,13 +98,44 @@ enum SVGKit {
         return "\(Int(bytes)) B"
     }
 
+    // MARK: - Bars
+
+    /// Height of each half of a bar chart, in viewBox units.
+    private static let barHalfHeight = 84.0
+    /// Anything thinner than this is not drawn, so a key is not shown for it.
+    private static let minimumBarHeight = 0.4
+    private static let minimumBandHeight = 1.0
+
+    /// The axis maximum for a set of bars, shared by the drawing and by
+    /// `barsShowEstimate`, so the two can never disagree.
+    private static func barScale(_ values: [(label: String, totals: Totals)]) -> Double {
+        let peak = values.map { max($0.totals.bytesIn, $0.totals.bytesOut) }.max() ?? 0
+        return niceCeiling(Double(max(peak, 1)))
+    }
+
+    /// Whether a bar chart will draw any estimated portion thick enough to
+    /// see. A day's estimate is often a few MB on a bar of several GB, and a
+    /// key for marks nobody can see would only confuse.
+    static func barsShowEstimate(_ values: [(label: String, totals: Totals)]) -> Bool {
+        let scaleMax = barScale(values)
+        return values.contains { entry in
+            Double(min(entry.totals.estimatedIn, entry.totals.bytesIn)) / scaleMax * barHalfHeight > minimumBarHeight
+                || Double(min(entry.totals.estimatedOut, entry.totals.bytesOut)) / scaleMax * barHalfHeight > minimumBarHeight
+        }
+    }
+
     /// Bars above the baseline for down, below it for up, on one shared scale.
     ///
     /// One scale on purpose. Upload is usually a small fraction of download, so
     /// the lower half often looks nearly empty, and that is the truth of it
     /// rather than a flaw. Giving upload its own scale would be a second y axis
     /// pretending the two are comparable.
-    static func mirroredBars(values: [(label: String, totals: Totals)],
+    ///
+    /// Where part of a bar is estimated, the measured part sits next to the
+    /// baseline and the estimated part is stacked beyond it, hatched. Bar
+    /// heights are unchanged: estimated bytes are real bytes.
+    static func mirroredBars(id: String,
+                             values: [(label: String, totals: Totals)],
                              labelEvery: Int,
                              rollingAverage: [Double?]? = nil,
                              tooltip: (Int) -> String) -> String {
@@ -83,13 +148,12 @@ enum SVGKit {
         // Equal halves, and the same pixels per byte above and below the line.
         // Giving upload a squeezed half would be a second y axis in disguise,
         // and upload genuinely does outrun download at times (a backup, a video call).
-        let halfHeight = 84.0
+        let halfHeight = barHalfHeight
         let labelBand = 22.0
         let baseline = topPad + halfHeight
         let height = topPad + halfHeight * 2 + labelBand
 
-        let peak = values.map { max($0.totals.bytesIn, $0.totals.bytesOut) }.max() ?? 0
-        let scaleMax = niceCeiling(Double(max(peak, 1)))
+        let scaleMax = barScale(values)
         let slot = plotWidth / Double(count)
         // Capped, so a chart with only two or three bars does not turn them
         // into slabs the width of the page.
@@ -98,6 +162,7 @@ enum SVGKit {
         var svg = """
         <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" role="img" class="chart" preserveAspectRatio="none">
         """
+        if values.contains(where: { $0.totals.estimatedTotal > 0 }) { svg += barHatchDefs(id) }
 
         // Gridlines, deliberately recessive. Mirrored above and below with the
         // same values, so the shared scale is visible rather than asserted.
@@ -122,19 +187,37 @@ enum SVGKit {
             let x = leftPad + slot * Double(index) + (slot - barWidth) / 2
             let downH = Double(entry.totals.bytesIn) / scaleMax * halfHeight
             let upH = Double(entry.totals.bytesOut) / scaleMax * halfHeight
+            let downEstH = Double(min(entry.totals.estimatedIn, entry.totals.bytesIn)) / scaleMax * halfHeight
+            let upEstH = Double(min(entry.totals.estimatedOut, entry.totals.bytesOut)) / scaleMax * halfHeight
 
             let title = "<title>\(escape(tooltip(index)))</title>"
             svg += "<g class=\"bar\">\(title)"
-            if downH > 0.4 {
+            // Each half is drawn as measured then estimated, outwards from the
+            // baseline. A sliver too thin to see is skipped, as before.
+            let downMeasured = downH - downEstH
+            if downMeasured > minimumBarHeight {
                 svg += """
-                <rect x="\(fmt(x))" y="\(fmt(baseline - downH))" width="\(fmt(barWidth))" \
-                height="\(fmt(downH))" rx="2" fill="\(accent)"/>
+                <rect x="\(fmt(x))" y="\(fmt(baseline - downMeasured))" width="\(fmt(barWidth))" \
+                height="\(fmt(downMeasured))" rx="2" fill="\(accent)"/>
                 """
             }
-            if upH > 0.4 {
+            if downEstH > minimumBarHeight {
+                svg += """
+                <rect x="\(fmt(x))" y="\(fmt(baseline - downH))" width="\(fmt(barWidth))" \
+                height="\(fmt(downEstH))" rx="2" fill="url(#\(id)-est-down)" class="est"/>
+                """
+            }
+            let upMeasured = upH - upEstH
+            if upMeasured > minimumBarHeight {
                 svg += """
                 <rect x="\(fmt(x))" y="\(fmt(baseline + 1))" width="\(fmt(barWidth))" \
-                height="\(fmt(upH))" rx="2" fill="\(accentSoft)"/>
+                height="\(fmt(upMeasured))" rx="2" fill="\(accentSoft)"/>
+                """
+            }
+            if upEstH > minimumBarHeight {
+                svg += """
+                <rect x="\(fmt(x))" y="\(fmt(baseline + 1 + max(upMeasured, 0)))" width="\(fmt(barWidth))" \
+                height="\(fmt(upEstH))" rx="2" fill="url(#\(id)-est-up)" class="est"/>
                 """
             }
             // An invisible full height target, so hovering anywhere in the
@@ -173,11 +256,32 @@ enum SVGKit {
         return svg
     }
 
+    // MARK: - Heatmap
+
+    private static let heatCellHeight = 30.0
+    private static let heatGap = 2.0
+
+    /// The height of a cell's hatched band: its estimated share of the cell.
+    private static func estimateBand(_ cell: HeatCell) -> Double {
+        let total = cell.totals.total
+        guard total > 0 else { return 0 }
+        return Double(min(cell.totals.estimatedTotal, total)) / Double(total) * (heatCellHeight - heatGap)
+    }
+
+    static func heatShowsEstimate(_ cells: [HeatCell]) -> Bool {
+        cells.contains { estimateBand($0) >= minimumBandHeight }
+    }
+
     /// Weekday against hour of day. The view that shows when the data goes.
-    static func heatmap(cells: [HeatCell]) -> String {
+    ///
+    /// The colour is the whole hour's traffic, estimated or not. The share
+    /// that was spread across a gap is hatched up from the bottom of the cell,
+    /// so a night the Mac slept through reads as fully hatched rather than as
+    /// steady overnight use.
+    static func heatmap(id: String, cells: [HeatCell], estimateNote: (HeatCell) -> String) -> String {
         let cellW = 38.0
-        let cellH = 30.0
-        let gap = 2.0
+        let cellH = heatCellHeight
+        let gap = heatGap
         let leftPad = 44.0
         let topPad = 20.0
         let width = leftPad + 24 * cellW
@@ -187,6 +291,7 @@ enum SVGKit {
         var svg = """
         <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" role="img" class="chart heat" preserveAspectRatio="xMidYMid meet">
         """
+        if cells.contains(where: { $0.totals.estimatedTotal > 0 }) { svg += heatHatchDefs(id) }
 
         for hour in stride(from: 0, to: 24, by: 3) {
             let x = leftPad + Double(hour) * cellW + cellW / 2
@@ -211,26 +316,34 @@ enum SVGKit {
             let colour = heatRamp[step]
             let label = "\(BytemeterCalendar.weekdayNames[cell.weekday]) \(String(format: "%02d", cell.hour)):00 to "
                 + "\(String(format: "%02d", (cell.hour + 1) % 24)):00, down \(Units.bytes(cell.totals.bytesIn)), "
-                + "up \(Units.bytes(cell.totals.bytesOut))"
+                + "up \(Units.bytes(cell.totals.bytesOut))." + estimateNote(cell)
             svg += """
             <g class="cell"><title>\(escape(label))</title>\
             <rect x="\(fmt(x + gap / 2))" y="\(fmt(y + gap / 2))" width="\(fmt(cellW - gap))" \
-            height="\(fmt(cellH - gap))" rx="3" fill="\(colour)"/></g>
+            height="\(fmt(cellH - gap))" rx="3" fill="\(colour)"/>
             """
+            let bandH = estimateBand(cell)
+            if bandH >= minimumBandHeight {
+                svg += """
+                <rect x="\(fmt(x + gap / 2))" y="\(fmt(y + cellH - gap / 2 - bandH))" width="\(fmt(cellW - gap))" \
+                height="\(fmt(bandH))" rx="\(fmt(min(3, bandH / 2)))" fill="url(#\(id)-est-heat)" class="est"/>
+                """
+            }
+            svg += "</g>"
         }
 
         svg += "</svg>"
         return svg
     }
 
-    static func heatLegend(peak: UInt64) -> String {
+    static func heatLegend(peak: UInt64, estimateKey: String) -> String {
         var swatches = ""
         for colour in heatRamp {
             swatches += "<span class=\"swatch\" style=\"background:\(colour)\"></span>"
         }
         return """
         <div class="legend"><span class="axis">none</span>\(swatches)\
-        <span class="axis">\(escape(Units.bytes(peak)))</span></div>
+        <span class="axis">\(escape(Units.bytes(peak)))</span>\(estimateKey)</div>
         """
     }
 

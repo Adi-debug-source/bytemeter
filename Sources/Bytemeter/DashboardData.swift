@@ -13,6 +13,9 @@ struct DashboardData {
     let last7: Totals
     let thisMonth: Totals
     let last30: Totals
+    let allTime: AllTimeSummary
+    /// The first day of this month, or of the billing cycle if one is set.
+    let cycleStart: Date
 
     let hourly: [Totals]
     let daily: [LabelledTotals]
@@ -50,6 +53,8 @@ struct DashboardData {
         last7 = aggregator.totals(cal.rollingDays(7, now: now))
         thisMonth = aggregator.totals(cal.thisCycle(now))
         last30 = aggregator.totals(cal.rollingDays(30, now: now))
+        allTime = aggregator.allTime(now: now)
+        cycleStart = cal.startOfCycle(now)
 
         hourly = aggregator.hourly(day: now)
         let series = aggregator.daily(lastDays: 30, now: now)

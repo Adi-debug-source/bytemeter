@@ -20,7 +20,7 @@ final class Settings {
     init(db: Database, write: @escaping (@escaping () -> Void) -> Void) {
         self.db = db
         self.write = write
-        _statusMode = StatusMode(rawValue: db.state(StateKey.statusMode) ?? "") ?? .today
+        _statusMode = StatusMode(saved: db.state(StateKey.statusMode))
         _liveSpeed = db.flag(StateKey.liveSpeed, default: false)
         _ssidCapture = db.flag(StateKey.ssidCapture, default: false)
         _perAppSampling = db.flag(StateKey.perAppSampling, default: true)

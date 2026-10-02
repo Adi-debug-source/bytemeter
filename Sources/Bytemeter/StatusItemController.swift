@@ -3,8 +3,10 @@ import BytemeterCore
 
 /// The menu bar item and its dropdown.
 ///
-/// The status item shows one total, and clicking it cycles today, this week and
-/// this month. Live speed is a separate toggle that sits alongside the total
+/// The status item shows one total. Clicking opens the menu, the way every
+/// other menu bar item behaves; right-click, a two-finger click or
+/// Control-click cycles the total through today, this week, this month and
+/// all time. Live speed is a separate toggle that sits alongside the total
 /// rather than replacing it.
 final class StatusItemController: NSObject, NSMenuDelegate {
 
@@ -15,6 +17,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var rateIn: Double = 0
     private var rateOut: Double = 0
     private var currentTotal = Totals()
+    /// When all time began, for the tooltip only. The menu bar text never
+    /// carries a date.
+    private var currentSince: Date?
 
     var onOpenDashboard: (() -> Void)?
     var onOpenPreferences: (() -> Void)?
@@ -41,11 +46,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let isRight = event?.type == .rightMouseUp
         let isControlClick = event?.modifierFlags.contains(.control) ?? false
 
+        // A two-finger click on a trackpad arrives as a right click.
         if isRight || isControlClick {
-            showMenu()
-        } else {
             settings.statusMode = settings.statusMode.next
             refresh()
+        } else {
+            showMenu()
         }
     }
 
@@ -72,15 +78,20 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let mode = settings.statusMode
         readData { [weak self] aggregator in
             let now = Date()
-            let range: MinuteRange
+            let totals: Totals
+            var since: Date?
             switch mode {
-            case .today: range = aggregator.cal.today(now)
-            case .week: range = aggregator.cal.thisWeek(now)
-            case .month: range = aggregator.cal.thisCycle(now)
+            case .today: totals = aggregator.totals(aggregator.cal.today(now))
+            case .week: totals = aggregator.totals(aggregator.cal.thisWeek(now))
+            case .month: totals = aggregator.totals(aggregator.cal.thisCycle(now))
+            case .allTime:
+                let summary = aggregator.allTime(now: now)
+                totals = summary.totals
+                since = summary.since
             }
-            let totals = aggregator.totals(range)
             DispatchQueue.main.async {
                 self?.currentTotal = totals
+                self?.currentSince = since
                 self?.render()
             }
         }
@@ -94,9 +105,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
         let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .regular)
         button.attributedTitle = NSAttributedString(string: text, attributes: [.font: font])
-        button.toolTip = "Bytemeter: \(settings.statusMode.label). "
+        // The tooltip has room for the start date that the menu bar text
+        // deliberately leaves out.
+        var mode = settings.statusMode.label
+        if settings.statusMode == .allTime, let since = currentSince {
+            mode += ", since " + BytemeterCalendar().dateLabel(since)
+        }
+        button.toolTip = "Bytemeter: \(mode). "
             + "Down \(Units.bytes(currentTotal.bytesIn)), up \(Units.bytes(currentTotal.bytesOut)). "
-            + "Click to cycle, right-click for the menu."
+            + "Click for the menu. Right-click, two-finger click or Control-click to cycle "
+            + "today, week, month and all time."
     }
 
     // MARK: - Menu
@@ -109,25 +127,47 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         readData { aggregator in snapshot = MenuSnapshot(aggregator: aggregator, now: Date()) }
         guard let data = snapshot else { return menu }
 
+        // Standard titles move right by a tick column whenever an item is
+        // ticked, and live speed is the only item that can be, so the rows
+        // follow it.
+        let inset = MenuRows.leadingInset(tickColumn: settings.liveSpeed)
+        func header(_ text: String) -> NSMenuItem { MenuRows.header(text, inset: inset) }
+        func plain(_ text: String) -> NSMenuItem { MenuRows.text(text, inset: inset) }
+        // Strong rows are the four totals the menu bar figure cycles through,
+        // so the menu and the figure point at each other; the rest is grey.
+        func figure(_ label: String, _ totals: Totals, _ tone: MenuRows.Tone = .quiet) -> NSMenuItem {
+            MenuRows.figure(label, down: Units.bytes(totals.bytesIn), up: Units.bytes(totals.bytesOut),
+                            tone: tone, inset: inset)
+        }
+
         if settings.liveSpeed {
             menu.addItem(header("Live"))
-            menu.addItem(figure("Now", down: Units.rate(rateIn), up: Units.rate(rateOut)))
+            menu.addItem(MenuRows.figure("Now", down: Units.rate(rateIn), up: Units.rate(rateOut),
+                                         tone: .quiet, inset: inset))
             menu.addItem(.separator())
         }
 
         menu.addItem(header("Totals"))
-        menu.addItem(figure("Today", totals: data.today))
-        menu.addItem(figure("Yesterday", totals: data.yesterday))
-        menu.addItem(figure("This week, from Monday", totals: data.thisWeek))
-        menu.addItem(figure("Last 7 days", totals: data.last7))
-        menu.addItem(figure(data.cycleLabel, totals: data.thisMonth))
-        menu.addItem(figure("Last 30 days", totals: data.last30))
+        menu.addItem(figure("Today", data.today, .strong))
+        menu.addItem(figure("Yesterday", data.yesterday))
+        menu.addItem(figure("This week, from Monday", data.thisWeek, .strong))
+        menu.addItem(figure("Last 7 days", data.last7))
+        menu.addItem(figure(data.cycleLabel, data.thisMonth, .strong))
+        menu.addItem(figure("Last 30 days", data.last30))
+        if let since = data.allTime.since {
+            menu.addItem(figure("All time", data.allTime.totals, .strong))
+            menu.addItem(MenuRows.caption("since \(data.cal.dateLabel(since)) · \(data.allTime.daysText) counted",
+                                          inset: inset))
+        }
 
         menu.addItem(.separator())
         menu.addItem(header("Averages"))
-        menu.addItem(figure("Per hour today", totals: data.perHourToday))
-        menu.addItem(figure("Per day this week", totals: data.perDayWeek))
-        menu.addItem(figure("Per day this month", totals: data.perDayMonth))
+        menu.addItem(figure("Per hour today", data.perHourToday))
+        menu.addItem(figure("Per day this week", data.perDayWeek))
+        menu.addItem(figure("Per day this month", data.perDayMonth))
+        if data.allTime.since != nil {
+            menu.addItem(figure("Per day, all time", data.allTime.perDay))
+        }
 
         menu.addItem(.separator())
         menu.addItem(header("Looking ahead"))
@@ -150,14 +190,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 menu.addItem(plain("Nothing recorded yet"))
             } else {
                 for talker in data.topTalkers {
-                    menu.addItem(figure(talker.name, totals: talker.totals))
+                    menu.addItem(figure(talker.name, talker.totals))
                 }
             }
-            let note = plain("A guide, not an exact split. See the dashboard.")
-            note.toolTip = "nettop reports totals per process, so a process that quits between samples "
-                + "takes its last few seconds with it. The interface counters are the source of truth, "
-                + "and the two will not reconcile exactly."
-            menu.addItem(note)
+            menu.addItem(MenuRows.text(
+                "A guide, not an exact split. See the dashboard.", inset: inset,
+                toolTip: "nettop reports totals per process, so a process that quits between samples "
+                    + "takes its last few seconds with it. The interface counters are the source of truth, "
+                    + "and the two will not reconcile exactly."))
         } else {
             menu.addItem(plain("Per-app sampling is off"))
         }
@@ -177,7 +217,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(preferences)
 
         menu.addItem(.separator())
-        menu.addItem(plain("Click the menu bar figure to cycle today, week and month."))
+        menu.addItem(MenuRows.text("Right-click or two-finger click the figure to cycle today, week, month and all time.",
+                                   inset: inset, wraps: true))
         let quit = NSMenuItem(title: "Quit Bytemeter", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -185,54 +226,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         return menu
     }
 
-    // MARK: - Menu item builders
-
-    private func header(_ text: String) -> NSMenuItem {
-        let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        item.attributedTitle = NSAttributedString(string: text.uppercased(), attributes: [
-            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold),
-            .foregroundColor: NSColor.secondaryLabelColor,
-        ])
-        return item
-    }
-
-    private func plain(_ text: String) -> NSMenuItem {
-        let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        item.attributedTitle = NSAttributedString(string: text, attributes: [
-            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize - 1),
-            .foregroundColor: NSColor.labelColor,
-        ])
-        return item
-    }
-
-    private func figure(_ label: String, totals: Totals) -> NSMenuItem {
-        figure(label, down: Units.bytes(totals.bytesIn), up: Units.bytes(totals.bytesOut))
-    }
-
-    /// Down is the headline, up sits on the same line. Tab stops keep the
-    /// columns lined up without forcing a monospaced font on the whole menu.
-    private func figure(_ label: String, down: String, up: String) -> NSMenuItem {
-        let item = NSMenuItem(title: label, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        let style = NSMutableParagraphStyle()
-        style.tabStops = [
-            NSTextTab(textAlignment: .right, location: 240),
-            NSTextTab(textAlignment: .right, location: 330),
-        ]
-        let text = NSMutableAttributedString(string: "\(label)\t↓ \(down)\t↑ \(up)", attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .regular),
-            .paragraphStyle: style,
-            .foregroundColor: NSColor.labelColor,
-        ])
-        let upRange = (text.string as NSString).range(of: "↑ \(up)")
-        if upRange.location != NSNotFound {
-            text.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: upRange)
-        }
-        item.attributedTitle = text
-        return item
-    }
+    // MARK: - Menu helpers
 
     private func capBarText(used: UInt64, cap: UInt64) -> String {
         let fraction = cap == 0 ? 0 : min(1.0, Double(used) / Double(cap))
@@ -266,6 +260,8 @@ struct MenuSnapshot {
     let perDayWeek: Totals
     let perDayMonth: Totals
     let projected: Totals
+    let allTime: AllTimeSummary
+    let cal: BytemeterCalendar
     let cycleLabel: String
     let cycleEndLabel: String
     let peakHourText: String
@@ -286,7 +282,9 @@ struct MenuSnapshot {
 
         let forecast = aggregator.projection(now: now)
         projected = forecast.projected
-        cycleLabel = cal.cycleStartDay == 1 ? "This month" : "This cycle"
+        allTime = aggregator.allTime(now: now)
+        self.cal = cal
+        cycleLabel = cal.cycleLabel(now)
         cycleEndLabel = cal.cycleStartDay == 1 ? cal.monthLabel(now) : "the cycle"
 
         if let peak = aggregator.peakHourToday(now: now) {

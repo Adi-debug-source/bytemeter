@@ -5,8 +5,10 @@ import BytemeterCore
 /// database and prints where it landed, without starting the menu bar app.
 ///
 /// Useful for rebuilding the page without going through the menu, and it is how
-/// the dashboard gets tested. It only reads the samples; the single instance
-/// lock is deliberately not taken, because this does not sample anything.
+/// the dashboard gets tested. It only reads the samples, except that opening
+/// an older database brings its schema up to date first, as any open does.
+/// The single instance lock is deliberately not taken, because this does not
+/// sample anything.
 enum DashboardCLI {
 
     /// An optional folder after the flag points at a different copy of the

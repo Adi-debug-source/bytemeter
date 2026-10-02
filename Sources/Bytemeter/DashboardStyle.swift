@@ -82,6 +82,10 @@ extension DashboardGenerator {
         .hero-stats dd { margin: 0; font-size: 15px; font-weight: 500; text-align: right; }
         .hero-stats .qualifier { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
         .hero-stats .projection dd { color: var(--accent); }
+        /* The running total closes the column under a double rule, the way a
+           ledger marks a figure that sums everything above it. */
+        .hero-stats .stat.alltime { border-top: 3px double rgba(255,255,255,0.14); margin-top: 2px; padding-top: 12px; }
+        .hero-stats .since { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
 
         .panel { padding: 30px 0 26px; border-bottom: 1px solid var(--rule); }
         .panel.feature { background:
@@ -111,6 +115,11 @@ extension DashboardGenerator {
         .key .solid { background: var(--accent); }
         .key .soft { background: var(--accent-soft); }
         .key .dash { background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 9px); height: 2px; }
+        /* The same hatch the charts draw, so the key matches the marks. */
+        .key .est { background: repeating-linear-gradient(135deg, var(--accent) 0 2px, #163a37 2px 5px); }
+        .key .heat-est { background: repeating-linear-gradient(135deg, rgba(238,241,243,0.5) 0 1.5px, transparent 1.5px 3.5px), #1e8479; }
+        .legend .est-key { margin-left: 14px; }
+        .legend.keys .est-key { margin-left: 0; }
 
         .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; }
         table { width: 100%; border-collapse: collapse; }

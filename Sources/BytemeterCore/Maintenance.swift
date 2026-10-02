@@ -19,6 +19,9 @@ public enum Maintenance {
     /// app asks for begins at local midnight, which is an hour boundary, so no
     /// figure on screen shifts. A hand written query starting mid-hour over
     /// pruned data is the only thing that would notice.
+    ///
+    /// A collapsed hour is marked estimated if any minute in it was, so the
+    /// mark survives the tidy up the same way the bytes do.
     @discardableResult
     public static func prune(db: Database, now: Date = Date()) -> Int64 {
         let cutoff = BytemeterCalendar.minute(from: now) - retainMinuteDays * 24 * 60
@@ -33,13 +36,14 @@ public enum Maintenance {
             try db.run("""
                 CREATE TEMP TABLE rollup_samples AS
                 SELECT (minute/60)*60 AS m, iface, ssid,
-                       SUM(bytes_in) AS bi, SUM(bytes_out) AS bo, MIN(idle) AS idl
+                       SUM(bytes_in) AS bi, SUM(bytes_out) AS bo, MIN(idle) AS idl,
+                       MAX(estimated) AS est
                 FROM samples WHERE minute<? GROUP BY m, iface, ssid;
                 """, [.int(cutoff)])
             try db.run("DELETE FROM samples WHERE minute<?;", [.int(cutoff)])
             try db.exec("""
-                INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle)
-                SELECT m, iface, ssid, bi, bo, idl FROM rollup_samples;
+                INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated)
+                SELECT m, iface, ssid, bi, bo, idl, est FROM rollup_samples;
                 """)
             try db.exec("DROP TABLE rollup_samples;")
 

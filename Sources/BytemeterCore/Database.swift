@@ -161,6 +161,68 @@ public final class Database {
             PRAGMA user_version=1;
             """)
         }
+
+        if version < 2 {
+            // Version 2 marks rows whose minute is an estimate. The column, the
+            // backfill and the version number go in one transaction, so a
+            // failure leaves version 1 untouched and the next launch tries
+            // again, and success means it never runs twice.
+            try exec("BEGIN IMMEDIATE;")
+            do {
+                try exec("ALTER TABLE samples ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;")
+                // A brand new database has nothing to mark and nothing to report.
+                if version >= 1 {
+                    let result = try markPastSpreads()
+                    let detail = "Marked \(result.rows) minute rows as estimated, from \(result.gaps) earlier gaps "
+                        + "whose traffic was spread evenly rather than measured minute by minute. "
+                        + "\(result.skipped) gap events could not be read and were left unmarked. "
+                        + "No byte moved: totals are unchanged, only the timing of those rows is uncertain."
+                    // Not addEvent, which forgives a failure: the record of the
+                    // backfill commits with the backfill or not at all.
+                    try run("INSERT INTO events(ts,kind,detail) VALUES(?,?,?);",
+                            [.int(Int64(Date().timeIntervalSince1970)), .text("estimated_backfill"), .text(detail)])
+                }
+                try exec("PRAGMA user_version=2;")
+                try exec("COMMIT;")
+            } catch {
+                try? exec("ROLLBACK;")
+                throw error
+            }
+        }
+    }
+
+    /// Before version 2 nothing recorded which rows were spread. Each spread
+    /// wrote a `gap_` event at the wake moment saying how many minutes it
+    /// covered, and those are exactly the minutes ending at the event, so the
+    /// rows can be found without guessing. `gap_too_long` is left out: it put
+    /// its bytes in a single minute and never fired before this version.
+    ///
+    /// The wake minute is marked too, although it also holds bytes measured
+    /// after waking. Conservative on purpose: a mixed minute is drawn as
+    /// estimated rather than an estimate drawn as measured.
+    private func markPastSpreads() throws -> (gaps: Int, rows: Int64, skipped: Int) {
+        var spreads: [(ts: Int64, detail: String)] = []
+        try query("""
+            SELECT ts, detail FROM events
+            WHERE kind LIKE 'gap\\_%' ESCAPE '\\' AND kind != 'gap_too_long' ORDER BY ts;
+            """) { spreads.append(($0.int(0), $0.string(1))) }
+
+        var gaps = 0
+        var rows: Int64 = 0
+        var skipped = 0
+        for spread in spreads {
+            guard let window = Ledger.spreadWindow(eventTs: spread.ts, detail: spread.detail) else {
+                skipped += 1
+                continue
+            }
+            try run("""
+                UPDATE samples SET estimated=1
+                WHERE iface=? AND minute>=? AND minute<=? AND estimated=0;
+                """, [.text(window.iface), .int(window.firstMinute), .int(window.lastMinute)])
+            rows += Int64(sqlite3_changes(handle))
+            gaps += 1
+        }
+        return (gaps, rows, skipped)
     }
 
     // MARK: - State
@@ -218,20 +280,25 @@ public final class Database {
 
     /// Add traffic to minute buckets. `idle` uses MIN so that a minute with any
     /// activity at all counts as active; only a wholly idle minute stays idle.
+    /// `estimated` uses MAX for the mirror reason: once any part of a minute
+    /// is an estimate, bytes measured into it later must not clear the mark.
+    /// The wake minute after a sleep is exactly that case.
     public func addBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool) {
         guard !buckets.isEmpty else { return }
         let sql = """
-        INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle) VALUES(?,?,?,?,?,?)
+        INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated) VALUES(?,?,?,?,?,?,?)
         ON CONFLICT(minute,iface,ssid) DO UPDATE SET
             bytes_in  = bytes_in  + excluded.bytes_in,
             bytes_out = bytes_out + excluded.bytes_out,
-            idle      = MIN(idle, excluded.idle);
+            idle      = MIN(idle, excluded.idle),
+            estimated = MAX(estimated, excluded.estimated);
         """
         for bucket in buckets {
             try? run(sql, [.int(bucket.minute), .text(bucket.iface), .text(ssid),
                            .int(Int64(bitPattern: bucket.bytesIn)),
                            .int(Int64(bitPattern: bucket.bytesOut)),
-                           .int(idle ? 1 : 0)])
+                           .int(idle ? 1 : 0),
+                           .int(bucket.estimated ? 1 : 0)])
         }
     }
 

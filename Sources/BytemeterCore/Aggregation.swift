@@ -3,14 +3,24 @@ import Foundation
 public struct Totals: Equatable {
     public let bytesIn: UInt64
     public let bytesOut: UInt64
-    public init(bytesIn: UInt64 = 0, bytesOut: UInt64 = 0) {
+    /// How much of `bytesIn` and `bytesOut` sits in minutes marked estimated.
+    /// A part of the figures above, never an addition to them: the bytes are
+    /// real and every total counts them, only their timing is spread.
+    public let estimatedIn: UInt64
+    public let estimatedOut: UInt64
+
+    public init(bytesIn: UInt64 = 0, bytesOut: UInt64 = 0, estimatedIn: UInt64 = 0, estimatedOut: UInt64 = 0) {
         self.bytesIn = bytesIn
         self.bytesOut = bytesOut
+        self.estimatedIn = estimatedIn
+        self.estimatedOut = estimatedOut
     }
     public var total: UInt64 { bytesIn &+ bytesOut }
+    public var estimatedTotal: UInt64 { estimatedIn &+ estimatedOut }
     public var isEmpty: Bool { bytesIn == 0 && bytesOut == 0 }
     public static func + (a: Totals, b: Totals) -> Totals {
-        Totals(bytesIn: a.bytesIn &+ b.bytesIn, bytesOut: a.bytesOut &+ b.bytesOut)
+        Totals(bytesIn: a.bytesIn &+ b.bytesIn, bytesOut: a.bytesOut &+ b.bytesOut,
+               estimatedIn: a.estimatedIn &+ b.estimatedIn, estimatedOut: a.estimatedOut &+ b.estimatedOut)
     }
 }
 
@@ -19,6 +29,30 @@ public struct MinuteRow {
     public let bytesIn: UInt64
     public let bytesOut: UInt64
     public let idle: Bool
+    public let estimatedIn: UInt64
+    public let estimatedOut: UInt64
+
+    public var totals: Totals {
+        Totals(bytesIn: bytesIn, bytesOut: bytesOut, estimatedIn: estimatedIn, estimatedOut: estimatedOut)
+    }
+}
+
+/// Everything counted since counting began, for the fourth menu bar position
+/// and the dashboard. "All time" means since the earliest minute on record,
+/// not since the Mac was new: what an interface had carried before it was
+/// first seen has no timestamps and is deliberately never in `samples`.
+public struct AllTimeSummary {
+    public let totals: Totals
+    /// The start of the earliest minute on record, or nil if nothing has been.
+    public let since: Date?
+    /// Days from `since` to now, with the fraction.
+    public let days: Double
+    public let perDay: Totals
+
+    /// The day count as words, the same in the menu and on the dashboard.
+    public var daysText: String {
+        days < 1 ? "less than a day" : String(format: "%.1f days", days)
+    }
 }
 
 public struct LabelledTotals {
@@ -54,9 +88,14 @@ public struct Aggregator {
 
     public func totals(_ range: MinuteRange) -> Totals {
         var result = Totals()
-        try? db.query("SELECT COALESCE(SUM(bytes_in),0), COALESCE(SUM(bytes_out),0) FROM samples WHERE minute>=? AND minute<?;",
-                      [.int(range.start), .int(range.end)]) { row in
-            result = Totals(bytesIn: row.uint(0), bytesOut: row.uint(1))
+        try? db.query("""
+            SELECT COALESCE(SUM(bytes_in),0), COALESCE(SUM(bytes_out),0),
+                   COALESCE(SUM(CASE WHEN estimated!=0 THEN bytes_in ELSE 0 END),0),
+                   COALESCE(SUM(CASE WHEN estimated!=0 THEN bytes_out ELSE 0 END),0)
+            FROM samples WHERE minute>=? AND minute<?;
+            """, [.int(range.start), .int(range.end)]) { row in
+            result = Totals(bytesIn: row.uint(0), bytesOut: row.uint(1),
+                            estimatedIn: row.uint(2), estimatedOut: row.uint(3))
         }
         return result
     }
@@ -64,11 +103,14 @@ public struct Aggregator {
     public func minuteRows(_ range: MinuteRange) -> [MinuteRow] {
         var rows: [MinuteRow] = []
         try? db.query("""
-            SELECT minute, SUM(bytes_in), SUM(bytes_out), MIN(idle)
+            SELECT minute, SUM(bytes_in), SUM(bytes_out), MIN(idle),
+                   SUM(CASE WHEN estimated!=0 THEN bytes_in ELSE 0 END),
+                   SUM(CASE WHEN estimated!=0 THEN bytes_out ELSE 0 END)
             FROM samples WHERE minute>=? AND minute<? GROUP BY minute ORDER BY minute;
             """, [.int(range.start), .int(range.end)]) { row in
             rows.append(MinuteRow(minute: row.int(0), bytesIn: row.uint(1),
-                                  bytesOut: row.uint(2), idle: row.int(3) == 1))
+                                  bytesOut: row.uint(2), idle: row.int(3) == 1,
+                                  estimatedIn: row.uint(4), estimatedOut: row.uint(5)))
         }
         return rows
     }
@@ -94,7 +136,7 @@ public struct Aggregator {
         var buckets = [Totals](repeating: Totals(), count: 24)
         for row in minuteRows(cal.range(from: start, to: end)) {
             let index = Int(min(max((row.minute - startMinute) / 60, 0), 23))
-            buckets[index] = buckets[index] + Totals(bytesIn: row.bytesIn, bytesOut: row.bytesOut)
+            buckets[index] = buckets[index] + row.totals
         }
         return buckets
     }
@@ -108,7 +150,7 @@ public struct Aggregator {
 
         for row in minuteRows(MinuteRange(start: starts[0], end: endMinute)) {
             guard let index = dayIndex(for: row.minute, in: starts) else { continue }
-            buckets[index] = buckets[index] + Totals(bytesIn: row.bytesIn, bytesOut: row.bytesOut)
+            buckets[index] = buckets[index] + row.totals
         }
         return (0..<count).map { index in
             let date = BytemeterCalendar.date(fromMinute: starts[index])
@@ -129,7 +171,7 @@ public struct Aggregator {
             let weekday = mondayIndex(date)
             let hour = Int(min(max((row.minute - starts[index]) / 60, 0), 23))
             let slot = weekday * 24 + hour
-            grid[slot] = grid[slot] + Totals(bytesIn: row.bytesIn, bytesOut: row.bytesOut)
+            grid[slot] = grid[slot] + row.totals
         }
         return (0..<(7 * 24)).map { HeatCell(weekday: $0 / 24, hour: $0 % 24, totals: grid[$0]) }
     }
@@ -224,6 +266,21 @@ public struct Aggregator {
         let factor = totalDays / elapsedDays
         return (Totals(bytesIn: UInt64(Double(soFar.bytesIn) * factor),
                        bytesOut: UInt64(Double(soFar.bytesOut) * factor)), end)
+    }
+
+    /// Every byte on record, from the earliest minute onwards. No upper
+    /// bound: a row written while the clock was wrong still moved real data,
+    /// and "all time" should not quietly drop it.
+    public func allTime(now: Date) -> AllTimeSummary {
+        guard let earliest = earliestMinute() else {
+            return AllTimeSummary(totals: Totals(), since: nil, days: 0, perDay: Totals())
+        }
+        let totals = totals(MinuteRange(start: earliest, end: Int64.max))
+        let since = BytemeterCalendar.date(fromMinute: earliest)
+        let days = max(0, now.timeIntervalSince(since)) / 86_400.0
+        // Under a day, the figure so far stands as the day's figure, the same
+        // floor the other per day averages use.
+        return AllTimeSummary(totals: totals, since: since, days: days, perDay: divide(totals, by: max(1.0, days)))
     }
 
     public func peakHourToday(now: Date) -> (hour: Int, totals: Totals)? {

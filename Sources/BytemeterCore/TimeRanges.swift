@@ -124,6 +124,17 @@ public struct BytemeterCalendar {
         return f.string(from: date)
     }
 
+    /// "20 Sep 2026": short, day first, with the year, for a start date that
+    /// may be in an earlier year than the one on screen.
+    public func dateLabel(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.calendar = calendar
+        f.timeZone = calendar.timeZone
+        f.locale = Locale(identifier: "en_GB")
+        f.dateFormat = "d MMM yyyy"
+        return f.string(from: date)
+    }
+
     public func monthLabel(_ date: Date) -> String {
         let f = DateFormatter()
         f.calendar = calendar
@@ -140,6 +151,13 @@ public struct BytemeterCalendar {
         f.locale = Locale(identifier: "en_GB")
         f.dateFormat = "d MMM yyyy 'at' HH:mm"
         return f.string(from: date)
+    }
+
+    /// "This month, from 1 Oct", or "This cycle, from 15 Sep" on a billing
+    /// cycle. Saying where it starts is what tells it apart from the rolling
+    /// "Last 30 days" figure beside it, the same way the week says "from Monday".
+    public func cycleLabel(_ now: Date) -> String {
+        (cycleStartDay == 1 ? "This month" : "This cycle") + ", from " + dayLabel(startOfCycle(now))
     }
 
     public static let weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
