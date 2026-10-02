@@ -30,10 +30,11 @@ public struct MenuSnapshot {
     public let perDayWeek: Totals
     public let perDayMonth: Totals
     public let projected: Totals
+    /// Worded once, here, for the menu and the dashboard alike.
+    public let projection: ProjectionWording
     public let allTime: AllTimeSummary
     public let cal: BytemeterCalendar
     public let cycleLabel: String
-    public let cycleEndLabel: String
     public let peakHourText: String
     public let peakDayText: String
     public let topTalkers: [TopTalker]
@@ -54,20 +55,24 @@ public struct MenuSnapshot {
 
         let forecast = aggregator.projection(now: now)
         projected = forecast.projected
+        projection = ProjectionWording(projected: forecast.projected, now: now, cal: cal)
         allTime = aggregator.allTime(now: now)
         self.cal = cal
         cycleLabel = cal.cycleLabel(now)
-        cycleEndLabel = cal.cycleStartDay == 1 ? cal.monthLabel(now) : "the cycle"
 
-        if let peak = aggregator.peakHourToday(now: now) {
-            peakHourText = String(format: "Peak hour today: %02d:00, %@", peak.hour, Units.bytes(peak.totals.total))
+        // Download only, like every headline figure and like the dashboard's
+        // busiest hour, so the peak day can never read larger than the month
+        // printed above it.
+        if let peak = aggregator.peakDownloadHourToday(now: now) {
+            peakHourText = String(format: "Peak hour today: %02d:00, ↓ %@", peak.hour, Units.bytes(peak.totals.bytesIn))
         } else {
             peakHourText = "Peak hour today: nothing yet"
         }
-        if let peak = aggregator.peakDayThisCycle(now: now) {
-            peakDayText = "Peak day this month: \(peak.label), \(Units.bytes(peak.totals.total))"
+        let period = cal.cycleStartDay == 1 ? "this month" : "this cycle"
+        if let peak = aggregator.peakDownloadDayThisCycle(now: now) {
+            peakDayText = "Peak day \(period): \(peak.label), ↓ \(Units.bytes(peak.totals.bytesIn))"
         } else {
-            peakDayText = "Peak day this month: nothing yet"
+            peakDayText = "Peak day \(period): nothing yet"
         }
         topTalkers = aggregator.topTalkers(cal.today(now), limit: 5)
     }
@@ -130,14 +135,15 @@ public enum MenuModel {
         lines.append(.header("Averages"))
         lines.append(figure("Per hour today", data.perHourToday))
         lines.append(figure("Per day this week", data.perDayWeek))
-        lines.append(figure("Per day this month", data.perDayMonth))
+        lines.append(figure(data.cal.cycleStartDay == 1 ? "Per day this month" : "Per day this cycle", data.perDayMonth))
         if data.allTime.since != nil {
             lines.append(figure("Per day, all time", data.allTime.perDay))
         }
 
         lines.append(.separator)
         lines.append(.header("Looking ahead"))
-        lines.append(.text("At that rate, \(data.cycleEndLabel) ends at \(Units.bytes(data.projected.total))"))
+        lines.append(.text(data.projection.headline))
+        lines.append(.caption(ProjectionWording.basis))
         lines.append(.text(data.peakHourText))
         lines.append(.text(data.peakDayText))
 
@@ -174,5 +180,293 @@ public enum MenuModel {
         let filled = Int((fraction * 12).rounded())
         let bar = String(repeating: "▰", count: filled) + String(repeating: "▱", count: 12 - filled)
         return "\(bar)  \(Int(fraction * 100))% of \(Units.bytes(cap))"
+    }
+}
+
+// MARK: - Peaks, by download
+
+public extension Aggregator {
+
+    /// The hour today with the most downloaded. Download only, the figure
+    /// every headline uses, so a heavy upload cannot make an hour the peak
+    /// and then be shown as a download figure it never had.
+    func peakDownloadHourToday(now: Date) -> (hour: Int, totals: Totals)? {
+        let buckets = hourly(day: now, now: now)
+        guard let best = buckets.enumerated().max(by: { $0.element.bytesIn < $1.element.bytesIn }),
+              best.element.bytesIn > 0 else { return nil }
+        return (best.offset, best.element)
+    }
+
+    /// The day so far this month, or this billing cycle, with the most downloaded.
+    func peakDownloadDayThisCycle(now: Date) -> LabelledTotals? {
+        let start = cal.startOfCycle(now)
+        let days = max(1, cal.calendar.dateComponents([.day], from: start, to: now).day.map { $0 + 1 } ?? 1)
+        let series = daily(lastDays: days, now: now)
+        guard let best = series.max(by: { $0.totals.bytesIn < $1.totals.bytesIn }),
+              best.totals.bytesIn > 0 else { return nil }
+        return best
+    }
+}
+
+// MARK: - The projection, worded once
+
+/// What the month is on track for, in the same words on the menu and on the
+/// dashboard.
+///
+/// It is the one figure that adds download and upload together, because a
+/// provider's allowance counts both directions, so it says so wherever it
+/// appears. And it names the end of the month in words: "by 1 Oct", seen on
+/// 29 September, read as if the month ran into October.
+public struct ProjectionWording: Equatable {
+    /// "100.8 GB", download and upload together.
+    public let figure: String
+    /// "by the end of September", or "by the end of the cycle, 14 Oct" when a
+    /// billing cycle starts on another day.
+    public let deadline: String
+
+    /// Said beside the figure wherever it appears.
+    public static let basis = "down and up combined, as a provider counts it"
+
+    /// The menu's line. The dashboard shows the same two parts as a tile.
+    public var headline: String { "On track for \(figure) \(deadline)" }
+
+    public init(projected: Totals, now: Date, cal: BytemeterCalendar) {
+        figure = Units.bytes(projected.total)
+        // The cycle ends at the first moment of the next one, so its last
+        // day is the day before that.
+        let lastDay = cal.addDays(-1, to: cal.endOfCycle(now))
+        if cal.cycleStartDay == 1 {
+            let f = DateFormatter()
+            f.calendar = cal.calendar
+            f.timeZone = cal.calendar.timeZone
+            f.locale = Locale(identifier: "en_GB")
+            f.dateFormat = "MMMM"
+            deadline = "by the end of " + f.string(from: lastDay)
+        } else {
+            deadline = "by the end of the cycle, " + cal.dayLabel(lastDay)
+        }
+    }
+}
+
+// MARK: - Rules the app layer applies to outside text
+//
+// These sit in the engine, beside the menu's wording, so the self-test can
+// check them directly. None of them needs anything from AppKit, and the
+// macOS app is the only thing that calls them.
+
+/// One text cell of the CSV export.
+public enum CSVCell {
+
+    /// A cell starting with one of these is read by a spreadsheet as a
+    /// formula, or has the character skipped before that check. Process names
+    /// and network names come from outside, so any of them could be one.
+    static let formulaStarts: Set<Unicode.Scalar> = ["=", "+", "-", "@", "\t", "\r"]
+
+    /// Quoted, with inner quotes doubled, and with a leading apostrophe on
+    /// anything a spreadsheet would treat as a formula, the usual defence
+    /// against formula injection. Checked by Unicode scalar, because "\r\n"
+    /// is one Character in Swift and would slip past a Character check.
+    public static func text(_ value: String) -> String {
+        var safe = value
+        if let first = safe.unicodeScalars.first, formulaStarts.contains(first) {
+            safe = "'" + safe
+        }
+        return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+}
+
+/// The monthly cap as typed into Preferences.
+public enum CapInput {
+
+    /// No monthly allowance comes near 100,000 GB, and keeping below it means
+    /// the conversion to bytes can never overflow.
+    public static let largestGigabytes: Int64 = 100_000
+    public static let bytesPerGigabyte: Int64 = 1_000_000_000
+    public static let largestBytes: Int64 = largestGigabytes * bytesPerGigabyte
+
+    /// Typed text to a cap in bytes, never above `largestBytes` and never
+    /// below zero, and never a trap whatever is typed. Whole or decimal
+    /// gigabytes, with an optional "GB" after and commas between thousands.
+    /// A number too long to hold is simply above the largest, so it becomes
+    /// the largest. Anything else, a sign, an exponent, "inf", is no cap at all.
+    public static func bytes(fromText text: String) -> Int64 {
+        var digits = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if digits.lowercased().hasSuffix("gb") {
+            digits = String(digits.dropLast(2)).trimmingCharacters(in: .whitespaces)
+        }
+        digits = digits.replacingOccurrences(of: ",", with: "")
+        guard !digits.isEmpty,
+              digits.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }),
+              digits.filter({ $0 == "." }).count <= 1,
+              digits.contains(where: { $0.isNumber }),
+              let value = Double(digits), value.isFinite
+        else { return 0 }
+        let gigabytes = min(max(value, 0), Double(largestGigabytes))
+        return clamp(Int64((gigabytes * Double(bytesPerGigabyte)).rounded()))
+    }
+
+    /// A saved figure, which may have been written by anything, brought into range.
+    public static func clamp(_ bytes: Int64) -> Int64 { min(max(bytes, 0), largestBytes) }
+
+    /// What the field shows for a saved cap: "100", "1.5", or empty for none.
+    public static func text(forBytes bytes: Int64) -> String {
+        let value = clamp(bytes)
+        guard value > 0 else { return "" }
+        if value % bytesPerGigabyte == 0 { return String(value / bytesPerGigabyte) }
+        var text = String(format: "%.2f", Double(value) / Double(bytesPerGigabyte))
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return text == "0" ? "0.01" : text
+    }
+}
+
+// MARK: - Wi-Fi network names
+
+/// What macOS says about Bytemeter using Location Services, which it needs
+/// before it will give any app the Wi-Fi network name. The app maps Core
+/// Location's own status onto this, so the engine never imports Core Location.
+public enum NetworkNamePermission: Equatable {
+    case notAsked
+    case allowed
+    case denied
+    case restricted
+}
+
+/// The rules for recording network names, kept apart from Core Location so
+/// every state can be checked without a permission prompt.
+///
+/// The box in Preferences is what the user wants; Location Services is what
+/// macOS allows. A name is read only when both say yes. macOS is asked only
+/// when the user ticks the box or chooses Ask macOS, never at launch, and
+/// never while the box is off.
+public enum NetworkNames {
+
+    /// Recorded for a minute when the name was not read at all: the box was
+    /// off, or macOS had not allowed it yet. The database keeps the plain
+    /// placeholder; this is how the dashboard and the export show it.
+    public static let notRecorded = "Not recorded"
+    /// Recorded when the name was asked for and macOS gave none, for example
+    /// with Wi-Fi switched off.
+    public static let unknown = "Unknown network"
+
+    public static func displayName(_ stored: String) -> String {
+        stored == ssidPlaceholder ? notRecorded : stored
+    }
+
+    public enum Status: Equatable {
+        /// The box is off.
+        case off
+        /// The box is on and macOS allows it: names are being recorded.
+        case recording
+        /// The box was just ticked and macOS is asking; no answer yet.
+        case asking
+        /// The box is on, but this copy of Bytemeter has not been asked, as
+        /// after an update. Nothing asks at launch, so it waits for the user.
+        case notAskedYet
+        /// macOS does not allow it, so the box has been switched off.
+        case refused
+        /// Location Services is restricted on this Mac, so the box has been
+        /// switched off and cannot be turned on from here.
+        case restricted
+        /// The box is on, and Location Services was not consulted: the
+        /// dashboard built from the command line, which never touches it.
+        case unchecked
+    }
+
+    /// `permission` is nil when Location Services has not been consulted.
+    public static func status(boxTicked: Bool, permission: NetworkNamePermission?, asking: Bool) -> Status {
+        switch (boxTicked, permission) {
+        case (_, .denied?): return .refused
+        case (_, .restricted?): return .restricted
+        case (false, _): return .off
+        case (true, nil): return .unchecked
+        case (true, .allowed?): return .recording
+        case (true, .notAsked?): return asking ? .asking : .notAskedYet
+        }
+    }
+
+    /// The one gate in front of reading the name.
+    public static func shouldRead(boxTicked: Bool, permission: NetworkNamePermission?) -> Bool {
+        boxTicked && permission == .allowed
+    }
+
+    /// Whether ticking the box should ask macOS. Only when it has never been
+    /// asked: once it has answered, macOS ignores the request anyway.
+    public static func asksOnTick(_ permission: NetworkNamePermission) -> Bool {
+        permission == .notAsked
+    }
+
+    /// False when the box must be switched back off.
+    public static func keepsBoxTicked(_ permission: NetworkNamePermission) -> Bool {
+        permission != .denied && permission != .restricted
+    }
+
+    /// The button Preferences offers beside the note, if any.
+    public enum Action: Equatable {
+        case ask
+        case openSettings
+    }
+
+    public static func action(_ status: Status) -> Action? {
+        switch status {
+        case .asking, .notAskedYet: return .ask
+        case .refused: return .openSettings
+        case .off, .recording, .restricted, .unchecked: return nil
+        }
+    }
+
+    /// Under the box in Preferences, always shown.
+    public static let preferencesCaption = "Keeps a home connection separate from a hotspot or a cafe. macOS gives an app "
+        + "the Wi-Fi network name only with Location Services permission, so ticking this asks for it. Bytemeter "
+        + "reads the network name and nothing else about where the Mac is. While this is off, it does not use "
+        + "Location Services at all."
+
+    /// Where permission is granted, in the words of System Settings.
+    public static let settingsPath = "System Settings, then Privacy & Security, then Location Services"
+
+    /// The line under the caption saying where things stand, if anything needs saying.
+    public static func preferencesNote(_ status: Status) -> String? {
+        switch status {
+        case .off, .unchecked:
+            return nil
+        case .recording:
+            return "Location Services allows it, so network names are being recorded."
+        case .asking:
+            return "macOS is asking whether Bytemeter may use Location Services. Network names are recorded once "
+                + "you allow it. If no question appeared, choose Ask macOS."
+        case .notAskedYet:
+            return "Network names are not being recorded yet. macOS has not been asked on this copy of Bytemeter, "
+                + "which can happen after an update. Choose Ask macOS to ask now."
+        case .refused:
+            return "Switched off, because macOS does not allow Bytemeter to use Location Services. To allow it, "
+                + "open \(settingsPath), make sure Location Services is on, and switch on Bytemeter in the list. "
+                + "Then tick this box again."
+        case .restricted:
+            return "Switched off, because Location Services is restricted on this Mac, for example by a "
+                + "management profile, so it cannot be allowed from here."
+        }
+    }
+
+    /// The "Per network" note on the dashboard, describing what was actually recorded.
+    public static func dashboardNote(_ status: Status) -> String {
+        let legend = "\(notRecorded) covers minutes when the name was not read: before recording was switched on, "
+            + "or while macOS did not allow it. \(unknown) means macOS gave no name, for example while Wi-Fi was off."
+        switch status {
+        case .off:
+            return "Network name recording is off, so traffic is not split by network. Switching it on in "
+                + "Preferences asks macOS for Location Services, which macOS requires before it gives any app a "
+                + "Wi-Fi network name. While it is off, Bytemeter does not use Location Services at all."
+        case .recording, .unchecked:
+            return "Each minute is recorded against the Wi-Fi network the Mac was on. " + legend
+        case .asking, .notAskedYet:
+            return "Network name recording is switched on, but macOS has not yet allowed Bytemeter to use "
+                + "Location Services, so new minutes are \(notRecorded.lowercased()). Preferences can ask again. "
+                + legend
+        case .refused:
+            return "Network name recording was switched off because macOS does not allow Bytemeter to use "
+                + "Location Services. Preferences says where to allow it."
+        case .restricted:
+            return "Network name recording was switched off because Location Services is restricted on this Mac."
+        }
     }
 }

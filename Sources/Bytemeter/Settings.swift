@@ -25,7 +25,9 @@ final class Settings {
         _ssidCapture = db.flag(StateKey.ssidCapture, default: false)
         _perAppSampling = db.flag(StateKey.perAppSampling, default: true)
         _capEnabled = db.flag(StateKey.capEnabled, default: false)
-        _capBytes = db.number(StateKey.capBytes, default: 0)
+        // Brought into range, so a figure saved by anything can never make the
+        // conversions to and from gigabytes overflow.
+        _capBytes = CapInput.clamp(db.number(StateKey.capBytes, default: 0))
         _cycleStartDay = Int(db.number(StateKey.cycleStartDay, default: 1))
     }
 

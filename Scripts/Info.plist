@@ -19,8 +19,17 @@
   <!-- A menu bar app: no Dock icon and no app menu. -->
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-  <!-- Shown by macOS only if network name recording is switched on in Preferences. -->
+  <!--
+    Location Services, asked for only when network name recording is switched
+    on in Preferences: macOS gives an app the Wi-Fi network name only with this
+    permission. The app calls requestWhenInUseAuthorization, which macOS
+    ignores unless NSLocationWhenInUseUsageDescription is present.
+    NSLocationUsageDescription is the older macOS key for the same question,
+    kept so the wording is the same whichever key a version of macOS reads.
+  -->
   <key>NSLocationWhenInUseUsageDescription</key>
-  <string>Bytemeter reads the name of the Wi-Fi network you are on, so it can keep usage on one network separate from another, such as a hotspot or a cafe. This is only asked for if you switch network name recording on in Preferences.</string>
+  <string>Bytemeter reads the name of the Wi-Fi network this Mac is connected to, so it can keep usage on one network separate from another, such as a hotspot. macOS counts a network name as location information. Bytemeter does not use your location for anything else.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>Bytemeter reads the name of the Wi-Fi network this Mac is connected to, so it can keep usage on one network separate from another, such as a hotspot. macOS counts a network name as location information. Bytemeter does not use your location for anything else.</string>
 </dict>
 </plist>

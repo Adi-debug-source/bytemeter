@@ -14,11 +14,11 @@ final class NettopSampler {
 
     /// One shot invocations rather than a long lived stream.
     ///
-    /// The brief preferred a streaming subprocess, and that was tried first.
+    /// A streaming subprocess would have been the better shape, and was tried first.
     /// `nettop` without -L is a curses program: with no terminal it exits with
     /// "Error opening terminal: unknown", and given a TERM it emits cursor
     /// positioning escape sequences rather than rows. Parsing that would be
-    /// guesswork, so the documented fallback is used instead. Verified 20
+    /// guesswork, so it is run once per sample instead. Verified 20
     /// September 2026.
     private static let arguments = ["-P", "-L", "1", "-x", "-J", "bytes_in,bytes_out"]
 

@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings: Settings!
     private var sampler: Sampler!
     private var statusController: StatusItemController!
+    private var networkNames: NetworkNameAccess!
     private var preferences: PreferencesWindow?
     private var maintenanceTimer: Timer?
 
@@ -44,6 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let queue = dbQueue
         let database = db!
         settings = Settings(db: database, write: { work in queue.async { work() } })
+
+        // Before the sampler, so its first reading already knows whether a
+        // network name may be read. This only looks; it never asks macOS.
+        networkNames = NetworkNameAccess(settings: settings)
+        networkNames.start()
 
         sampler = Sampler(db: db, settings: settings, queue: dbQueue)
         statusController = StatusItemController(settings: settings) { [weak self] body in
@@ -100,10 +106,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func openDashboard() {
         let folder = Self.supportFolder
         let cal = BytemeterCalendar(cycleStartDay: settings.cycleStartDay)
+        let networkStatus = networkNames.status
         dbQueue.async { [weak self] in
             guard let self else { return }
             let aggregator = Aggregator(db: self.db, cal: cal)
-            let data = DashboardData(aggregator: aggregator, settings: self.settings, now: Date())
+            let data = DashboardData(aggregator: aggregator, settings: self.settings, now: Date(),
+                                     networkNames: networkStatus)
             do {
                 let url = try DashboardGenerator.write(data: data, folder: folder)
                 DispatchQueue.main.async { NSWorkspace.shared.open(url) }
@@ -115,7 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openPreferences() {
         if preferences == nil {
-            preferences = PreferencesWindow(settings: settings) { [weak self] in
+            preferences = PreferencesWindow(settings: settings, networkNames: networkNames) { [weak self] in
                 self?.sampler.updateRateTimer()
                 self?.statusController.refresh()
             }
@@ -123,8 +131,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferences?.show()
     }
 
-    /// Clicking cycles the total and right-clicking opens the menu, which is
-    /// worth showing once rather than leaving him to find it.
+    /// A click opens the menu; right-click, a two-finger click or Control-click
+    /// cycles the total. The menu opens once by itself on the first launch, so
+    /// its figures and that hint are seen without anyone having to find them.
     private func showFirstRunHintIfNeeded() {
         let database = db!
         dbQueue.async { [weak self] in

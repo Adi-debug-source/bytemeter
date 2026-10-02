@@ -55,8 +55,8 @@ enum DashboardGenerator {
             \(statRow(cal.cycleLabel(data.generatedAt), data.thisMonth))
             \(statRow("Last 30 days", data.last30))
             <div class="stat projection">
-              <dt>On track for</dt>
-              <dd>\(esc(Units.bytes(data.projected.total)))<span class="qualifier">by \(esc(cal.dayLabel(data.cycleEnd)))</span></dd>
+              <dt>On track for<span class="since">\(esc(ProjectionWording.basis))</span></dt>
+              <dd>\(esc(data.projection.figure))<span class="qualifier">\(esc(data.projection.deadline))</span></dd>
             </div>
             \(allTimeRow(data))
           </dl>
@@ -287,15 +287,13 @@ enum DashboardGenerator {
         }.joined() + "</dl>"
     }
 
+    /// The note always says what was really recorded; the list follows only
+    /// while the box is on, with the placeholder shown in words.
     private static func networkSection(_ data: DashboardData) -> String {
-        guard data.ssidCapture else {
-            return """
-            <p class="note">Network name capture is off, so everything is recorded against a single placeholder.
-            Turning it on in Preferences asks macOS for Location Services, which is what reading a Wi-Fi network
-            name needs on this version. While it is off, Bytemeter never touches Location Services at all.</p>
-            """
-        }
-        return breakdownList(data.bySSID)
+        let note = "<p class=\"note\">\(esc(NetworkNames.dashboardNote(data.networkNames)))</p>"
+        guard data.ssidCapture else { return note }
+        let named = data.bySSID.map { (NetworkNames.displayName($0.0), $0.1) }
+        return note + breakdownList(named)
     }
 
     private static func capPanel(used: UInt64, cap: UInt64) -> String {
@@ -357,9 +355,10 @@ enum DashboardGenerator {
     /// spreadsheet or a script without any unpicking of sections.
     static func csvExport(_ data: DashboardData) -> String {
         var lines = ["scope,label,bytes_in,bytes_out,total_gb"]
+        // Every label goes through CSVCell: process and network names come
+        // from outside and could be written to run as a spreadsheet formula.
         func add(_ scope: String, _ label: String, _ totals: Totals) {
-            let safe = label.replacingOccurrences(of: "\"", with: "'")
-            lines.append("\(scope),\"\(safe)\",\(totals.bytesIn),\(totals.bytesOut),"
+            lines.append("\(scope),\(CSVCell.text(label)),\(totals.bytesIn),\(totals.bytesOut),"
                        + String(format: "%.6f", Units.gigabytes(totals.total)))
         }
         for (index, totals) in data.hourly.enumerated() {
@@ -373,7 +372,7 @@ enum DashboardGenerator {
         for talker in data.topTalkersToday { add("process_today", talker.name, talker.totals) }
         for talker in data.topTalkersMonth { add("process_month", talker.name, talker.totals) }
         for entry in data.byInterface { add("interface_30d", entry.0, entry.1) }
-        for entry in data.bySSID { add("network_30d", entry.0, entry.1) }
+        for entry in data.bySSID { add("network_30d", NetworkNames.displayName(entry.0), entry.1) }
         add("idle_30d", "Idle", data.idleTotals)
         add("idle_30d", "Active", data.activeTotals)
         return lines.joined(separator: "\n") + "\n"

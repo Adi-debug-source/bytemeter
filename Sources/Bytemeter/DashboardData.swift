@@ -30,12 +30,15 @@ struct DashboardData {
     let byInterface: [(String, Totals)]
     let bySSID: [(String, Totals)]
 
-    let projected: Totals
-    let cycleEnd: Date
+    /// Download and upload together, worded as the menu words it.
+    let projection: ProjectionWording
+    /// Both by download, as the menu has them.
     let peakHour: (hour: Int, totals: Totals)?
     let peakDay: LabelledTotals?
 
     let ssidCapture: Bool
+    /// Where recording network names stands, for the "Per network" note.
+    let networkNames: NetworkNames.Status
     let perAppSampling: Bool
     let capEnabled: Bool
     let capBytes: UInt64
@@ -43,7 +46,10 @@ struct DashboardData {
     let countingSince: Date?
     let events: [(ts: Int64, kind: String, detail: String)]
 
-    init(aggregator: Aggregator, settings: Settings, now: Date) {
+    /// `networkNames` comes from the running app, which knows what macOS has
+    /// said. Without it, as from the command line, Location Services is not
+    /// consulted and the note only says whether the box is on.
+    init(aggregator: Aggregator, settings: Settings, now: Date, networkNames: NetworkNames.Status? = nil) {
         generatedAt = now
         cal = aggregator.cal
 
@@ -84,13 +90,13 @@ struct DashboardData {
         byInterface = aggregator.byInterface(cal.rollingDays(30, now: now))
         bySSID = aggregator.bySSID(cal.rollingDays(30, now: now))
 
-        let forecast = aggregator.projection(now: now)
-        projected = forecast.projected
-        cycleEnd = forecast.cycleEnd
-        peakHour = aggregator.peakHourToday(now: now)
-        peakDay = aggregator.peakDayThisCycle(now: now)
+        projection = ProjectionWording(projected: aggregator.projection(now: now).projected, now: now, cal: cal)
+        peakHour = aggregator.peakDownloadHourToday(now: now)
+        peakDay = aggregator.peakDownloadDayThisCycle(now: now)
 
         ssidCapture = settings.ssidCapture
+        self.networkNames = networkNames
+            ?? NetworkNames.status(boxTicked: settings.ssidCapture, permission: nil, asking: false)
         perAppSampling = settings.perAppSampling
         capEnabled = settings.capEnabled
         capBytes = UInt64(max(0, settings.capBytes))

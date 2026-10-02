@@ -5,17 +5,22 @@ import BytemeterCore
 final class PreferencesWindow: NSWindowController {
 
     private let settings: Settings
+    private let networkNames: NetworkNameAccess
     private let onChange: () -> Void
 
     private var liveSpeedBox: NSButton!
     private var ssidBox: NSButton!
+    private var ssidNote: NSTextField!
+    private var ssidAction: NSButton!
     private var perAppBox: NSButton!
     private var capBox: NSButton!
     private var capField: NSTextField!
     private var cycleField: NSTextField!
+    private var stack: NSStackView!
 
-    init(settings: Settings, onChange: @escaping () -> Void) {
+    init(settings: Settings, networkNames: NetworkNameAccess, onChange: @escaping () -> Void) {
         self.settings = settings
+        self.networkNames = networkNames
         self.onChange = onChange
 
         let window = NSWindow(
@@ -27,12 +32,14 @@ final class PreferencesWindow: NSWindowController {
         window.center()
         super.init(window: window)
         buildContent()
+        networkNames.onUpdate = { [weak self] in self?.refreshNetworkName() }
+        refreshNetworkName()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     private func buildContent() {
-        let stack = NSStackView()
+        stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -49,14 +56,24 @@ final class PreferencesWindow: NSWindowController {
 
         ssidBox = checkbox("Record the Wi-Fi network name", settings.ssidCapture, #selector(toggleSSID))
         stack.addArrangedSubview(ssidBox)
-        stack.addArrangedSubview(caption("Keeps a home connection separate from a hotspot or a cafe. Reading a network name needs Location Services on this version of macOS, so macOS will ask. While this is off, Bytemeter never touches Location Services."))
+        stack.addArrangedSubview(caption(NetworkNames.preferencesCaption))
+        // Where things stand with Location Services, in full contrast because
+        // it is news rather than description, and a button when one helps.
+        ssidNote = caption("")
+        ssidNote.textColor = .labelColor
+        stack.addArrangedSubview(ssidNote)
+        ssidAction = NSButton(title: "", target: self, action: #selector(networkNameAction))
+        ssidAction.bezelStyle = .rounded
+        ssidAction.controlSize = .small
+        ssidAction.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        stack.addArrangedSubview(ssidAction)
 
         stack.addArrangedSubview(divider())
 
         capBox = checkbox("Warn me against a monthly cap", settings.capEnabled, #selector(toggleCap))
         stack.addArrangedSubview(capBox)
 
-        capField = NSTextField(string: settings.capBytes > 0 ? String(settings.capBytes / 1_000_000_000) : "")
+        capField = NSTextField(string: CapInput.text(forBytes: settings.capBytes))
         capField.placeholderString = "GB, for example 100"
         capField.target = self
         capField.action = #selector(capValueChanged)
@@ -70,15 +87,52 @@ final class PreferencesWindow: NSWindowController {
         cycleField.translatesAutoresizingMaskIntoConstraints = false
         cycleField.widthAnchor.constraint(equalToConstant: 140).isActive = true
         stack.addArrangedSubview(labelled("Cycle starts on day", cycleField))
-        stack.addArrangedSubview(caption("1 means calendar months, which is what you are on. Change it only if your provider bills from a different day."))
+        stack.addArrangedSubview(caption("1 means calendar months, the usual case. Change it only if your provider bills from a different day of the month."))
 
         guard let content = window?.contentView else { return }
         content.addSubview(stack)
+        // Pinned on all four sides; `fitWindow` then sizes the window to it.
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             stack.topAnchor.constraint(equalTo: content.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
+    }
+
+    /// The box, the note and the button, from where things stand now. Called
+    /// when the window is built, when it is shown, and whenever macOS answers.
+    func refreshNetworkName() {
+        let status = networkNames.status
+        ssidBox.state = settings.ssidCapture ? .on : .off
+        let note = NetworkNames.preferencesNote(status)
+        ssidNote.stringValue = note ?? ""
+        ssidNote.isHidden = note == nil
+        switch NetworkNames.action(status) {
+        case .ask?:
+            ssidAction.title = "Ask macOS"
+            ssidAction.isHidden = false
+        case .openSettings?:
+            ssidAction.title = "Open Location Services settings"
+            ssidAction.isHidden = false
+        case nil:
+            ssidAction.isHidden = true
+        }
+        fitWindow()
+    }
+
+    /// Gives the window exactly the height its controls need, so it grows for
+    /// a long note and shrinks again when the note goes, rather than clipping
+    /// one or leaving a gap. The title bar stays where it is.
+    private func fitWindow() {
+        guard let window, let content = window.contentView else { return }
+        content.layoutSubtreeIfNeeded()
+        let height = ceil(stack.fittingSize.height)
+        guard abs(content.frame.height - height) > 0.5 else { return }
+        var frame = window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: content.frame.width, height: height))
+        frame.origin.x = window.frame.minX
+        frame.origin.y = window.frame.maxY - frame.height
+        window.setFrame(frame, display: window.isVisible)
     }
 
     // MARK: - Controls
@@ -127,8 +181,29 @@ final class PreferencesWindow: NSWindowController {
     }
 
     @objc private func toggleSSID() {
-        settings.ssidCapture = ssidBox.state == .on
+        if ssidBox.state == .on {
+            networkNames.switchOn()
+        } else {
+            networkNames.switchOff()
+        }
+        refreshNetworkName()
         onChange()
+    }
+
+    @objc private func networkNameAction() {
+        switch NetworkNames.action(networkNames.status) {
+        case .ask?:
+            networkNames.askAgain()
+        case .openSettings?:
+            // Opens the Location Services page of System Settings, where only
+            // the user can change anything.
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") {
+                NSWorkspace.shared.open(url)
+            }
+        case nil:
+            break
+        }
+        refreshNetworkName()
     }
 
     @objc private func toggleCap() {
@@ -136,9 +211,11 @@ final class PreferencesWindow: NSWindowController {
         onChange()
     }
 
+    /// Clamped in the engine to a range that cannot overflow, so no typed
+    /// number can crash the app, and the field shows what was kept.
     @objc private func capValueChanged() {
-        let gigabytes = Int64(capField.stringValue.trimmingCharacters(in: .whitespaces)) ?? 0
-        settings.capBytes = max(0, gigabytes) * 1_000_000_000
+        settings.capBytes = CapInput.bytes(fromText: capField.stringValue)
+        capField.stringValue = CapInput.text(forBytes: settings.capBytes)
         onChange()
     }
 
@@ -151,6 +228,7 @@ final class PreferencesWindow: NSWindowController {
     }
 
     func show() {
+        refreshNetworkName()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

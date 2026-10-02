@@ -1276,6 +1276,7 @@ do {
     check(!FileManager.default.fileExists(atPath: folder + "/nothing.db"), "and nothing is created in its place")
 }
 
+runAppChecks()
 // MARK: - Result
 
 print("Bytemeter self-test: \(checksRun) checks run, \(failures.count) failed.")
