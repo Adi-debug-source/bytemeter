@@ -57,7 +57,7 @@ The menu bar item shows one total, with monospaced digits so its width does not 
 
 The menu holds:
 
-- **Totals:** today, yesterday, this week (from Monday), the last 7 days, this month (from the 1st), the last 30 days, and all time since counting began. The four totals the menu bar can cycle through (today, this week, this month and all time) are drawn at full contrast; the rest are grey. All time shows its start date and day count beneath it, for example "since 1 Jan 2026 · 90 days counted".
+- **Totals:** today, yesterday, this week (from Monday), the last 7 days, this month (from the 1st), the last 30 days, and all time since counting began. The four totals the menu bar can cycle through (today, this week, this month and all time) are drawn at full contrast; the rest are grey. All time shows its start date and day count beneath it, for example "since 1 Jan 2026 · 90.0 days counted".
 - **Averages:** per hour today, per day this week, per day this month, and per day across all time.
 - A **month-end projection** (download and upload combined, as a provider counts them), the **peak hour** and the **peak day**. Every other headline figure is download; the projection is the one that adds the two together, and the screens say so.
 - **Top talkers** today, per app.
@@ -67,7 +67,7 @@ The menu holds:
 
 Open dashboard writes one dark, self-contained HTML page and opens it. It is regenerated each time, with hand-rolled inline SVG and native SVG tooltips: zero JavaScript, zero network requests. A CSV export sits beside it as a real file.
 
-Eight sections:
+Seven sections, and an eighth once there are two months of data:
 
 1. Today, by hour.
 2. The last 30 days, with a rolling 7-day average.
@@ -76,7 +76,7 @@ Eight sections:
 5. Idle against active.
 6. Per interface.
 7. Per network.
-8. Month by month.
+8. Month by month, once a second month begins.
 
 ![The last 30 days, with a rolling 7-day average](docs/thirty-days.png)
 
@@ -94,7 +94,7 @@ Minute rows are kept for 90 days, then collapsed to hourly, so on a typical mach
 
 Nothing leaves the machine. Bytemeter makes no network requests at all, not for charts, fonts or updates, and the dashboard fetches nothing when you open it.
 
-Reading your Wi-Fi network name is off by default, and while it is off Bytemeter never touches Location Services. Switching it on in Preferences asks macOS for Location Services, because macOS treats a network name as location information. If you refuse, the feature switches itself back off and tells you where to allow it. Because each build is ad-hoc signed afresh, macOS may ask again after an update.
+Reading your Wi-Fi network name is off by default, and while it is off Bytemeter never touches Location Services. Switching it on in Preferences asks macOS for Location Services, because macOS treats a network name as location information. If you refuse, the feature switches itself back off and tells you where to allow it. Because each build is ad-hoc signed afresh, macOS may forget the permission after an update. Bytemeter never asks again on its own: Preferences says that network names are not being recorded, and offers to ask macOS again.
 
 ## How accurate it is
 

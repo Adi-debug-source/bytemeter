@@ -13,7 +13,7 @@ First public release. Bytemeter was built as a personal utility in September 202
 ### The dashboard
 
 - One dark, self-contained HTML page, regenerated on each open, with hand-rolled inline SVG and native tooltips. Zero JavaScript, zero network requests.
-- Seven sections: today by hour, the last 30 days with a rolling 7-day average, a day-against-hour heatmap, top talkers, idle against active, per interface and per network. A CSV export sits beside it.
+- Seven sections: today by hour, the last 30 days with a rolling 7-day average, a day-against-hour heatmap, top talkers, idle against active, per interface and per network, and month by month once a second month begins. A CSV export sits beside it.
 
 ### Counting and accuracy
 
