@@ -96,6 +96,22 @@ Nothing leaves the machine. Bytemeter makes no network requests at all, not for 
 
 Reading your Wi-Fi network name is off by default, and while it is off Bytemeter never touches Location Services. Switching it on in Preferences asks macOS for Location Services, because macOS treats a network name as location information. If you refuse, the feature switches itself back off and tells you where to allow it. Because each build is ad-hoc signed afresh, macOS may ask again after an update.
 
+## How accurate it is
+
+Bytemeter aims to be exact about what it can measure, and plain about what it cannot.
+
+- **The count is exact.** Bytemeter records exactly what the kernel's own interface counters say, to the byte. On the Mac it was developed on, the sum of every saved minute since the last reboot matched the kernel counter's own movement over the same period to 0 bytes in and 0 bytes out, checked repeatedly over several days, across two reinstalls and a database migration.
+- **Where it can miss bytes, and by how much.** The gaps are small and bounded:
+  1. the last few seconds before a shutdown or restart, at most one 5-second reading, because the counter starts again from zero at boot;
+  2. an interface reset that is not a reboot, up to one 5-second reading, because there is no start time to measure from;
+  3. traffic between quitting Bytemeter and restarting the Mac before you open it again. Quitting on its own loses nothing, because the next launch picks up everything since the last reading, and a crash loses nothing either, because it restarts within seconds and does the same;
+  4. traffic from before Bytemeter was first installed, which is not counted by design.
+- **Timing.** Figures are kept per minute. A reading that straddles a minute boundary lands in the later minute, so a minute can be out by at most 5 seconds' worth of traffic, and hourly and daily figures the same way, only at their edges. Sleep periods are the exception: the bytes are exact, but their timing is spread evenly and marked as estimated.
+- **Rounding on screen.** The menu and the dashboard round for readability: under 10 GB they show two decimals (3.21 GB, so plus or minus 5 MB), and from 10 GB up one decimal (plus or minus 50 MB). The database and the CSV export keep exact byte counts.
+- **Per-app figures are a guide, not an exact split.** They come from `nettop` and only ever under-report. On the development Mac about 80% of interface bytes were attributed to an app; the rest belongs to processes that exited between samples, and to traffic `nettop` does not attribute.
+- **Against a provider's or router's figure, expect small differences, not a match to the byte.** A provider or router counts at its own point in the network and in its own way, and a router counts every device on the connection, while Bytemeter counts only what this Mac's own interfaces moved.
+- **Units are decimal** (1 GB = 1,000,000,000 bytes), as providers count; see Counting below.
+
 ## What it does not claim
 
 Bytemeter is careful about saying what it knows and what it does not.
