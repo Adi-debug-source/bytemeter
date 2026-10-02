@@ -116,8 +116,14 @@ public struct Aggregator {
     }
 
     public func earliestMinute() -> Int64? {
+        earliestMinute(in: MinuteRange(start: 1, end: Int64.max))
+    }
+
+    /// The earliest minute on record inside a range, or nil if it holds none.
+    public func earliestMinute(in range: MinuteRange) -> Int64? {
         var found: Int64?
-        try? db.query("SELECT MIN(minute) FROM samples;") { row in
+        try? db.query("SELECT MIN(minute) FROM samples WHERE minute>=? AND minute<?;",
+                      [.int(max(1, range.start)), .int(range.end)]) { row in
             let v = row.int(0)
             if v > 0 { found = v }
         }
@@ -126,19 +132,18 @@ public struct Aggregator {
 
     // MARK: - Shaped views
 
-    /// 24 buckets for one local day. Hours run 0 to 23 in local time.
-    /// On the two clock change days a 23 or 25 hour day folds into the same 24
-    /// slots; the daily total stays exact, only the hour split shifts.
+    /// 24 buckets for one local day. Hours run 0 to 23 in local time, each
+    /// row going to the hour the clock on the wall showed, from the calendar.
+    /// On a clock change day that is the only right answer: on the day the
+    /// clocks go back, 01:00 happens twice and both land in the 01:00 slot,
+    /// and on the day they go forward the skipped hour's slot is empty.
     /// Nothing after `now` is counted, so a page drawn as of an earlier moment
     /// shows that moment's day, not the rest of it.
     public func hourly(day: Date, now: Date) -> [Totals] {
-        let start = cal.startOfDay(day)
-        let end = cal.addDays(1, to: start)
-        let startMinute = BytemeterCalendar.minute(from: start)
-        let dayRange = cal.range(from: start, to: end)
+        let dayRange = cal.range(from: cal.startOfDay(day), to: cal.startOfDay(day, offsetBy: 1))
         var buckets = [Totals](repeating: Totals(), count: 24)
         for row in minuteRows(MinuteRange(start: dayRange.start, end: min(dayRange.end, endMinute(now)))) {
-            let index = Int(min(max((row.minute - startMinute) / 60, 0), 23))
+            let index = min(max(cal.hour(ofMinute: row.minute), 0), 23)
             buckets[index] = buckets[index] + row.totals
         }
         return buckets
@@ -146,8 +151,8 @@ public struct Aggregator {
 
     /// Daily totals for the last `count` days, oldest first, today last.
     public func daily(lastDays count: Int, now: Date) -> [LabelledTotals] {
-        let firstDay = cal.addDays(-(count - 1), to: cal.startOfDay(now))
-        let starts = cal.dayStarts(from: firstDay, dayCount: count)
+        guard count > 0 else { return [] }
+        let starts = cal.dayStarts(from: cal.startOfDay(now, offsetBy: -(count - 1)), dayCount: count)
         let endMinute = BytemeterCalendar.minute(from: now) + 1
         var buckets = [Totals](repeating: Totals(), count: count)
 
@@ -163,35 +168,46 @@ public struct Aggregator {
 
     /// Weekday against hour. This is the view that shows when the data really goes.
     public func heatmap(lastDays count: Int, now: Date) -> [HeatCell] {
-        let firstDay = cal.addDays(-(count - 1), to: cal.startOfDay(now))
-        let starts = cal.dayStarts(from: firstDay, dayCount: count)
-        let endMinute = BytemeterCalendar.minute(from: now) + 1
         var grid = [Totals](repeating: Totals(), count: 7 * 24)
+        guard count > 0 else { return (0..<(7 * 24)).map { HeatCell(weekday: $0 / 24, hour: $0 % 24, totals: grid[$0]) } }
+        let starts = cal.dayStarts(from: cal.startOfDay(now, offsetBy: -(count - 1)), dayCount: count)
+        let endMinute = BytemeterCalendar.minute(from: now) + 1
 
         for row in minuteRows(MinuteRange(start: starts[0], end: endMinute)) {
             guard let index = dayIndex(for: row.minute, in: starts) else { continue }
             let date = BytemeterCalendar.date(fromMinute: starts[index])
             let weekday = mondayIndex(date)
-            let hour = Int(min(max((row.minute - starts[index]) / 60, 0), 23))
+            let hour = min(max(cal.hour(ofMinute: row.minute), 0), 23)   // the wall clock hour, as in `hourly`
             let slot = weekday * 24 + hour
             grid[slot] = grid[slot] + row.totals
         }
         return (0..<(7 * 24)).map { HeatCell(weekday: $0 / 24, hour: $0 % 24, totals: grid[$0]) }
     }
 
-    /// One row per calendar month that has any data, oldest first.
+    /// The most months `monthly` lists: a decade.
+    public static let maxMonths = 120
+
+    /// One row per month (or billing cycle) from the first with any data to
+    /// the current one, oldest first, empty months between included. Never
+    /// more than `maxMonths`, and the newest are the ones kept: a stray row
+    /// years in the past, from a clock that was wrong for a moment, must not
+    /// push the current month off the end.
     public func monthly(now: Date) -> [LabelledTotals] {
-        guard let earliest = earliestMinute() else { return [] }
+        let current = cal.startOfCycle(now)
+        let oldestNoon = cal.calendar.date(bySettingHour: 12, minute: 0, second: 0, of: current) ?? current
+        let oldest = cal.startOfCycle(
+            cal.calendar.date(byAdding: .month, value: -(Self.maxMonths - 1), to: oldestNoon) ?? oldestNoon)
+        guard let earliest = earliestMinute(in: MinuteRange(start: BytemeterCalendar.minute(from: oldest),
+                                                            end: endMinute(now))) else { return [] }
         var out: [LabelledTotals] = []
         var cursor = cal.startOfCycle(BytemeterCalendar.date(fromMinute: earliest))
         let limit = cal.endOfCycle(now)
-        while cursor < limit {
+        while cursor < limit && out.count < Self.maxMonths {
             let next = cal.endOfCycle(cursor)
             let month = cal.range(from: cursor, to: next)
             let totals = totals(MinuteRange(start: month.start, end: min(month.end, endMinute(now))))
             out.append(LabelledTotals(label: cal.monthLabel(cursor), date: cursor, totals: totals))
             cursor = next
-            if out.count > 120 { break }   // a decade is plenty of guard rail
         }
         return out
     }
@@ -268,8 +284,8 @@ public struct Aggregator {
         let totalDays = max(elapsedDays, end.timeIntervalSince(start) / 86_400.0)
         let soFar = totals(cal.thisCycle(now))
         let factor = totalDays / elapsedDays
-        return (Totals(bytesIn: UInt64(Double(soFar.bytesIn) * factor),
-                       bytesOut: UInt64(Double(soFar.bytesOut) * factor)), end)
+        return (Totals(bytesIn: Self.clampedBytes(Double(soFar.bytesIn) * factor),
+                       bytesOut: Self.clampedBytes(Double(soFar.bytesOut) * factor)), end)
     }
 
     /// Every byte on record from the earliest minute up to and including the
@@ -295,8 +311,7 @@ public struct Aggregator {
     }
 
     public func peakDayThisCycle(now: Date) -> LabelledTotals? {
-        let start = cal.startOfCycle(now)
-        let days = max(1, cal.calendar.dateComponents([.day], from: start, to: now).day.map { $0 + 1 } ?? 1)
+        let days = max(1, cal.daysBetween(cal.startOfCycle(now), now) + 1)
         let series = daily(lastDays: days, now: now)
         guard let best = series.max(by: { $0.totals.total < $1.totals.total }),
               best.totals.total > 0 else { return nil }
@@ -311,8 +326,16 @@ public struct Aggregator {
 
     private func divide(_ totals: Totals, by divisor: Double) -> Totals {
         guard divisor > 0 else { return Totals() }
-        return Totals(bytesIn: UInt64(Double(totals.bytesIn) / divisor),
-                      bytesOut: UInt64(Double(totals.bytesOut) / divisor))
+        return Totals(bytesIn: Self.clampedBytes(Double(totals.bytesIn) / divisor),
+                      bytesOut: Self.clampedBytes(Double(totals.bytesOut) / divisor))
+    }
+
+    /// A Double as bytes. `UInt64(_:)` traps on NaN, on a negative value and
+    /// on anything from 2^64 up, which includes `Double(UInt64.max)` itself,
+    /// so the conversion is clamped rather than trusted.
+    static func clampedBytes(_ value: Double) -> UInt64 {
+        guard value.isFinite, value > 0 else { return 0 }
+        return value >= 0x1p64 ? UInt64.max : UInt64(value)    // 0x1p64 is 2^64 exactly
     }
 
     /// Which day does this minute belong to, given local midnights.
@@ -328,7 +351,7 @@ public struct Aggregator {
         return answer
     }
 
-    /// 0 is Monday, matching the house convention that the week starts Monday.
+    /// 0 is Monday: weeks start on Monday, as in ISO 8601, whatever the region setting.
     private func mondayIndex(_ date: Date) -> Int {
         let weekday = cal.calendar.component(.weekday, from: date)   // 1 is Sunday
         return (weekday + 5) % 7

@@ -23,6 +23,11 @@ func reading(_ name: String, _ bytesIn: UInt64, _ bytesOut: UInt64) -> Interface
     InterfaceReading(name: name, bytesIn: bytesIn, bytesOut: bytesOut)
 }
 
+/// A reading from the 32 bit getifaddrs fallback.
+func reading32(_ name: String, _ bytesIn: UInt64, _ bytesOut: UInt64) -> InterfaceReading {
+    InterfaceReading(name: name, bytesIn: bytesIn, bytesOut: bytesOut, source: .ifdata32)
+}
+
 func makeDatabase() -> Database {
     let path = NSTemporaryDirectory() + "bytemeter_selftest_\(UUID().uuidString).db"
     return try! Database(path: path)
@@ -35,7 +40,7 @@ let london = BytemeterCalendar(timeZone: TimeZone(identifier: "Europe/London")!)
 do {
     let previous = ["en0": RawCounter(bytesIn: 1_000, bytesOut: 500, at: 600)]
     let outcome = Ledger.ingest(readings: [reading("en0", 4_000, 800)],
-                                previous: previous, now: 605, source: .mib64, reason: .normal, bootTime: nil)
+                                previous: previous, now: 605, reason: .normal, bootTime: nil)
     expect(outcome.buckets.count, 1, "normal delta writes one bucket")
     expect(outcome.buckets.first?.bytesIn, 3_000, "normal delta down")
     expect(outcome.buckets.first?.bytesOut, 300, "normal delta up")
@@ -47,7 +52,7 @@ do {
 
 do {
     let outcome = Ledger.ingest(readings: [reading("en0", 4_700_000_000, 85_000_000)],
-                                previous: [:], now: 600, source: .mib64, reason: .relaunch, bootTime: nil)
+                                previous: [:], now: 600, reason: .relaunch, bootTime: nil)
     check(outcome.buckets.isEmpty, "first sight of an interface must record no traffic")
     expect(outcome.events.first?.kind, "baseline", "first sight logs a baseline event")
     expect(outcome.baselines["en0"]?.bytesIn, 4_700_000_000, "first sight sets the baseline")
@@ -58,7 +63,7 @@ do {
 do {
     let previous = ["en0": RawCounter(bytesIn: 4_700_000_000, bytesOut: 85_000_000, at: 600)]
     let outcome = Ledger.ingest(readings: [reading("en0", 12_000, 3_000)],
-                                previous: previous, now: 900, source: .mib64, reason: .relaunch, bootTime: nil)
+                                previous: previous, now: 900, reason: .relaunch, bootTime: nil)
     check(outcome.buckets.isEmpty, "a counter reset must not write any traffic")
     expect(outcome.events.first?.kind, "counter_reset", "a reset is logged as an event")
     expect(outcome.baselines["en0"]?.bytesIn, 12_000, "a reset moves the baseline to the new value")
@@ -69,8 +74,8 @@ do {
 do {
     let nearCeiling: UInt64 = 4_294_967_296 - 1_000
     let previous = ["en0": RawCounter(bytesIn: nearCeiling, bytesOut: 10, at: 600)]
-    let outcome = Ledger.ingest(readings: [reading("en0", 500, 20)],
-                                previous: previous, now: 605, source: .ifdata32, reason: .normal, bootTime: nil)
+    let outcome = Ledger.ingest(readings: [reading32("en0", 500, 20)],
+                                previous: previous, now: 605, reason: .normal, bootTime: nil)
     expect(outcome.buckets.count, 1, "a wrap still records traffic")
     expect(outcome.buckets.first?.bytesIn, 1_500, "wrap carries 1,000 to the ceiling plus 500 after it")
     expect(outcome.events.first?.kind, "counter_wrap", "a wrap is logged as a wrap")
@@ -78,8 +83,8 @@ do {
 
 do {
     let previous = ["en0": RawCounter(bytesIn: 500_000, bytesOut: 400, at: 600)]
-    let outcome = Ledger.ingest(readings: [reading("en0", 100, 10)],
-                                previous: previous, now: 605, source: .ifdata32, reason: .normal, bootTime: nil)
+    let outcome = Ledger.ingest(readings: [reading32("en0", 100, 10)],
+                                previous: previous, now: 605, reason: .normal, bootTime: nil)
     check(outcome.buckets.isEmpty, "a fall far from the 32 bit ceiling is a reboot, not a wrap")
     expect(outcome.events.first?.kind, "counter_reset", "that case is logged as a reset")
 }
@@ -90,7 +95,7 @@ do {
     let previous = ["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: 600)]   // minute 10
     let now: Int64 = 600 + 3_600                                                 // minute 70
     let outcome = Ledger.ingest(readings: [reading("en0", 1_000 + 100_003, 100 + 61)],
-                                previous: previous, now: now, source: .mib64, reason: .sleep, bootTime: nil)
+                                previous: previous, now: now, reason: .sleep, bootTime: nil)
     expect(outcome.buckets.count, 60, "one bucket per elapsed minute")
     expect(outcome.buckets.first?.minute, 11, "spreading starts the minute after the last reading")
     expect(outcome.buckets.last?.minute, 70, "spreading ends at the current minute")
@@ -106,7 +111,7 @@ do {
 do {
     let previous = ["en0": RawCounter(bytesIn: 1_000, bytesOut: 0, at: 600)]
     let outcome = Ledger.ingest(readings: [reading("en0", 601_000, 0)],
-                                previous: previous, now: 600 + 600, source: .mib64, reason: .relaunch, bootTime: nil)
+                                previous: previous, now: 600 + 600, reason: .relaunch, bootTime: nil)
     let totalIn = outcome.buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }
     expect(totalIn, 600_000, "a relaunch recovers the traffic from while it was down")
     expect(outcome.events.first?.kind, "gap_relaunch", "the downtime is logged")
@@ -178,7 +183,7 @@ do {
     let everything = MinuteRange(start: 0, end: 9_999_999_999)
     let aggregator = Aggregator(db: db, cal: london)
     expect(aggregator.totals(range).bytesIn, expected, "totals before pruning")
-    let collapsed = Maintenance.prune(db: db, now: now)
+    let collapsed = try! Maintenance.prune(db: db, now: now, timeZone: london.calendar.timeZone)
     check(collapsed > 0, "pruning found old minute buckets to collapse")
     expect(aggregator.totals(everything).bytesIn, expected, "pruning must not lose a single byte overall")
     expect(aggregator.totals(range).bytesIn, expected, "pruning must not change an hour aligned total")
@@ -226,12 +231,12 @@ do {
 do {
     let measured = Ledger.ingest(readings: [reading("en0", 4_000, 800)],
                                  previous: ["en0": RawCounter(bytesIn: 1_000, bytesOut: 500, at: 600)],
-                                 now: 605, source: .mib64, reason: .normal, bootTime: nil)
+                                 now: 605, reason: .normal, bootTime: nil)
     check(measured.buckets.allSatisfy { !$0.estimated }, "a measured delta is not marked estimated")
 
     let previous = ["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: 600)]
     let slept = Ledger.ingest(readings: [reading("en0", 1_000 + 100_003, 100 + 61)],
-                              previous: previous, now: 600 + 3_600, source: .mib64, reason: .sleep, bootTime: nil)
+                              previous: previous, now: 600 + 3_600, reason: .sleep, bootTime: nil)
     check(!slept.buckets.isEmpty && slept.buckets.allSatisfy(\.estimated), "every spread row is marked estimated")
 
     // The event the spread writes must lead back to exactly the minutes it filled.
@@ -247,7 +252,7 @@ do {
            "a spread event whose minutes disagree with its own duration gives no window")
 
     let tooLong = Ledger.ingest(readings: [reading("en0", 2_000, 200)], previous: previous,
-                                now: 600 + (Ledger.maxSpreadMinutes + 10) * 60, source: .mib64,
+                                now: 600 + (Ledger.maxSpreadMinutes + 10) * 60,
                                 reason: .sleep, bootTime: nil)
     expect(tooLong.buckets.count, 1, "a gap too long to spread lands in one minute")
     check(tooLong.buckets.first?.estimated == true, "that minute is marked estimated: right bytes, wrong minute")
@@ -338,7 +343,7 @@ do {
         counters["en1"] = (counters["en1"]!.0 + en1.0, counters["en1"]!.1 + en1.1)
         let readings = counters.keys.sorted().map { reading($0, counters[$0]!.0, counters[$0]!.1) }
         let outcome = Ledger.ingest(readings: readings, previous: baselines, now: clock,
-                                    source: .mib64, reason: reason, bootTime: nil)
+                                    reason: reason, bootTime: nil)
         for (name, counter) in outcome.baselines { baselines[name] = counter }
         for bucket in outcome.buckets {
             if bucket.estimated { expectedEstimated.insert("\(bucket.minute)|\(bucket.iface)") }
@@ -420,7 +425,7 @@ do {
     }
     let everything = MinuteRange(start: 0, end: 9_999_999_999)
     let before = Aggregator(db: db, cal: london).totals(everything)
-    check(Maintenance.prune(db: db, now: now) > 0, "pruning collapses the old hours")
+    check(try! Maintenance.prune(db: db, now: now, timeZone: london.calendar.timeZone) > 0, "pruning collapses the old hours")
     expect(estimatedFlag(db, minute: oldHour), 1, "an hour with any estimated minute stays estimated once collapsed")
     expect(estimatedFlag(db, minute: oldHour + 60), 0, "an hour of measured minutes stays measured once collapsed")
     let after = Aggregator(db: db, cal: london).totals(everything)
@@ -455,7 +460,7 @@ do {
     let previous = ["en0": RawCounter(bytesIn: 9_653_780_865, bytesOut: 858_256_858, at: 1_000_000)]
 
     let soon = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: previous,
-                             now: 1_000_537, source: .mib64, reason: .relaunch, bootTime: 1_000_500)
+                             now: 1_000_537, reason: .relaunch, bootTime: 1_000_500)
     expect(soon.buckets.count, 1, "a restart moments ago books its bytes in one minute")
     expect(soon.buckets.first?.bytesIn, 9_071, "everything since the restart is counted, down")
     expect(soon.buckets.first?.bytesOut, 22_190, "everything since the restart is counted, up")
@@ -468,7 +473,7 @@ do {
 
     let boot: Int64 = 1_000_500
     let later = Ledger.ingest(readings: [reading("en0", 6_000_007, 600_011)], previous: previous,
-                              now: boot + 3_600, source: .mib64, reason: .relaunch, bootTime: boot)
+                              now: boot + 3_600, reason: .relaunch, bootTime: boot)
     expect(later.buckets.first?.minute, Ledger.floorDiv(boot, 60), "a restart long ago spreads from the boot minute")
     expect(later.buckets.last?.minute, Ledger.floorDiv(boot + 3_600, 60), "to the current minute")
     expect(later.buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }, 6_000_007, "the spread since boot loses nothing, down")
@@ -478,28 +483,28 @@ do {
           "the event says how the restart was booked, got: \(later.events.first?.detail ?? "")")
 
     let interfaceOnly = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: previous,
-                                      now: 1_000_537, source: .mib64, reason: .normal, bootTime: 900_000)
+                                      now: 1_000_537, reason: .normal, bootTime: 900_000)
     check(interfaceOnly.buckets.isEmpty, "an interface reset without a restart records nothing")
     check(interfaceOnly.events.first?.detail.contains("interface itself was reset") == true,
           "the event says it was the interface, got: \(interfaceOnly.events.first?.detail ?? "")")
 
     let unknown = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: previous,
-                                now: 1_000_537, source: .mib64, reason: .normal, bootTime: nil)
+                                now: 1_000_537, reason: .normal, bootTime: nil)
     check(unknown.buckets.isEmpty, "with no boot time a fall records nothing, as before")
     check(unknown.events.first?.detail.contains("could not be read") == true,
           "the event says the boot time was unreadable, got: \(unknown.events.first?.detail ?? "")")
 
     let future = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: previous,
-                               now: 1_000_537, source: .mib64, reason: .normal, bootTime: 2_000_000)
+                               now: 1_000_537, reason: .normal, bootTime: 2_000_000)
     check(future.buckets.isEmpty, "a boot time later than now is not trusted, so nothing is booked")
 
     let wrapPrevious = ["en0": RawCounter(bytesIn: 4_294_967_296 - 1_000, bytesOut: 10, at: 1_000_000)]
-    let rebootNearCeiling = Ledger.ingest(readings: [reading("en0", 500, 20)], previous: wrapPrevious,
-                                          now: 1_000_537, source: .ifdata32, reason: .normal, bootTime: 1_000_500)
+    let rebootNearCeiling = Ledger.ingest(readings: [reading32("en0", 500, 20)], previous: wrapPrevious,
+                                          now: 1_000_537, reason: .normal, bootTime: 1_000_500)
     expect(rebootNearCeiling.buckets.first?.bytesIn, 500, "a known restart is never mistaken for a 32 bit wrap")
 
     let firstSight = Ledger.ingest(readings: [reading("en0", 4_700_000_000, 85_000_000)], previous: [:],
-                                   now: 1_000_537, source: .mib64, reason: .relaunch, bootTime: 1_000_500)
+                                   now: 1_000_537, reason: .relaunch, bootTime: 1_000_500)
     check(firstSight.buckets.isEmpty, "first sight stays baseline only, even with a boot time known")
 
     let booted = BootClock.bootTime()
@@ -515,7 +520,7 @@ do {
     let climbed = reading("en0", 5_000_000, 400_000)          // already past the old value
 
     let byBootTime = Ledger.ingest(readings: [climbed], previous: previous, now: 1_000_537,
-                                   source: .mib64, reason: .relaunch, bootTime: 1_000_500)
+                                   reason: .relaunch, bootTime: 1_000_500)
     expect(byBootTime.buckets.first?.bytesIn, 5_000_000,
            "a restart where the counter has passed the old value books the full reading, not the difference")
     expect(byBootTime.buckets.first?.bytesOut, 400_000, "and the full reading up")
@@ -523,13 +528,13 @@ do {
           "the event says the counter went up across a restart, got: \(byBootTime.events.first?.detail ?? "")")
 
     let normal = Ledger.ingest(readings: [climbed], previous: previous, now: 1_000_005,
-                               source: .mib64, reason: .normal, bootTime: 900_000)
+                               reason: .normal, bootTime: 900_000)
     expect(normal.buckets.first?.bytesIn, 4_000_000, "a normal sample with the boot before the last reading takes the difference")
     check(normal.events.isEmpty, "and logs nothing")
 
     // With boot session ids on both sides, the id decides.
     let sessionA = ["en0": RawCounter(bytesIn: 1_000_000, bytesOut: 100_000, at: 1_000_000, bootSession: "A")]
-    let newSession = Ledger.ingest(readings: [climbed], previous: sessionA, now: 1_000_537, source: .mib64,
+    let newSession = Ledger.ingest(readings: [climbed], previous: sessionA, now: 1_000_537,
                                    reason: .relaunch, bootTime: 1_000_500, bootSession: "B")
     expect(newSession.buckets.first?.bytesIn, 5_000_000, "a new boot session books the full reading")
     expect(newSession.baselines["en0"]?.bootSession, "B", "the new baseline carries the current boot session")
@@ -537,14 +542,14 @@ do {
     // Setting the clock forward moves the kernel's boot time with it, past
     // the last reading. The session is unchanged, so it is not a restart, and
     // the traffic since boot must not be counted a second time.
-    let clockSet = Ledger.ingest(readings: [climbed], previous: sessionA, now: 1_086_405, source: .mib64,
+    let clockSet = Ledger.ingest(readings: [climbed], previous: sessionA, now: 1_086_405,
                                  reason: .normal, bootTime: 1_000_500, bootSession: "A")
     expect(clockSet.buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }, 4_000_000,
            "a clock set forward is not a restart: only the difference is counted")
     check(!clockSet.events.contains { $0.kind == "counter_reset" }, "and no reset is logged")
 
     // Restarted by the id, but no usable boot time: placed across the whole gap.
-    let unplaced = Ledger.ingest(readings: [climbed], previous: sessionA, now: 1_003_600, source: .mib64,
+    let unplaced = Ledger.ingest(readings: [climbed], previous: sessionA, now: 1_003_600,
                                  reason: .normal, bootTime: nil, bootSession: "B")
     expect(unplaced.buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }, 5_000_000,
            "a restart the boot time cannot place still books the full reading")
@@ -554,7 +559,7 @@ do {
           "the event says the time was unknown, got: \(unplaced.events.first?.detail ?? "")")
 
     let fellSameSession = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: sessionA,
-                                        now: 1_000_537, source: .mib64, reason: .normal,
+                                        now: 1_000_537, reason: .normal,
                                         bootTime: 1_000_500, bootSession: "A")
     check(fellSameSession.buckets.isEmpty, "a fall in the same boot session is an interface reset and books nothing")
 
@@ -565,6 +570,519 @@ do {
     expect(RawCounter(bytesIn: 1, bytesOut: 2, at: 3, bootSession: "X").encoded, "1,2,3,X", "the session is stored after the time")
     expect(RawCounter(encoded: "1,2"), nil, "a malformed baseline is refused")
     check(BootClock.bootSession() != nil, "this Mac's boot session id can be read")
+}
+
+// MARK: - Engine fixes: the counter source is per reading, and a switch is never arithmetic
+
+do {
+    let tenGB: UInt64 = 10_000_000_000
+    let low32 = tenGB % 4_294_967_296                     // the 32 bit view of the same counter
+
+    // A 64 bit baseline, then the 32 bit view of it in the same boot. This used to trap, before anything was written.
+    let prev64 = ["en0": RawCounter(bytesIn: tenGB, bytesOut: 50_000_000, at: 1_790_000_000, bootSession: "A", source: .mib64)]
+    let down = Ledger.ingest(readings: [reading32("en0", low32, 50_000_100)], previous: prev64, now: 1_790_000_005,
+                             reason: .normal, bootTime: 1_789_000_000, bootSession: "A")
+    check(down.buckets.isEmpty, "a switch from the 64 bit to the 32 bit counter books nothing")
+    expect(down.events.map(\.kind), ["counter_source"], "and says why")
+    expect(down.baselines["en0"]?.source, .ifdata32, "the new baseline records the 32 bit source")
+    expect(down.baselines["en0"]?.bytesIn, low32, "and measures from the new reading")
+    let after = Ledger.ingest(readings: [reading32("en0", low32 + 7_000, 50_000_200)], previous: down.baselines,
+                              now: 1_790_000_010, reason: .normal, bootTime: 1_789_000_000, bootSession: "A")
+    expect(after.buckets.first?.bytesIn, 7_000, "after a switch the next reading measures normally")
+
+    // The reverse used to book 8.59 GB in 5 seconds.
+    let prev32 = ["en0": RawCounter(bytesIn: low32, bytesOut: 50_000_000, at: 1_790_000_000, bootSession: "A", source: .ifdata32)]
+    let up = Ledger.ingest(readings: [reading("en0", tenGB + 50_000, 50_000_100)], previous: prev32, now: 1_790_000_005,
+                           reason: .normal, bootTime: 1_789_000_000, bootSession: "A")
+    check(up.buckets.isEmpty, "a switch back to the 64 bit counter books no phantom gigabytes")
+    check(up.events.first?.detail.contains("came from the 32 bit getifaddrs counter and this one from the 64 bit interface MIB") == true,
+          "the event names both counters, got: \(up.events.first?.detail ?? "")")
+
+    // A baseline saved before sources were kept, above the 32 bit ceiling: the crash case on upgrade.
+    let legacy = ["en0": RawCounter(bytesIn: tenGB, bytesOut: 50_000_000, at: 1_790_000_000, bootSession: "A")]
+    let legacyDown = Ledger.ingest(readings: [reading32("en0", low32, 50_000_100)], previous: legacy, now: 1_790_000_005,
+                                   reason: .normal, bootTime: 1_789_000_000, bootSession: "A")
+    check(legacyDown.buckets.isEmpty && legacyDown.events.first?.kind == "counter_source",
+          "a legacy baseline above 4.29 GB is known to be 64 bit, so a 32 bit reading after it books nothing")
+
+    // A fall is a wrap only if every direction that fell was near the ceiling.
+    let wrapPrev = ["en0": RawCounter(bytesIn: 4_294_967_296 - 1_000, bytesOut: 10, at: 600, source: .ifdata32)]
+    expect(Ledger.ingest(readings: [reading32("en0", 500, 20)], previous: wrapPrev, now: 605, reason: .normal,
+                         bootTime: nil).buckets.first?.bytesIn, 1_500, "a 32 bit wrap is still carried across")
+    let mixedPrev = ["en0": RawCounter(bytesIn: 4_294_967_296 - 1_000, bytesOut: 900_000, at: 600, source: .ifdata32)]
+    check(Ledger.ingest(readings: [reading32("en0", 500, 10)], previous: mixedPrev, now: 605, reason: .normal,
+                        bootTime: nil).buckets.isEmpty,
+          "an upload counter that fell far from the ceiling makes it a reset, not 4.29 GB of invented upload")
+    let corrupt = ["en0": RawCounter(bytesIn: UInt64.max, bytesOut: UInt64.max, at: 600, source: .ifdata32)]
+    check(Ledger.ingest(readings: [reading32("en0", 5, 5)], previous: corrupt, now: 605, reason: .normal,
+                        bootTime: nil).buckets.isEmpty, "a 32 bit baseline that does not fit in 32 bits is not a wrap")
+
+    // The stored form.
+    expect(RawCounter(bytesIn: 1, bytesOut: 2, at: 3, bootSession: "X", source: .ifdata32).encoded, "1,2,3,X,ifdata32",
+           "the source is stored after the session")
+    expect(RawCounter(bytesIn: 1, bytesOut: 2, at: 3, source: .mib64).encoded, "1,2,3,,mib64",
+           "with no session the field is left empty, so the source keeps its place")
+    expect(RawCounter(encoded: "1,2,3,,mib64"), RawCounter(bytesIn: 1, bytesOut: 2, at: 3, source: .mib64),
+           "a baseline with a source and no session reads back")
+    expect(RawCounter(encoded: "1,2,3,X,ifdata32"), RawCounter(bytesIn: 1, bytesOut: 2, at: 3, bootSession: "X", source: .ifdata32),
+           "a baseline with both reads back")
+    check(RawCounter(encoded: "1,2,3,X,quantum").map { $0.source == nil && $0.bootSession == "X" } == true,
+          "a source this build does not know reads as unknown rather than losing the baseline")
+    expect(RawCounter(encoded: "1,2,3,X,mib64,9"), nil, "six fields are refused")
+
+    // Through the database, and the hint for baselines saved by earlier versions.
+    let db = makeDatabase()
+    db.saveBaselines(["en0": RawCounter(bytesIn: 5, bytesOut: 6, at: 7, bootSession: "S", source: .ifdata32)])
+    expect(db.baselines()["en0"]?.source, .ifdata32, "a baseline's source round trips through the database")
+    let old = makeDatabase()
+    old.saveBaselines(["en0": RawCounter(bytesIn: low32, bytesOut: 6, at: 7), "en1": RawCounter(bytesIn: tenGB, bytesOut: 6, at: 7)])
+    expect(old.baselines()["en0"]?.source, nil, "with no record of the old source a legacy baseline stays unknown")
+    old.setState(StateKey.counterSource, CounterSource.ifdata32.rawValue)
+    expect(old.baselines()["en0"]?.source, .ifdata32, "a legacy baseline that fits 32 bits takes the old snapshot's 32 bit source")
+    expect(old.baselines()["en1"]?.source, .mib64, "a legacy value above 4.29 GB can only be 64 bit")
+    old.setState(StateKey.counterSource, CounterSource.mib64.rawValue)
+    expect(old.baselines()["en0"]?.source, .mib64, "if the old snapshot was 64 bit, so was every baseline")
+    let oldReading = Ledger.ingest(readings: [reading("en0", tenGB, 6)], previous: {
+        old.setState(StateKey.counterSource, CounterSource.ifdata32.rawValue); return old.baselines() }(),
+                                   now: 1_790_000_005, reason: .normal, bootTime: nil)
+    check(oldReading.buckets.isEmpty, "a legacy 32 bit baseline then a 64 bit reading books no phantom gigabytes")
+
+    // Labelled one interface at a time.
+    var fallbackCalls = 0
+    let snapshot = InterfaceMonitor.assemble(names: ["en1", "en0"], mib: { $0 == "en0" ? (100, 200) : nil },
+                                             fallback: { fallbackCalls += 1; return ["en1": (3, 4), "en0": (1, 2)] })
+    expect(snapshot.readings.map(\.name), ["en0", "en1"], "interfaces are read in name order")
+    expect(snapshot.readings.map(\.source), [.mib64, .ifdata32], "each reading carries the counter it came from")
+    expect(snapshot.readings.map(\.bytesIn), [100, 3], "en0 from the MIB, en1 from the fallback")
+    expect(snapshot.source, .ifdata32, "the snapshot's summary says a fallback was used")
+    let allMIB = InterfaceMonitor.assemble(names: ["en0", "en1"], mib: { _ in (1, 1) },
+                                           fallback: { fallbackCalls += 1; return [:] })
+    check(allMIB.source == .mib64 && fallbackCalls == 1, "with the MIB answering for everything the fallback is never asked")
+    check(InterfaceMonitor.read().readings.allSatisfy { $0.source == .mib64 }, "on this Mac every interface reads from the 64 bit MIB")
+
+    // No input can trap: random and extreme counters, times, sessions and sources.
+    var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
+    func next() -> UInt64 { seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407; return seed >> 1 }
+    func pick<T>(_ options: [T]) -> T { options[Int(next() % UInt64(options.count))] }
+    let counts: [UInt64] = [0, 1, 199_999_999, 4_094_967_297, 4_294_967_295, 4_294_967_296, 4_294_967_297,
+                            9_223_372_036_854_775_807, UInt64.max - 1, UInt64.max]
+    let times: [Int64] = [Int64.min, Int64.min + 1, -61, -1, 0, 1, 600, 1_790_000_000, 1_790_000_095, Int64.max - 1, Int64.max]
+    func count() -> UInt64 { next() % 3 == 0 ? next() : pick(counts) }
+    var survived = 0
+    for _ in 0..<20_000 {
+        let prev = RawCounter(bytesIn: count(), bytesOut: count(), at: pick(times), bootSession: pick(["A", "B", nil]),
+                              source: pick([nil, .mib64, .ifdata32]))
+        let current = InterfaceReading(name: "en0", bytesIn: count(), bytesOut: count(), source: pick([.mib64, .ifdata32]))
+        let outcome = Ledger.ingest(readings: [current], previous: ["en0": prev], now: pick(times),
+                                    reason: pick([.normal, .sleep, .relaunch]),
+                                    bootTime: pick([nil] + times.map { Optional($0) }), bootSession: pick(["A", "B", nil]))
+        survived += outcome.baselines.count
+    }
+    expect(survived, 20_000, "twenty thousand awkward readings, extremes included, and not one traps")
+    check(Ledger.spreadWindow(eventTs: Int64.min,
+                              detail: "en0 gap of 9223372036854775807 seconds. 1 in and 1 out spread evenly across 2 minutes.") == nil,
+          "a spread event whose times overflow gives no window rather than a trap")
+}
+
+// MARK: - Engine fixes: a failed write moves nothing
+
+func sumIn(_ db: Database, iface: String = "en0") -> Int64 {
+    var total: Int64 = -1
+    try? db.query("SELECT COALESCE(SUM(bytes_in),0) FROM samples WHERE iface=?;", [.text(iface)]) { total = $0.int(0) }
+    return total
+}
+
+/// One sample exactly as the sampler writes it: three throwing writes in one transaction.
+func writeSample(_ db: Database, raw: UInt64, at: Int64) -> Bool {
+    let outcome = Ledger.ingest(readings: [reading("en0", raw, raw / 10)], previous: db.baselines(), now: at,
+                                reason: .normal, bootTime: 1_789_000_000, bootSession: "A")
+    return db.transaction {
+        try db.writeBuckets(outcome.buckets, ssid: ssidPlaceholder, idle: false)
+        try db.writeBaselines(outcome.baselines)
+        try db.writeEvents(outcome.events)
+    }
+}
+
+do {
+    // A write that fails part way through a sample, here by a trigger.
+    let db = makeDatabase()
+    var logged: [String] = []
+    db.log = { logged.append($0) }
+    check(writeSample(db, raw: 1_000, at: 1_790_000_000), "first sight writes its baseline")
+    try! db.exec("CREATE TRIGGER fail_samples BEFORE INSERT ON samples BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;")
+    check(!writeSample(db, raw: 51_000, at: 1_790_000_005), "a sample whose bucket write fails reports failure")
+    expect(db.baselines()["en0"]?.bytesIn, 1_000, "and leaves the baseline where it was")
+    for step in 1...5 { _ = writeSample(db, raw: 51_000 + UInt64(step) * 100, at: 1_790_000_005 + Int64(step) * 5) }
+    expect(logged.count, 1, "six failures in a row are logged once, not every 5 seconds")
+    expect(db.failedTransactionsInARow, 6, "but every one is counted")
+    try! db.exec("DROP TRIGGER fail_samples;")
+    check(writeSample(db, raw: 52_000, at: 1_790_000_040), "once writes work again the sample commits")
+    expect(sumIn(db), 51_000, "and every byte since the last written baseline is recovered")
+    expect(logged.count, 2, "the recovery is logged once too")
+    check(logged.last?.contains("after 6 failed attempts") == true, "saying how many failed, got: \(logged.last ?? "")")
+
+    // The forgiving forms, errors swallowed, still cannot commit a transaction without their rows.
+    let forgiving = makeDatabase()
+    forgiving.log = { _ in }
+    forgiving.saveBaselines(["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: 1_790_000_000, bootSession: "A", source: .mib64)])
+    try! forgiving.exec("CREATE TRIGGER fail_samples BEFORE INSERT ON samples BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;")
+    let outcome = Ledger.ingest(readings: [reading("en0", 51_000, 5_100)], previous: forgiving.baselines(), now: 1_790_000_005,
+                                reason: .normal, bootTime: 1_789_000_000, bootSession: "A")
+    let committed = forgiving.transaction {
+        forgiving.addBuckets(outcome.buckets, ssid: ssidPlaceholder, idle: false)
+        forgiving.saveBaselines(outcome.baselines)
+        forgiving.addEvents(outcome.events)
+    }
+    check(!committed, "a write failure swallowed inside a transaction still rolls it back")
+    expect(forgiving.baselines()["en0"]?.bytesIn, 1_000, "so the baseline cannot move past bytes that were never written")
+
+    // SQLite ends the transaction itself, as it does on a full disk. A write after that must not commit on its own.
+    let ended = makeDatabase()
+    ended.log = { _ in }
+    ended.saveBaselines(["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: 1_790_000_000, bootSession: "A", source: .mib64)])
+    let endedCommitted = ended.transaction {
+        try ended.exec("ROLLBACK;")                       // what SQLite does by itself on SQLITE_FULL
+        ended.saveBaselines(["en0": RawCounter(bytesIn: 99_000, bytesOut: 100, at: 1_790_000_005, bootSession: "A", source: .mib64)])
+    }
+    check(!endedCommitted, "a transaction SQLite has already ended counts as failed")
+    expect(ended.baselines()["en0"]?.bytesIn, 1_000, "and nothing written after the end commits on its own")
+
+    // A real full disk, through SQLite's page limit, then room again. The filler rows sit in the
+    // minutes the failing sample will write, an hour's gap spread minute by minute, so it needs new pages.
+    let full = makeDatabase()
+    full.log = { _ in }
+    check(writeSample(full, raw: 1_000, at: 1_790_000_000) && writeSample(full, raw: 2_000, at: 1_790_000_005),
+          "two samples before the disk fills")
+    try! full.exec("PRAGMA wal_checkpoint(TRUNCATE);")
+    var pages: Int64 = 0
+    try! full.query("PRAGMA page_count;") { pages = $0.int(0) }
+    try! full.exec("PRAGMA max_page_count=\(pages + 3);")
+    let gapStart = Ledger.floorDiv(1_790_000_005, 60) + 1
+    var filler: Int64 = 0
+    while (try? full.run("INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated) VALUES(?,?,?,1,1,0,0);",
+                         [.int(gapStart + filler / 50), .text("en9:\(filler % 50)"), .text(ssidPlaceholder)])) != nil,
+          filler < 100_000 { filler += 1 }
+    check(filler < 100_000, "the page limit fills the file")
+    check(!writeSample(full, raw: 51_000, at: 1_790_003_605), "a sample on a full disk fails")
+    expect(full.baselines()["en0"]?.bytesIn, 2_000, "and its baseline stays put")
+    try! full.exec("PRAGMA max_page_count=1073741823;")
+    check(writeSample(full, raw: 52_000, at: 1_790_003_610), "with room again the next sample commits")
+    expect(sumIn(full), 51_000, "samples since the first baseline still equal the raw counter minus it, through a full disk")
+}
+
+// MARK: - Engine fixes: days where a clock change skips midnight
+
+do {
+    for (zone, day) in [("America/Santiago", "2026-09-06"), ("Africa/Cairo", "2026-04-24"), ("America/Havana", "2026-03-08")] {
+        let cal = BytemeterCalendar(timeZone: TimeZone(identifier: zone)!)
+        let changeDay = cal.parseLocal(day + "T12:00")!
+        expect(cal.calendar.component(.hour, from: cal.startOfDay(changeDay)), 1, "\(zone) skips midnight on \(day)")
+
+        // A different amount 30 minutes into each of seven days around the change.
+        let db = makeDatabase()
+        let first = cal.startOfDay(changeDay, offsetBy: -3)
+        var expected: [UInt64] = []
+        for n in 0..<7 {
+            let amount = UInt64(1_000_000 * (n + 1))
+            let at = cal.startOfDay(first, offsetBy: n).addingTimeInterval(30 * 60)
+            db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: at), iface: "en0", bytesIn: amount, bytesOut: 0)],
+                          ssid: ssidPlaceholder, idle: false)
+            expected.append(amount)
+        }
+        let agg = Aggregator(db: db, cal: cal)
+        let now = cal.startOfDay(first, offsetBy: 7).addingTimeInterval(6 * 3_600)
+        let series = agg.daily(lastDays: 8, now: now)
+        expect(series.map(\.totals.bytesIn), expected + [0], "\(zone): each day's traffic stays in its own day after the change")
+        let yesterdays = (0..<7).map { n in
+            agg.totals(cal.yesterday(cal.startOfDay(first, offsetBy: n + 1).addingTimeInterval(12 * 3_600))).bytesIn
+        }
+        expect(yesterdays, expected, "\(zone): every daily figure matches totals(yesterday) asked the day after")
+        let starts = cal.dayStarts(from: first, dayCount: 7).map(BytemeterCalendar.date(fromMinute:))
+        check(starts.allSatisfy { cal.startOfDay($0) == $0 }, "\(zone): every day start is the start of its day")
+        check(zip(starts, starts.dropFirst()).allSatisfy { cal.daysBetween($0, $1) == 1 }, "\(zone): one day apart each")
+        expect(agg.heatmap(lastDays: 8, now: now).reduce(UInt64(0)) { $0 + $1.totals.bytesIn }, expected.reduce(0, +),
+               "\(zone): the heatmap counts every byte once")
+        expect(agg.hourly(day: changeDay, now: now).reduce(UInt64(0)) { $0 + $1.bytesIn }, expected[3],
+               "\(zone): the change day's hours hold its own traffic and none of the next day's")
+    }
+
+    let santiago = BytemeterCalendar(timeZone: TimeZone(identifier: "America/Santiago")!)
+    expect(santiago.yesterday(santiago.parseLocal("2026-09-06T12:00")!).start,
+           BytemeterCalendar.minute(from: santiago.parseLocal("2026-09-05T00:00")!),
+           "yesterday, asked on the day of the change, starts at the previous midnight")
+    expect(santiago.rollingDays(2, now: santiago.parseLocal("2026-09-06T12:00")!).start,
+           BytemeterCalendar.minute(from: santiago.parseLocal("2026-09-05T00:00")!),
+           "so does a rolling window")
+    let cycle6 = BytemeterCalendar(timeZone: TimeZone(identifier: "America/Santiago")!, cycleStartDay: 6)
+    expect(cycle6.endOfCycle(santiago.parseLocal("2026-09-15T12:00")!), santiago.parseLocal("2026-10-06T00:00")!,
+           "a cycle that begins on a skipped midnight ends at the next cycle's real midnight")
+    let peakDB = makeDatabase()
+    peakDB.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: santiago.parseLocal("2026-09-06T10:00")!),
+                                   iface: "en0", bytesIn: 5_000_000, bytesOut: 0)], ssid: ssidPlaceholder, idle: false)
+    expect(Aggregator(db: peakDB, cal: cycle6).peakDayThisCycle(now: santiago.parseLocal("2026-09-07T00:30")!)?.label, "6 Sep",
+           "the cycle's first day still counts when it began on a skipped midnight")
+}
+
+// MARK: - Engine fixes: hours on a clock change day
+
+do {
+    let db = makeDatabase()
+    let aggregator = Aggregator(db: db, cal: london)
+    for text in ["2026-10-25T15:20", "2026-03-29T15:20"] {
+        let at = london.parseLocal(text)!
+        db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: at), iface: "en0", bytesIn: 9_000_000, bytesOut: 0)],
+                      ssid: ssidPlaceholder, idle: false)
+        let later = at.addingTimeInterval(3 * 3_600)
+        expect(aggregator.peakHourToday(now: later)?.hour, 15, "traffic at 15:20 on \(text.prefix(10)) peaks at 15:00")
+        expect(aggregator.hourly(day: at, now: later)[15].bytesIn, 9_000_000, "and sits in the 15:00 slot")
+        expect(aggregator.heatmap(lastDays: 1, now: later)[6 * 24 + 15].totals.bytesIn, 9_000_000,
+               "and in Sunday's 15:00 cell of the heatmap")
+    }
+    // 25 Oct 2026: 01:30 happens twice, at 00:30 and 01:30 UTC. Both are the 01:00 slot.
+    let back = makeDatabase()
+    back.addBuckets([BucketDelta(minute: 1_792_888_200 / 60, iface: "en0", bytesIn: 1_000, bytesOut: 0),
+                     BucketDelta(minute: 1_792_891_800 / 60, iface: "en0", bytesIn: 2_000, bytesOut: 0)],
+                    ssid: ssidPlaceholder, idle: false)
+    let backHours = Aggregator(db: back, cal: london).hourly(day: london.parseLocal("2026-10-25T12:00")!,
+                                                            now: london.parseLocal("2026-10-25T23:00")!)
+    check(backHours[1].bytesIn == 3_000 && backHours[2].bytesIn == 0, "both 01:30s on the day the clocks go back are the 01:00 slot")
+    // 29 Mar 2026: 01:00 to 01:59 never happens. 00:30 and 01:30 UTC are 00:30 GMT and 02:30 BST.
+    let forward = makeDatabase()
+    forward.addBuckets([BucketDelta(minute: 1_774_744_200 / 60, iface: "en0", bytesIn: 1_000, bytesOut: 0),
+                        BucketDelta(minute: 1_774_747_800 / 60, iface: "en0", bytesIn: 2_000, bytesOut: 0)],
+                       ssid: ssidPlaceholder, idle: false)
+    let forwardHours = Aggregator(db: forward, cal: london).hourly(day: london.parseLocal("2026-03-29T12:00")!,
+                                                                  now: london.parseLocal("2026-03-29T23:00")!)
+    check(forwardHours[0].bytesIn == 1_000 && forwardHours[1].bytesIn == 0 && forwardHours[2].bytesIn == 2_000,
+          "the hour skipped when the clocks go forward is empty, and 02:30 is the 02:00 slot")
+}
+
+// MARK: - Engine fixes: pruning keeps local hours in every zone
+
+/// Bytes per local hour, keyed by the hour as the wall clock showed it.
+func localHourTotals(_ db: Database, _ cal: BytemeterCalendar) -> [String: UInt64] {
+    var out: [String: UInt64] = [:]
+    try! db.query("SELECT minute, SUM(bytes_in) FROM samples GROUP BY minute;") { row in
+        let c = cal.calendar.dateComponents([.year, .month, .day, .hour], from: BytemeterCalendar.date(fromMinute: row.int(0)))
+        out["\(c.year!)-\(c.month!)-\(c.day!) \(c.hour!)", default: 0] += row.uint(1)
+    }
+    return out
+}
+
+do {
+    // Twelve hours of minutes centred on local midnight; each clock change here falls between 01:00 and 03:00.
+    let cases = [("Asia/Kolkata", "2026-06-01T00:00"), ("Asia/Kathmandu", "2026-06-01T00:00"),
+                 ("America/St_Johns", "2026-03-08T00:00"), ("Australia/Adelaide", "2026-04-05T00:00"),
+                 ("Australia/Lord_Howe", "2026-04-05T00:00"), ("Australia/Lord_Howe", "2026-10-04T00:00"),
+                 ("Europe/London", "2026-03-29T00:00")]
+    for (zone, around) in cases {
+        let tz = TimeZone(identifier: zone)!
+        let cal = BytemeterCalendar(timeZone: tz)
+        let db = makeDatabase()
+        let firstMinute = BytemeterCalendar.minute(from: cal.parseLocal(around)!) - 6 * 60 - 7
+        var rows: [BucketDelta] = []
+        for step in 0..<(12 * 60) {
+            let offset = Int64(step)
+            rows.append(BucketDelta(minute: firstMinute + offset, iface: "en0", bytesIn: 1_000 + UInt64(step), bytesOut: 1,
+                                    estimated: step % 97 == 0))
+        }
+        db.addBuckets(rows, ssid: ssidPlaceholder, idle: false)
+        db.addProcBuckets(minute: firstMinute + 400, deltas: ["Safari": (5_000, 50)])
+        let before = localHourTotals(db, cal)
+        let dayBefore = Aggregator(db: db, cal: cal).daily(lastDays: 3, now: cal.parseLocal(around)!.addingTimeInterval(86_400))
+        let now = cal.parseLocal(around)!.addingTimeInterval(200 * 86_400)
+        let collapsed = try! Maintenance.prune(db: db, now: now, timeZone: tz)
+        check(collapsed > 600, "\(zone) around \(around): the old minutes are collapsed, got \(collapsed)")
+        expect(localHourTotals(db, cal), before, "\(zone) around \(around): no byte moves into another local hour")
+        let dayAfter = Aggregator(db: db, cal: cal).daily(lastDays: 3, now: cal.parseLocal(around)!.addingTimeInterval(86_400))
+        // Bytes only: a collapsed hour is marked estimated if any minute in it was, so the estimated share may grow.
+        expect(dayAfter.map { [$0.totals.bytesIn, $0.totals.bytesOut] }, dayBefore.map { [$0.totals.bytesIn, $0.totals.bytesOut] },
+               "\(zone) around \(around): every day's figure is unchanged")
+        var misplaced = 0
+        try! db.query("SELECT minute FROM samples UNION SELECT minute FROM proc_samples;") { row in
+            let date = BytemeterCalendar.date(fromMinute: row.int(0))
+            let onTheHour = cal.calendar.component(.minute, from: date) == 0
+            let onAChange = tz.secondsFromGMT(for: date) != tz.secondsFromGMT(for: date.addingTimeInterval(-60))
+            if !onTheHour && !onAChange { misplaced += 1 }
+        }
+        expect(misplaced, 0, "\(zone) around \(around): every collapsed row is on a local hour, or on the clock change itself")
+        expect(try! Maintenance.prune(db: db, now: now, timeZone: tz), 0, "\(zone) around \(around): a second prune finds nothing to do")
+    }
+
+    // A prune that fails records neither its event nor the tidy up as done, and the next check does the work.
+    let db = makeDatabase()
+    let now = london.parseLocal("2026-10-02T12:00")!
+    let oldHour = BytemeterCalendar.minute(from: london.parseLocal("2026-03-02T10:00")!)
+    db.addBuckets((1...60).map { BucketDelta(minute: oldHour + Int64($0), iface: "en0", bytesIn: 1_000, bytesOut: 10) },
+                  ssid: ssidPlaceholder, idle: false)
+    try! db.exec("CREATE TRIGGER fail_prune BEFORE INSERT ON samples BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;")
+    var threw = false
+    do { _ = try Maintenance.runIfDue(db: db, now: now, timeZone: london.calendar.timeZone) } catch { threw = true }
+    check(threw, "a prune that fails says so")
+    func countRows(_ sql: String) -> Int64 { var n: Int64 = -1; try? db.query(sql) { n = $0.int(0) }; return n }
+    expect(countRows("SELECT COUNT(*) FROM events WHERE kind='prune';"), 0, "and writes no prune event")
+    expect(db.state(StateKey.lastMaintenance), nil, "and does not record the tidy up as done")
+    expect(countRows("SELECT COUNT(*) FROM samples;"), 60, "and leaves every minute row where it was")
+    try! db.exec("DROP TRIGGER fail_prune;")
+    expect(try! Maintenance.runIfDue(db: db, now: now, timeZone: london.calendar.timeZone), 59, "the next check collapses them")
+    expect(countRows("SELECT COUNT(*) FROM events WHERE kind='prune';"), 1, "writes its event")
+    expect(db.state(StateKey.lastMaintenance), String(Int64(now.timeIntervalSince1970)), "and records the tidy up")
+    expect(try! Maintenance.runIfDue(db: db, now: now.addingTimeInterval(3_600), timeZone: london.calendar.timeZone), nil,
+           "after which it is not due again for a day")
+}
+
+// MARK: - Engine fixes: a clock set backwards books nothing in the past
+
+do {
+    let lastMinute = Ledger.floorDiv(1_790_000_000, 60)
+    let prev = ["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: 1_790_000_000, bootSession: "A", source: .mib64)]
+    let y2001: Int64 = 978_307_200
+    let back = Ledger.ingest(readings: [reading("en0", 6_000, 600)], previous: prev, now: y2001, reason: .normal,
+                             bootTime: nil, bootSession: "A")
+    expect(back.buckets.map(\.minute), [lastMinute], "a reading under a clock set back to 2001 books in the last reading's minute")
+    expect(back.buckets.first?.bytesIn, 5_000, "and loses no byte")
+    expect(back.events.map(\.kind), ["clock_backwards"], "and says the clock went back")
+    let restartedBack = Ledger.ingest(readings: [reading("en0", 6_000, 600)], previous: prev, now: y2001, reason: .normal,
+                                      bootTime: nil, bootSession: "B")
+    check(!restartedBack.buckets.isEmpty && restartedBack.buckets.allSatisfy { $0.minute >= lastMinute },
+          "a restart found while the clock reads 2001 books nothing before the last reading either")
+    let nudgedPrev = ["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: 1_790_000_030, bootSession: "A", source: .mib64)]
+    let nudged = Ledger.ingest(readings: [reading("en0", 6_000, 600)], previous: nudgedPrev, now: 1_790_000_028,
+                               reason: .normal, bootTime: nil, bootSession: "A")
+    check(nudged.events.isEmpty && nudged.buckets.first?.minute == lastMinute,
+          "a clock nudged back a second or two within the minute is the ordinary case and says nothing")
+    let db = makeDatabase()
+    db.addBuckets(back.buckets, ssid: ssidPlaceholder, idle: false)
+    expect(Aggregator(db: db, cal: london).earliestMinute(), lastMinute, "so All time still starts at the first real minute")
+
+    // Month by month keeps the newest months, whatever stray row sits years back.
+    let now = london.parseLocal("2026-10-02T12:00")!
+    let stray = makeDatabase()
+    stray.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2001-01-01T10:00")!), iface: "en0",
+                                  bytesIn: 5, bytesOut: 0),
+                      BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-03-15T10:00")!), iface: "en0",
+                                  bytesIn: 1_000, bytesOut: 0),
+                      BucketDelta(minute: BytemeterCalendar.minute(from: now) - 10, iface: "en0", bytesIn: 7_000_000_000, bytesOut: 0)],
+                     ssid: ssidPlaceholder, idle: false)
+    let rows = Aggregator(db: stray, cal: london).monthly(now: now)
+    expect(rows.last?.label, "Oct 2026", "month by month always ends with the current month")
+    expect(rows.first?.label, "Mar 2026", "and starts at the first month with data in the decade it can show")
+    expect(rows.count, 8, "March to October")
+    let long = makeDatabase()
+    for month in 0..<202 {     // every month from January 2010 to October 2026
+        let date = london.calendar.date(byAdding: .month, value: month, to: london.parseLocal("2010-01-15T12:00")!)!
+        long.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: date), iface: "en0", bytesIn: 1, bytesOut: 0)],
+                        ssid: ssidPlaceholder, idle: false)
+    }
+    let longRows = Aggregator(db: long, cal: london).monthly(now: now)
+    check(longRows.count == Aggregator.maxMonths && longRows.first?.label == "Nov 2016" && longRows.last?.label == "Oct 2026",
+          "a longer history keeps the newest \(Aggregator.maxMonths) months, got \(longRows.count) from \(longRows.first?.label ?? "") to \(longRows.last?.label ?? "")")
+}
+
+// MARK: - Engine fixes: two processes migrating the same file
+
+final class OpenResults: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Int: String] = [:]
+    func set(_ index: Int, _ value: String) { lock.lock(); values[index] = value; lock.unlock() }
+    var sorted: [String] { lock.lock(); defer { lock.unlock() }; return values.keys.sorted().map { values[$0]! } }
+}
+
+do {
+    let path = NSTemporaryDirectory() + "bytemeter_selftest_race_\(UUID().uuidString).db"
+    check(rawExec(path, """
+        PRAGMA journal_mode=WAL;
+        CREATE TABLE samples(minute INTEGER NOT NULL, iface TEXT NOT NULL, ssid TEXT NOT NULL,
+            bytes_in INTEGER NOT NULL DEFAULT 0, bytes_out INTEGER NOT NULL DEFAULT 0,
+            idle INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(minute, iface, ssid));
+        CREATE TABLE proc_samples(minute INTEGER NOT NULL, proc TEXT NOT NULL,
+            bytes_in INTEGER NOT NULL DEFAULT 0, bytes_out INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(minute, proc));
+        CREATE TABLE state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE events(ts INTEGER NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');
+        INSERT INTO samples VALUES(100,'en0','-',5,5,0);
+        PRAGMA user_version=1;
+        """), "the schema 1 fixture for the race builds")
+    // A third connection holds the write lock, so both openers read version 1 before either can migrate.
+    var holder: OpaquePointer?
+    check(sqlite3_open(path, &holder) == SQLITE_OK && sqlite3_exec(holder, "BEGIN IMMEDIATE;", nil, nil, nil) == SQLITE_OK,
+          "the lock is held")
+    let results = OpenResults()
+    let group = DispatchGroup()
+    for index in 0..<2 {
+        group.enter()
+        Thread.detachNewThread {
+            do { _ = try Database(path: path); results.set(index, "opened") } catch { results.set(index, "\(error)") }
+            group.leave()
+        }
+    }
+    Thread.sleep(forTimeInterval: 0.5)
+    sqlite3_exec(holder, "COMMIT;", nil, nil, nil)
+    sqlite3_close(holder)
+    group.wait()
+    expect(results.sorted, ["opened", "opened"], "two processes opening an old database at once both succeed")
+    expect(rawInt(path, "PRAGMA user_version;"), 2, "the file ends at version 2")
+    expect(rawInt(path, "SELECT COUNT(*) FROM events WHERE kind='estimated_backfill';"), 1, "and the migration ran exactly once")
+}
+
+// MARK: - Engine fixes: the reading before sleep, and the label after it
+
+do {
+    let gate = SleepGate()
+    var log: [String] = []
+    func sample() {
+        if let reason = gate.reasonForReading { log.append(reason.rawValue); gate.readingWritten() } else { log.append("skipped") }
+    }
+    sample()                       // the first reading after launch
+    sample()                       // the timer
+    gate.enterSleep { sample() }   // the reading before sleep
+    sample()                       // a timer firing while asleep
+    gate.wake { sample() }         // the first reading after waking
+    sample()                       // the timer
+    expect(log, ["relaunch", "normal", "normal", "skipped", "sleep", "normal"],
+           "the reading before sleep is taken, none while asleep, and the gap after waking is labelled sleep")
+
+    let failing = SleepGate()
+    failing.enterSleep { }
+    var reasons: [GapReason?] = []
+    failing.wake { reasons.append(failing.reasonForReading) }   // its write fails, so readingWritten is not called
+    reasons.append(failing.reasonForReading)
+    failing.readingWritten()
+    reasons.append(failing.reasonForReading)
+    expect(reasons, [.sleep, .sleep, .normal], "a wake reading whose write failed passes the sleep label on")
+
+    let unannounced = SleepGate()
+    unannounced.readingWritten()
+    var firstAfterWake: GapReason?
+    unannounced.wake { firstAfterWake = unannounced.reasonForReading }
+    expect(firstAfterWake, .sleep, "a wake with no sleep notice before it still labels the gap as sleep")
+
+    // Through the ledger: 30 kB in the last 4 seconds before sleep, then an hour asleep.
+    let ledgerGate = SleepGate()
+    var baselines: [String: RawCounter] = [:]
+    var counter: UInt64 = 1_000_000
+    var clock: Int64 = 1_790_000_000
+    var buckets: [BucketDelta] = []
+    var events: [LedgerEvent] = []
+    func take() {
+        guard let reason = ledgerGate.reasonForReading else { return }
+        let outcome = Ledger.ingest(readings: [reading("en0", counter, counter)], previous: baselines, now: clock,
+                                    reason: reason, bootTime: nil, bootSession: "A")
+        buckets += outcome.buckets
+        events += outcome.events
+        for (name, raw) in outcome.baselines { baselines[name] = raw }
+        ledgerGate.readingWritten()
+    }
+    take()
+    clock += 5; counter += 40_000; take()
+    clock += 4; counter += 30_000
+    ledgerGate.enterSleep { take() }
+    clock += 3_600; counter += 600_000
+    take()                                     // a dark wake: skipped
+    ledgerGate.wake { take() }
+    expect(events.map(\.kind), ["baseline", "gap_sleep"], "the gap after waking is logged as gap_sleep")
+    expect(buckets.filter { !$0.estimated }.reduce(UInt64(0)) { $0 + $1.bytesIn }, 70_000,
+           "traffic up to the moment of sleep is measured, not spread across the sleep")
+    expect(buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }, 670_000, "and every byte is counted")
 }
 
 // MARK: - All time is the sum of samples, without the first-seen lump
@@ -581,7 +1099,7 @@ do {
             expectedIn += 123_457
         }
         let outcome = Ledger.ingest(readings: [reading("en0", counter, counter / 10)], previous: baselines,
-                                    now: clock, source: .mib64, reason: .normal, bootTime: nil)
+                                    now: clock, reason: .normal, bootTime: nil)
         db.addBuckets(outcome.buckets, ssid: ssidPlaceholder, idle: false)
         for (name, raw) in outcome.baselines { baselines[name] = raw }
         clock += 5

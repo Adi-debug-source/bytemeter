@@ -3,29 +3,54 @@ import Foundation
 import Darwin
 #endif
 
-/// One interface's cumulative byte counters, as read from the kernel.
+/// One interface's cumulative byte counters, as read from the kernel, and
+/// which counter they were read from.
 public struct InterfaceReading: Equatable {
     public let name: String
     public let bytesIn: UInt64
     public let bytesOut: UInt64
+    /// Each reading carries its own source, because the fallback happens one
+    /// interface at a time: en0 can come from the MIB while en1 comes from
+    /// getifaddrs in the same snapshot.
+    public let source: CounterSource
 
-    public init(name: String, bytesIn: UInt64, bytesOut: UInt64) {
+    public init(name: String, bytesIn: UInt64, bytesOut: UInt64, source: CounterSource = .mib64) {
         self.name = name
         self.bytesIn = bytesIn
         self.bytesOut = bytesOut
+        self.source = source
     }
 }
 
 /// Where a reading came from. This is not trivia: the 32 bit source wraps at
-/// 4,294,967,296 bytes and needs wrap handling, the 64 bit one does not.
+/// 4,294,967,296 bytes and needs wrap handling, the 64 bit one does not, and
+/// a value from one can never be compared with a value from the other.
 public enum CounterSource: String {
     case mib64      // sysctl net.link.generic.ifdata.<index>.general, a real if_data64
     case ifdata32   // getifaddrs ifa_data, a 32 bit if_data, wraps every 4.29 GB
+
+    /// Words for an event, so the log says which counter was meant.
+    public var phrase: String {
+        switch self {
+        case .mib64: return "the 64 bit interface MIB"
+        case .ifdata32: return "the 32 bit getifaddrs counter"
+        }
+    }
 }
 
 public struct InterfaceSnapshot {
     public let readings: [InterfaceReading]
-    public let source: CounterSource
+
+    public init(readings: [InterfaceReading]) {
+        self.readings = readings
+    }
+
+    /// One word for the whole snapshot, for the dashboard and the seed event:
+    /// 32 bit if any interface had to fall back. Only a summary. The ledger
+    /// goes by each reading's own source.
+    public var source: CounterSource {
+        readings.contains { $0.source == .ifdata32 } ? .ifdata32 : .mib64
+    }
 }
 
 public enum InterfaceMonitor {
@@ -117,22 +142,34 @@ public enum InterfaceMonitor {
     /// to the 32 bit counters if the MIB is unavailable.
     public static func read() -> InterfaceSnapshot {
         let names = allLinkInterfaceNames().filter(isPhysical)
+        return assemble(names: names,
+                        mib: { name in
+                            let index = name.withCString { if_nametoindex($0) }
+                            return index == 0 ? nil : mibReading(index: index)
+                        },
+                        fallback: ifdataReadings)
+    }
+
+    /// The choice of counter, one interface at a time, apart from the system
+    /// calls so it can be tested. `mib` answers for one interface or fails;
+    /// `fallback` is asked at most once, and only if some interface needed it.
+    /// Every reading is labelled with the counter it really came from.
+    public static func assemble(names: [String],
+                                mib: (String) -> (UInt64, UInt64)?,
+                                fallback: () -> [String: (UInt64, UInt64)]) -> InterfaceSnapshot {
         var readings: [InterfaceReading] = []
-        var usedFallback = false
-        var fallback: [String: (UInt64, UInt64)]?
+        var fallbackValues: [String: (UInt64, UInt64)]?
 
         for name in names.sorted() {
-            let index = name.withCString { if_nametoindex($0) }
-            if index != 0, let (bin, bout) = mibReading(index: index) {
-                readings.append(InterfaceReading(name: name, bytesIn: bin, bytesOut: bout))
+            if let (bin, bout) = mib(name) {
+                readings.append(InterfaceReading(name: name, bytesIn: bin, bytesOut: bout, source: .mib64))
             } else {
-                if fallback == nil { fallback = ifdataReadings() }
-                if let (bin, bout) = fallback?[name] {
-                    usedFallback = true
-                    readings.append(InterfaceReading(name: name, bytesIn: bin, bytesOut: bout))
+                if fallbackValues == nil { fallbackValues = fallback() }
+                if let (bin, bout) = fallbackValues?[name] {
+                    readings.append(InterfaceReading(name: name, bytesIn: bin, bytesOut: bout, source: .ifdata32))
                 }
             }
         }
-        return InterfaceSnapshot(readings: readings, source: usedFallback ? .ifdata32 : .mib64)
+        return InterfaceSnapshot(readings: readings)
     }
 }

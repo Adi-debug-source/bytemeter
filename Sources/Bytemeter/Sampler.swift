@@ -21,10 +21,14 @@ final class Sampler {
     private var rateTimer: DispatchSourceTimer?
 
     private let nettop = NettopSampler()
-    private var nextReason: GapReason = .relaunch
-    private var asleep = false
 
-    /// Only touched by the rate timer, and only while live speed is on.
+    /// Whether the Mac is asleep and why the next reading may follow a gap.
+    /// Touched only on `queue`, like the database, so the notifications from
+    /// the main thread and the timer's readings never race.
+    private let gate = SleepGate()
+
+    /// The rate timer's last reading. Touched only on `processQueue`, where
+    /// the rate timer runs; resets from elsewhere are sent there.
     private var lastRateReading: (bytesIn: UInt64, bytesOut: UInt64, at: Date)?
 
     var onSample: (() -> Void)?
@@ -69,7 +73,7 @@ final class Sampler {
     func updateRateTimer() {
         rateTimer?.cancel()
         rateTimer = nil
-        lastRateReading = nil
+        processQueue.async { [weak self] in self?.lastRateReading = nil }
         guard settings.liveSpeed else {
             onRate?(0, 0)
             return
@@ -83,52 +87,61 @@ final class Sampler {
 
     // MARK: - Sleep and wake
 
+    /// Called on the main thread from the will-sleep notification. Waits for
+    /// the last reading, so it is written before the Mac goes to sleep rather
+    /// than on waking, when it would measure the sleep as ordinary time.
     func noteSleep() {
-        asleep = true
-        sampleNow()
+        queue.sync { gate.enterSleep { takeSample() } }
     }
 
+    /// Called on the main thread from the did-wake notification.
     func noteWake() {
-        asleep = false
-        nextReason = .sleep
-        lastRateReading = nil
-        sampleNow()
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.gate.wake { self.takeSample() }
+        }
+        processQueue.async { [weak self] in self?.lastRateReading = nil }
     }
 
     // MARK: - Sampling
 
+    /// Runs on `queue` only.
     private func takeSample() {
-        guard !asleep else { return }
+        guard let reason = gate.reasonForReading else { return }
         let snapshot = InterfaceMonitor.read()
         guard !snapshot.readings.isEmpty else { return }
 
         let now = Int64(Date().timeIntervalSince1970)
         let idle = IdleMonitor.isIdle()
         let ssid = SSIDProvider.currentSSID(enabled: settings.ssidCapture)
-        let reason = nextReason
-        nextReason = .normal
 
         let previous = db.baselines()
         let outcome = Ledger.ingest(readings: snapshot.readings,
                                     previous: previous,
                                     now: now,
-                                    source: snapshot.source,
                                     reason: reason,
                                     bootTime: BootClock.bootTime(),
                                     bootSession: BootClock.bootSession())
 
-        db.transaction {
-            db.addBuckets(outcome.buckets, ssid: ssid, idle: idle)
-            db.saveBaselines(outcome.baselines)
-            db.addEvents(outcome.events)
+        // All of it or none of it. If any write fails, the baselines stay
+        // where they were, so the next reading measures from them and the
+        // bytes of this one are counted then rather than lost. The gap label
+        // is kept for that reading too.
+        let written = db.transaction {
+            try db.writeBuckets(outcome.buckets, ssid: ssid, idle: idle)
+            try db.writeBaselines(outcome.baselines)
+            try db.writeEvents(outcome.events)
+            try db.writeState(StateKey.counterSource, snapshot.source.rawValue)
         }
-        db.setState(StateKey.counterSource, snapshot.source.rawValue)
+        if written { gate.readingWritten() }
 
         DispatchQueue.main.async { [weak self] in self?.onSample?() }
     }
 
+    /// Runs on `processQueue`. The sleep check is asked of `queue`, which
+    /// owns it; nothing on `queue` ever waits for `processQueue`.
     private func takeProcessSample() {
-        guard settings.perAppSampling, !asleep else { return }
+        guard settings.perAppSampling, !queue.sync(execute: { gate.asleep }) else { return }
         let deltas = nettop.sampleDeltas()
         guard !deltas.isEmpty else { return }
         let minute = BytemeterCalendar.minute(from: Date())
@@ -174,19 +187,24 @@ final class Sampler {
         let parts = snapshot.readings
             .map { "\($0.name) \($0.bytesIn) in, \($0.bytesOut) out" }
             .joined(separator: "; ")
-        db.addEvent(ts: Int64(Date().timeIntervalSince1970), kind: "seed",
-                    detail: "Since boot before Bytemeter started counting: \(parts). "
-                          + "Counter source \(snapshot.source.rawValue). "
-                          + "Recorded as a lump with no time detail, and deliberately not counted in any total.")
-        db.setState(StateKey.seedRecorded, "1")
+        let seed = LedgerEvent(ts: Int64(Date().timeIntervalSince1970), kind: "seed",
+                               detail: "Since boot before Bytemeter started counting: \(parts). "
+                                     + "Counter source \(snapshot.source.rawValue). "
+                                     + "Recorded as a lump with no time detail, and deliberately not counted in any total.")
+        // The event and the flag together, so a failed write is tried again at the next launch.
+        db.transaction {
+            try db.writeEvents([seed])
+            try db.writeState(StateKey.seedRecorded, "1")
+        }
     }
 
+    /// A prune that fails is logged and left for the next check, 6 hours on.
     private func runMaintenanceIfDue() {
-        let now = Date()
-        let last = db.number(StateKey.lastMaintenance, default: 0)
-        guard Int64(now.timeIntervalSince1970) - last > 24 * 3600 else { return }
-        Maintenance.prune(db: db, now: now)
-        db.setState(StateKey.lastMaintenance, String(Int64(now.timeIntervalSince1970)))
+        do {
+            try Maintenance.runIfDue(db: db, now: Date())
+        } catch {
+            FileHandle.standardError.write(Data("Bytemeter: the tidy up failed and was rolled back: \(error)\n".utf8))
+        }
     }
 
     func runMaintenanceCheck() {

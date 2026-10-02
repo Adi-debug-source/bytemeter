@@ -49,6 +49,9 @@ public final class Statement {
 
     public func int(_ column: Int32) -> Int64 { sqlite3_column_int64(handle, column) }
 
+    /// False for SQL NULL, which `int` would read as 0.
+    public func isNotNull(_ column: Int32) -> Bool { sqlite3_column_type(handle, column) != SQLITE_NULL }
+
     public func uint(_ column: Int32) -> UInt64 {
         let v = sqlite3_column_int64(handle, column)
         return v < 0 ? 0 : UInt64(v)
@@ -64,6 +67,19 @@ public final class Statement {
 public final class Database {
     private var handle: OpaquePointer?
     public let path: String
+
+    /// Where a failed transaction is reported. Standard error by default;
+    /// replaceable so the self-test can count the lines.
+    public var log: (String) -> Void = { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+
+    /// True between BEGIN and COMMIT or ROLLBACK of `inTransaction`.
+    private var transactionOpen = false
+    /// The first write that failed inside the open transaction, kept even if
+    /// the caller swallowed it, so the transaction can never commit without it.
+    private var transactionFault: Error?
+    /// Transactions rolled back in a row. The first one is logged, the rest
+    /// only counted, so a full disk says so once rather than every 5 seconds.
+    public private(set) var failedTransactionsInARow = 0
 
     public init(path: String) throws {
         self.path = path
@@ -128,6 +144,26 @@ public final class Database {
     // MARK: - Plumbing
 
     public func exec(_ sql: String) throws {
+        try guardOpenTransaction(sql)
+        do { try rawExec(sql) } catch { noteFault(error); throw error }
+    }
+
+    public func run(_ sql: String, _ binds: [Binding] = []) throws {
+        try guardOpenTransaction(sql)
+        do {
+            let statement = try Statement(db: handle, sql: sql)
+            statement.bind(binds)
+            let result = sqlite3_step(statement.handle)
+            guard result == SQLITE_DONE || result == SQLITE_ROW else {
+                throw BytemeterError.sql(sql, String(cString: sqlite3_errmsg(handle)))
+            }
+        } catch {
+            noteFault(error)
+            throw error
+        }
+    }
+
+    private func rawExec(_ sql: String) throws {
         var error: UnsafeMutablePointer<CChar>?
         if sqlite3_exec(handle, sql, nil, nil, &error) != SQLITE_OK {
             let message = error.map { String(cString: $0) } ?? "unknown"
@@ -136,13 +172,24 @@ public final class Database {
         }
     }
 
-    public func run(_ sql: String, _ binds: [Binding] = []) throws {
-        let statement = try Statement(db: handle, sql: sql)
-        statement.bind(binds)
-        let result = sqlite3_step(statement.handle)
-        guard result == SQLITE_DONE || result == SQLITE_ROW else {
-            throw BytemeterError.sql(sql, String(cString: sqlite3_errmsg(handle)))
+    /// Inside a transaction, refuse to run anything once it has gone wrong.
+    /// Two ways it can: a write already failed, or SQLite ended the
+    /// transaction itself, which it does on a full disk or an I/O error.
+    /// In the second case a statement run now would not join the
+    /// transaction but commit on its own, which is how a baseline used to
+    /// move forward while the bytes it measured were lost.
+    private func guardOpenTransaction(_ sql: String) throws {
+        guard transactionOpen else { return }
+        if let fault = transactionFault { throw fault }
+        if sqlite3_get_autocommit(handle) != 0 {
+            let error = BytemeterError.sql(sql, "the transaction was already ended by SQLite, so this was not run")
+            transactionFault = error
+            throw error
         }
+    }
+
+    private func noteFault(_ error: Error) {
+        if transactionOpen && transactionFault == nil { transactionFault = error }
     }
 
     public func query(_ sql: String, _ binds: [Binding] = [], each: (Statement) -> Void) throws {
@@ -151,23 +198,91 @@ public final class Database {
         while sqlite3_step(statement.handle) == SQLITE_ROW { each(statement) }
     }
 
-    public func transaction(_ body: () throws -> Void) {
+    /// Run `body` as one transaction: all of it commits, or none of it does.
+    /// Any failure rolls the lot back and is thrown, including a write whose
+    /// error `body` caught and ignored, and SQLite ending the transaction on
+    /// its own. Not reentrant.
+    public func inTransaction(_ body: () throws -> Void) throws {
+        guard !transactionOpen else {
+            throw BytemeterError.sql("BEGIN IMMEDIATE;", "a transaction is already open on this connection")
+        }
+        try rawExec("BEGIN IMMEDIATE;")
+        transactionOpen = true
+        transactionFault = nil
+        defer {
+            transactionOpen = false
+            transactionFault = nil
+        }
         do {
-            try exec("BEGIN IMMEDIATE;")
             try body()
-            try exec("COMMIT;")
+            if let fault = transactionFault { throw fault }
+            guard sqlite3_get_autocommit(handle) == 0 else {
+                throw BytemeterError.sql("COMMIT;", "the transaction was already ended by SQLite")
+            }
+            try rawExec("COMMIT;")
         } catch {
-            try? exec("ROLLBACK;")
-            FileHandle.standardError.write(Data("Bytemeter: transaction rolled back: \(error)\n".utf8))
+            if sqlite3_get_autocommit(handle) == 0 { try? rawExec("ROLLBACK;") }
+            throw error
+        }
+    }
+
+    /// The same, for callers with nothing to do about a failure but carry
+    /// on: true if it committed. A failure is logged the first time only,
+    /// and the end of a run of failures is logged once too.
+    @discardableResult
+    public func transaction(_ body: () throws -> Void) -> Bool {
+        do {
+            try inTransaction(body)
+            if failedTransactionsInARow > 0 {
+                log("Bytemeter: writing again after \(failedTransactionsInARow) failed attempts.")
+                failedTransactionsInARow = 0
+            }
+            return true
+        } catch {
+            if failedTransactionsInARow == 0 {
+                let oneLine = "\(error)".split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                log("Bytemeter: a write failed and was rolled back, so nothing was half written: \(oneLine). "
+                    + "Further failures are counted but not logged until a write succeeds.")
+            }
+            failedTransactionsInARow += 1
+            return false
         }
     }
 
     // MARK: - Schema
 
-    private func migrate() throws {
+    private func userVersion() throws -> Int64 {
         var version: Int64 = 0
         try query("PRAGMA user_version;") { version = $0.int(0) }
+        return version
+    }
 
+    /// Bring the file up to `schemaVersion`, as one transaction.
+    ///
+    /// Two processes can open the same file at once, the app and a
+    /// `--dashboard` run for example. Both read the version, both find it
+    /// old, and one waits for the other's write lock. So the version is read
+    /// again once the lock is held, and if the other process has already
+    /// done the work there is nothing left to do. Every step, the version
+    /// number with it, commits together or not at all, so a failure leaves
+    /// the file as it was and the next launch tries again.
+    private func migrate() throws {
+        guard try userVersion() < Self.schemaVersion else { return }
+        try exec("BEGIN IMMEDIATE;")
+        do {
+            let version = try userVersion()
+            if version < Self.schemaVersion {
+                try migrateSteps(from: version)
+                try exec("PRAGMA user_version=\(Self.schemaVersion);")
+            }
+            try exec("COMMIT;")
+        } catch {
+            try? exec("ROLLBACK;")
+            throw error
+        }
+    }
+
+    private func migrateSteps(from version: Int64) throws {
         if version < 1 {
             try exec("""
             CREATE TABLE IF NOT EXISTS samples(
@@ -198,35 +313,23 @@ public final class Database {
             CREATE INDEX IF NOT EXISTS idx_samples_minute ON samples(minute);
             CREATE INDEX IF NOT EXISTS idx_proc_minute    ON proc_samples(minute);
             CREATE INDEX IF NOT EXISTS idx_events_ts      ON events(ts);
-            PRAGMA user_version=1;
             """)
         }
 
         if version < 2 {
-            // Version 2 marks rows whose minute is an estimate. The column, the
-            // backfill and the version number go in one transaction, so a
-            // failure leaves version 1 untouched and the next launch tries
-            // again, and success means it never runs twice.
-            try exec("BEGIN IMMEDIATE;")
-            do {
-                try exec("ALTER TABLE samples ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;")
-                // A brand new database has nothing to mark and nothing to report.
-                if version >= 1 {
-                    let result = try markPastSpreads()
-                    let detail = "Marked \(result.rows) minute rows as estimated, from \(result.gaps) earlier gaps "
-                        + "whose traffic was spread evenly rather than measured minute by minute. "
-                        + "\(result.skipped) gap events could not be read and were left unmarked. "
-                        + "No byte moved: totals are unchanged, only the timing of those rows is uncertain."
-                    // Not addEvent, which forgives a failure: the record of the
-                    // backfill commits with the backfill or not at all.
-                    try run("INSERT INTO events(ts,kind,detail) VALUES(?,?,?);",
-                            [.int(Int64(Date().timeIntervalSince1970)), .text("estimated_backfill"), .text(detail)])
-                }
-                try exec("PRAGMA user_version=2;")
-                try exec("COMMIT;")
-            } catch {
-                try? exec("ROLLBACK;")
-                throw error
+            // Version 2 marks rows whose minute is an estimate.
+            try exec("ALTER TABLE samples ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;")
+            // A brand new database has nothing to mark and nothing to report.
+            if version >= 1 {
+                let result = try markPastSpreads()
+                let detail = "Marked \(result.rows) minute rows as estimated, from \(result.gaps) earlier gaps "
+                    + "whose traffic was spread evenly rather than measured minute by minute. "
+                    + "\(result.skipped) gap events could not be read and were left unmarked. "
+                    + "No byte moved: totals are unchanged, only the timing of those rows is uncertain."
+                // Not addEvent, which forgives a failure: the record of the
+                // backfill commits with the backfill or not at all.
+                try run("INSERT INTO events(ts,kind,detail) VALUES(?,?,?);",
+                        [.int(Int64(Date().timeIntervalSince1970)), .text("estimated_backfill"), .text(detail)])
             }
         }
     }
@@ -273,9 +376,15 @@ public final class Database {
         return value
     }
 
+    /// Forgiving: a failure is dropped. Inside a transaction it still rolls
+    /// the transaction back; see `inTransaction`.
     public func setState(_ key: String, _ value: String) {
-        try? run("INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value;",
-                 [.text(key), .text(value)])
+        try? writeState(key, value)
+    }
+
+    public func writeState(_ key: String, _ value: String) throws {
+        try run("INSERT INTO state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value;",
+                [.text(key), .text(value)])
     }
 
     public func flag(_ key: String, default fallback: Bool) -> Bool {
@@ -292,30 +401,65 @@ public final class Database {
 
     // MARK: - Raw counters
 
+    /// Every saved baseline. One saved before sources were kept is given one
+    /// where the database can say: earlier versions stored the source of the
+    /// whole last snapshot under `counter_source`. If that was the 64 bit
+    /// counter, so was every baseline. If it was the 32 bit one, a value
+    /// that fits in 32 bits is taken as 32 bit, and the ledger works out the
+    /// rest (see `Ledger.assumedSource`).
     public func baselines() -> [String: RawCounter] {
         var out: [String: RawCounter] = [:]
         try? query("SELECT key, value FROM state WHERE key LIKE 'raw:%';") { row in
             let iface = String(row.string(0).dropFirst(4))
             if let counter = RawCounter(encoded: row.string(1)) { out[iface] = counter }
         }
+        if out.values.contains(where: { $0.source == nil }),
+           let legacy = state(StateKey.counterSource).flatMap(CounterSource.init(rawValue:)) {
+            for (iface, counter) in out where counter.source == nil {
+                var known = counter
+                let fits32 = counter.bytesIn <= UInt64(UInt32.max) && counter.bytesOut <= UInt64(UInt32.max)
+                known.source = legacy == .ifdata32 && fits32 ? .ifdata32 : .mib64
+                out[iface] = known
+            }
+        }
         return out
     }
 
+    /// Forgiving: a failure is dropped. Inside a transaction it still rolls
+    /// the transaction back; see `inTransaction`.
     public func saveBaselines(_ baselines: [String: RawCounter]) {
-        for (iface, counter) in baselines {
-            setState(StateKey.rawCounter(iface), counter.encoded)
+        try? writeBaselines(baselines)
+    }
+
+    public func writeBaselines(_ baselines: [String: RawCounter]) throws {
+        for (iface, counter) in baselines.sorted(by: { $0.key < $1.key }) {
+            try writeState(StateKey.rawCounter(iface), counter.encoded)
         }
     }
 
     // MARK: - Writes
+    //
+    // Each write comes in two forms. The throwing one (`writeBuckets`,
+    // `writeEvents`) is for a transaction that must stop at the first
+    // failure, which is what the sampler uses. The forgiving one
+    // (`addBuckets`, `addEvents`) drops the error, for callers with nothing
+    // to do about it. Inside a transaction even the forgiving form cannot
+    // let a commit through without its rows: the failure is remembered and
+    // the transaction rolls back.
 
     public func addEvent(ts: Int64, kind: String, detail: String) {
-        try? run("INSERT INTO events(ts,kind,detail) VALUES(?,?,?);",
-                 [.int(ts), .text(kind), .text(detail)])
+        try? writeEvents([LedgerEvent(ts: ts, kind: kind, detail: detail)])
     }
 
     public func addEvents(_ events: [LedgerEvent]) {
-        for event in events { addEvent(ts: event.ts, kind: event.kind, detail: event.detail) }
+        try? writeEvents(events)
+    }
+
+    public func writeEvents(_ events: [LedgerEvent]) throws {
+        for event in events {
+            try run("INSERT INTO events(ts,kind,detail) VALUES(?,?,?);",
+                    [.int(event.ts), .text(event.kind), .text(event.detail)])
+        }
     }
 
     /// Add traffic to minute buckets. `idle` uses MIN so that a minute with any
@@ -324,6 +468,10 @@ public final class Database {
     /// is an estimate, bytes measured into it later must not clear the mark.
     /// The wake minute after a sleep is exactly that case.
     public func addBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool) {
+        try? writeBuckets(buckets, ssid: ssid, idle: idle)
+    }
+
+    public func writeBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool) throws {
         guard !buckets.isEmpty else { return }
         let sql = """
         INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated) VALUES(?,?,?,?,?,?,?)
@@ -334,7 +482,7 @@ public final class Database {
             estimated = MAX(estimated, excluded.estimated);
         """
         for bucket in buckets {
-            try? run(sql, [.int(bucket.minute), .text(bucket.iface), .text(ssid),
+            try run(sql, [.int(bucket.minute), .text(bucket.iface), .text(ssid),
                            .int(Int64(bitPattern: bucket.bytesIn)),
                            .int(Int64(bitPattern: bucket.bytesOut)),
                            .int(idle ? 1 : 0),

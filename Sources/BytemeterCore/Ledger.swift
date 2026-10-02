@@ -1,7 +1,7 @@
 import Foundation
 
-/// The last raw counter seen for an interface, when it was seen, and in which
-/// boot of the Mac.
+/// The last raw counter seen for an interface, when it was seen, in which
+/// boot of the Mac, and from which counter.
 public struct RawCounter: Equatable {
     public var bytesIn: UInt64
     public var bytesOut: UInt64
@@ -9,27 +9,40 @@ public struct RawCounter: Equatable {
     /// The kernel's boot session id at the time, if it could be read. Nil for
     /// a baseline saved before ids were kept.
     public var bootSession: String?
+    /// The counter the values came from. Nil for a baseline saved before
+    /// sources were kept; see `Ledger.ingest` for how that is read.
+    public var source: CounterSource?
 
-    public init(bytesIn: UInt64, bytesOut: UInt64, at: Int64, bootSession: String? = nil) {
+    public init(bytesIn: UInt64, bytesOut: UInt64, at: Int64, bootSession: String? = nil,
+                source: CounterSource? = nil) {
         self.bytesIn = bytesIn
         self.bytesOut = bytesOut
         self.at = at
         self.bootSession = bootSession
+        self.source = source
     }
 
-    /// "bytesIn,bytesOut,unixSeconds", with ",bootSession" after it when known.
+    /// "bytesIn,bytesOut,unixSeconds", then ",bootSession" when known, then
+    /// ",source" when known. The session field is left empty rather than
+    /// dropped when only the source is known, so the positions never shift.
     public var encoded: String {
-        "\(bytesIn),\(bytesOut),\(at)" + (bootSession.map { ",\($0)" } ?? "")
+        var text = "\(bytesIn),\(bytesOut),\(at)"
+        if bootSession != nil || source != nil { text += "," + (bootSession ?? "") }
+        if let source { text += "," + source.rawValue }
+        return text
     }
 
-    /// Reads both forms, so baselines saved by earlier versions still load.
+    /// Reads all three forms, so baselines saved by earlier versions still
+    /// load. A source this build does not know reads as unknown, not as a
+    /// refusal, so a newer build's baseline is not thrown away.
     public init?(encoded: String) {
         let parts = encoded.split(separator: ",", omittingEmptySubsequences: false)
-        guard parts.count == 3 || parts.count == 4,
+        guard (3...5).contains(parts.count),
               let bin = UInt64(parts[0]), let bout = UInt64(parts[1]), let at = Int64(parts[2])
         else { return nil }
-        let session = parts.count == 4 && !parts[3].isEmpty ? String(parts[3]) : nil
-        self.init(bytesIn: bin, bytesOut: bout, at: at, bootSession: session)
+        let session = parts.count >= 4 && !parts[3].isEmpty ? String(parts[3]) : nil
+        let source = parts.count == 5 ? CounterSource(rawValue: String(parts[4])) : nil
+        self.init(bytesIn: bin, bytesOut: bout, at: at, bootSession: session, source: source)
     }
 }
 
@@ -106,6 +119,10 @@ public enum Ledger {
     public static let maxSpreadMinutes: Int64 = 7 * 24 * 60
 
     private static let wrap32: UInt64 = 4_294_967_296
+    private static let max32: UInt64 = 4_294_967_295
+    /// How close to the 32 bit ceiling a previous value must be for a fall to
+    /// count as a wrap rather than a reset.
+    private static let wrapMargin: UInt64 = 200_000_000
 
     /// Turn a set of cumulative counter readings into minute buckets.
     ///
@@ -115,11 +132,14 @@ public enum Ledger {
     /// current boot (see `BootClock`): `bootTime`, the unix second the kernel
     /// booted, and `bootSession`, its boot session id, each nil if it could
     /// not be read. Together they decide whether the Mac has restarted since
-    /// the last reading.
+    /// the last reading. Each reading says which counter it came from; see
+    /// `InterfaceReading.source`.
+    ///
+    /// No input can make it trap. Every subtraction below is either guarded
+    /// by a comparison on the line before it or saturates.
     public static func ingest(readings: [InterfaceReading],
                               previous: [String: RawCounter],
                               now: Int64,
-                              source: CounterSource,
                               reason: GapReason,
                               bootTime: Int64?,
                               bootSession: String? = nil) -> IngestOutcome {
@@ -129,7 +149,7 @@ public enum Ledger {
 
         for reading in readings {
             let current = RawCounter(bytesIn: reading.bytesIn, bytesOut: reading.bytesOut, at: now,
-                                     bootSession: bootSession)
+                                     bootSession: bootSession, source: reading.source)
 
             guard let prev = previous[reading.name] else {
                 // First time this interface has ever been seen. Its counter is
@@ -193,6 +213,23 @@ public enum Ledger {
                 continue
             }
 
+            // Was the last value read from the same counter? The 32 bit
+            // counter is the 64 bit one cut short, so once an interface has
+            // carried 4.29 GB the two disagree by a multiple of that, and a
+            // difference across the switch is either a fall that is not a
+            // wrap or a jump of gigabytes that never happened. The values
+            // cannot be compared, so measure from this reading and book
+            // nothing for the seconds since the last.
+            let prevSource = prev.source ?? assumedSource(of: prev, current: reading.source)
+            if prevSource != reading.source {
+                events.append(LedgerEvent(
+                    ts: now, kind: "counter_source",
+                    detail: change + " The last value came from \(prevSource.phrase) and this one from "
+                          + "\(reading.source.phrase), which cannot be compared. Baseline moved, no traffic "
+                          + "recorded for the \(clampedElapsed(since: prev.at, now: now)) seconds since the last reading."))
+                continue
+            }
+
             if !fellBack {
                 place(iface: reading.name,
                       deltaIn: reading.bytesIn - prev.bytesIn,
@@ -202,29 +239,22 @@ public enum Ledger {
                 continue
             }
 
-            if source == .ifdata32 {
-                // A 32 bit counter wraps every 4.29 GB. Treat a fall as a wrap
-                // only when the previous reading really was near the ceiling,
-                // otherwise it is a reset and pretending otherwise would
-                // invent up to 4 GB of traffic that never happened. A known
-                // restart has already been dealt with above, so it can never
-                // be mistaken for a wrap.
-                let nearCeiling = prev.bytesIn > wrap32 - 200_000_000 || prev.bytesOut > wrap32 - 200_000_000
-                if nearCeiling {
-                    let deltaIn = reading.bytesIn >= prev.bytesIn
-                        ? reading.bytesIn - prev.bytesIn
-                        : (wrap32 - prev.bytesIn) + reading.bytesIn
-                    let deltaOut = reading.bytesOut >= prev.bytesOut
-                        ? reading.bytesOut - prev.bytesOut
-                        : (wrap32 - prev.bytesOut) + reading.bytesOut
-                    events.append(LedgerEvent(
-                        ts: now, kind: "counter_wrap",
-                        detail: "\(reading.name) 32 bit counter wrapped past 4.29 GB. Difference carried across."))
-                    place(iface: reading.name, deltaIn: deltaIn, deltaOut: deltaOut,
-                          since: prev.at, now: now, reason: reason,
-                          buckets: &buckets, events: &events)
-                    continue
-                }
+            // A 32 bit counter wraps every 4.29 GB. A fall counts as a wrap
+            // only when both values are 32 bit and every direction that fell
+            // was near the ceiling; anything else is a reset, and pretending
+            // otherwise would invent up to 4 GB of traffic that never
+            // happened. A known restart has already been dealt with above, so
+            // it can never be mistaken for a wrap.
+            if reading.source == .ifdata32,
+               let deltaIn = wrapDelta(from: prev.bytesIn, to: reading.bytesIn),
+               let deltaOut = wrapDelta(from: prev.bytesOut, to: reading.bytesOut) {
+                events.append(LedgerEvent(
+                    ts: now, kind: "counter_wrap",
+                    detail: "\(reading.name) 32 bit counter wrapped past 4.29 GB. Difference carried across."))
+                place(iface: reading.name, deltaIn: deltaIn, deltaOut: deltaOut,
+                      since: prev.at, now: now, reason: reason,
+                      buckets: &buckets, events: &events)
+                continue
             }
 
             // No restart, or no way to tell. Record nothing: without a restart
@@ -242,18 +272,64 @@ public enum Ledger {
         return IngestOutcome(buckets: buckets, events: events, baselines: baselines)
     }
 
+    // MARK: - Counter arithmetic
+
+    /// The source of a baseline saved before sources were kept. A value above
+    /// the 32 bit ceiling can only have come from the 64 bit counter. Below
+    /// it, the baseline is taken to match the reading, which is what earlier
+    /// versions assumed; `Database.baselines()` narrows this first where the
+    /// old database recorded which counter it last used.
+    static func assumedSource(of prev: RawCounter, current: CounterSource) -> CounterSource {
+        prev.bytesIn > max32 || prev.bytesOut > max32 ? .mib64 : current
+    }
+
+    /// The bytes between two readings of one 32 bit direction, carried across
+    /// a wrap. Nil when a fall is not a believable wrap: the previous value
+    /// was not near the ceiling, or either value does not fit in 32 bits, in
+    /// which case the subtraction from the ceiling would not mean anything.
+    static func wrapDelta(from prev: UInt64, to value: UInt64) -> UInt64? {
+        if value >= prev { return value - prev }
+        guard prev <= max32, value <= max32, prev > wrap32 - wrapMargin else { return nil }
+        return (wrap32 - prev) + value      // at most 2^32 + 2^32, far inside UInt64
+    }
+
+    /// `now - since` in seconds, never negative and never overflowing, even
+    /// for a corrupt baseline time.
+    static func clampedElapsed(since: Int64, now: Int64) -> Int64 {
+        guard now > since else { return 0 }
+        let (difference, overflow) = now.subtractingReportingOverflow(since)
+        return overflow ? Int64.max : difference
+    }
+
     // MARK: - Placing bytes in minutes
 
     /// Put a delta that moved some time after `since` into minute buckets.
+    ///
+    /// Never earlier than the minute of the last reading. A clock set
+    /// backwards, by hand or by a bad time server, would otherwise book the
+    /// bytes in a minute that has already been and gone, years ago if the
+    /// clock was far enough out, and that minute would then stand as the
+    /// start of All time and of Month by month for good. So a reading whose
+    /// time is before the last one books at the last one's minute.
     private static func place(iface: String, deltaIn: UInt64, deltaOut: UInt64,
                               since: Int64, now: Int64, reason: GapReason,
                               buckets: inout [BucketDelta], events: inout [LedgerEvent]) {
         if deltaIn == 0 && deltaOut == 0 { return }
 
-        let elapsed = max(0, now - since)
+        let elapsed = clampedElapsed(since: since, now: now)
         let nowMinute = floorDiv(now, 60)
         let prevMinute = floorDiv(since, 60)
-        let spanMinutes = nowMinute - prevMinute
+        let spanMinutes = nowMinute - prevMinute     // each side is at most Int64.max / 60, so no overflow
+
+        if nowMinute < prevMinute {
+            buckets.append(BucketDelta(minute: prevMinute, iface: iface, bytesIn: deltaIn, bytesOut: deltaOut))
+            events.append(LedgerEvent(
+                ts: now, kind: "clock_backwards",
+                detail: "\(iface) reading is \(prevMinute - nowMinute) minutes earlier than the last one, so the "
+                      + "clock went back. \(deltaIn) in and \(deltaOut) out booked in the last reading's minute "
+                      + "rather than in the past."))
+            return
+        }
 
         if elapsed <= spreadThresholdSeconds || spanMinutes <= 1 {
             // The ordinary case. A delta that straddles a minute boundary
@@ -293,7 +369,7 @@ public enum Ledger {
     private static func bookSinceRestart(iface: String, bytesIn: UInt64, bytesOut: UInt64,
                                          boot: Int64, now: Int64,
                                          buckets: inout [BucketDelta]) -> String {
-        let sinceBoot = now - boot
+        let sinceBoot = clampedElapsed(since: boot, now: now)
         let nowMinute = floorDiv(now, 60)
         let bootMinute = floorDiv(boot, 60)
         // Unlike a gap, the boot minute itself is included: nothing was
@@ -371,7 +447,8 @@ public enum Ledger {
         else { return nil }
 
         let wakeMinute = floorDiv(eventTs, 60)
-        guard wakeMinute - floorDiv(eventTs - elapsed, 60) == parts else { return nil }
+        let (start, overflow) = eventTs.subtractingReportingOverflow(elapsed)
+        guard elapsed >= 0, !overflow, wakeMinute - floorDiv(start, 60) == parts else { return nil }
         return SpreadWindow(iface: words[0], firstMinute: wakeMinute - parts + 1, lastMinute: wakeMinute)
     }
 

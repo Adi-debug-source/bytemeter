@@ -13,7 +13,15 @@ public struct MinuteRange: Equatable {
 
 /// All the date arithmetic, in local time, with the week starting on Monday.
 /// Buckets are stored as UTC epoch minutes, so every boundary is worked out
-/// here and converted, which keeps the app correct across British Summer Time.
+/// here and converted, which keeps every figure correct across daylight
+/// saving changes in any time zone.
+///
+/// A rule for every day boundary in this file: work it out fresh from noon
+/// on the day in question, never by stepping from one midnight to the next.
+/// Where a clock change skips midnight (Santiago, Cairo, Havana and others
+/// move at 00:00) that day starts at 01:00, and a day added to 01:00 is
+/// 01:00 the next day too, which would carry the hour into every later day.
+/// Noon is never skipped.
 public struct BytemeterCalendar {
     public var calendar: Calendar
     /// 1 means calendar months. Any other day is a custom billing cycle start.
@@ -22,7 +30,9 @@ public struct BytemeterCalendar {
     public init(timeZone: TimeZone = .current, cycleStartDay: Int = 1) {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = timeZone
-        cal.firstWeekday = 2      // Monday, per house convention
+        // Weeks start on Monday and follow ISO 8601 week numbering, whatever
+        // the region setting, so "this week" means the same on every Mac.
+        cal.firstWeekday = 2
         cal.minimumDaysInFirstWeek = 4
         self.calendar = cal
         self.cycleStartDay = min(max(cycleStartDay, 1), 28)
@@ -38,6 +48,30 @@ public struct BytemeterCalendar {
 
     public func startOfDay(_ date: Date) -> Date { calendar.startOfDay(for: date) }
 
+    /// The start of the day `days` after the one holding `date` (before it,
+    /// if negative). Midnight, or the first moment of that day where a clock
+    /// change skips midnight. Worked out from noon; see the note above.
+    public func startOfDay(_ date: Date, offsetBy days: Int) -> Date {
+        let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
+        return startOfDay(calendar.date(byAdding: .day, value: days, to: noon) ?? noon)
+    }
+
+    /// Calendar days from the day holding `from` to the day holding `to`.
+    public func daysBetween(_ from: Date, _ to: Date) -> Int {
+        let a = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: from) ?? from
+        let b = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: to) ?? to
+        return calendar.dateComponents([.day], from: a, to: b).day ?? 0
+    }
+
+    /// The local hour, 0 to 23, of an epoch minute, from the calendar. The
+    /// minutes since midnight divided by 60 would be an hour out for the rest
+    /// of any day the clocks change.
+    public func hour(ofMinute minute: Int64) -> Int {
+        calendar.component(.hour, from: Self.date(fromMinute: minute))
+    }
+
+    /// Adds calendar days to an instant, keeping its wall clock time where it
+    /// exists. Not for day boundaries: use `startOfDay(_:offsetBy:)`.
     public func addDays(_ count: Int, to date: Date) -> Date {
         calendar.date(byAdding: .day, value: count, to: date) ?? date
     }
@@ -60,9 +94,12 @@ public struct BytemeterCalendar {
         return startOfDay(start)
     }
 
+    /// The start of the next cycle. A month added to noon on the first day,
+    /// then taken back to that day's start, for the same reason as the days.
     public func endOfCycle(_ date: Date) -> Date {
         let start = startOfCycle(date)
-        return calendar.date(byAdding: .month, value: 1, to: start) ?? start
+        let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: start) ?? start
+        return startOfDay(calendar.date(byAdding: .month, value: 1, to: noon) ?? noon)
     }
 
     public func range(from: Date, to: Date) -> MinuteRange {
@@ -74,8 +111,7 @@ public struct BytemeterCalendar {
     }
 
     public func yesterday(_ now: Date) -> MinuteRange {
-        let start = addDays(-1, to: startOfDay(now))
-        return range(from: start, to: startOfDay(now))
+        range(from: startOfDay(now, offsetBy: -1), to: startOfDay(now))
     }
 
     public func thisWeek(_ now: Date) -> MinuteRange {
@@ -83,7 +119,7 @@ public struct BytemeterCalendar {
     }
 
     public func rollingDays(_ count: Int, now: Date) -> MinuteRange {
-        let start = addDays(-(count - 1), to: startOfDay(now))
+        let start = startOfDay(now, offsetBy: -(count - 1))
         return range(from: start, to: Self.date(fromMinute: Self.minute(from: now) + 1))
     }
 
@@ -91,20 +127,15 @@ public struct BytemeterCalendar {
         range(from: startOfCycle(now), to: Self.date(fromMinute: Self.minute(from: now) + 1))
     }
 
-    /// Local midnight for each day in the range, as epoch minutes. Built with
-    /// the calendar rather than by adding 1440, so a clock change does not
-    /// shift every later day by an hour.
+    /// The start of each of `dayCount` days from the one holding `from`, as
+    /// epoch minutes. Each is worked out on its own from noon, neither by
+    /// adding 1440 minutes, which a clock change breaks, nor by stepping from
+    /// the previous start, which a skipped midnight breaks.
     public func dayStarts(from: Date, dayCount: Int) -> [Int64] {
-        var out: [Int64] = []
-        var cursor = startOfDay(from)
-        for _ in 0..<dayCount {
-            out.append(Self.minute(from: cursor))
-            cursor = addDays(1, to: cursor)
-        }
-        return out
+        (0..<max(0, dayCount)).map { Self.minute(from: startOfDay(from, offsetBy: $0)) }
     }
 
-    // MARK: - Formatting, British English, day first, 24 hour
+    // MARK: - Formatting: day first and 24 hour, whatever the region setting
 
     public func dayLabel(_ date: Date) -> String {
         let f = DateFormatter()
