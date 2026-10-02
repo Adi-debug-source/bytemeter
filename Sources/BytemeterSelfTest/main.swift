@@ -6,6 +6,11 @@ import BytemeterCore
 // Command Line Tools alone, and this must run without full Xcode. The checks below are the
 // real ones, covering the counting rules that have to be right.
 
+// Every database the checks make goes in one folder for this run, removed at
+// the end, so running the self-test leaves nothing behind in the temp folder.
+let scratchFolder = NSTemporaryDirectory() + "bytemeter_selftest_\(UUID().uuidString)/"
+try! FileManager.default.createDirectory(atPath: scratchFolder, withIntermediateDirectories: true)
+
 var checksRun = 0
 var failures: [String] = []
 
@@ -29,7 +34,7 @@ func reading32(_ name: String, _ bytesIn: UInt64, _ bytesOut: UInt64) -> Interfa
 }
 
 func makeDatabase() -> Database {
-    let path = NSTemporaryDirectory() + "bytemeter_selftest_\(UUID().uuidString).db"
+    let path = scratchFolder + "\(UUID().uuidString).db"
     return try! Database(path: path)
 }
 
@@ -313,7 +318,7 @@ func rawInt(_ path: String, _ sql: String) -> Int64 {
 
 do {
     // A schema 1 database, exactly as the first release created it.
-    let path = NSTemporaryDirectory() + "bytemeter_selftest_v1_\(UUID().uuidString).db"
+    let path = scratchFolder + "v1_\(UUID().uuidString).db"
     var sql = """
     CREATE TABLE samples(minute INTEGER NOT NULL, iface TEXT NOT NULL, ssid TEXT NOT NULL,
         bytes_in INTEGER NOT NULL DEFAULT 0, bytes_out INTEGER NOT NULL DEFAULT 0,
@@ -989,7 +994,7 @@ final class OpenResults: @unchecked Sendable {
 }
 
 do {
-    let path = NSTemporaryDirectory() + "bytemeter_selftest_race_\(UUID().uuidString).db"
+    let path = scratchFolder + "race_\(UUID().uuidString).db"
     check(rawExec(path, """
         PRAGMA journal_mode=WAL;
         CREATE TABLE samples(minute INTEGER NOT NULL, iface TEXT NOT NULL, ssid TEXT NOT NULL,
@@ -1223,7 +1228,7 @@ do {
 // MARK: - The demo opens its database strictly read only
 
 do {
-    let folder = NSTemporaryDirectory() + "bytemeter_selftest_demo_\(UUID().uuidString)"
+    let folder = scratchFolder + "demo_\(UUID().uuidString)"
     try! FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
     let path = folder + "/bytemeter.db"
     do {
@@ -1258,7 +1263,7 @@ do {
     expect(fingerprint(), before, "reading leaves every file in the folder exactly as it was, and adds none")
 
     // A database from before version 2 is refused, not read wrongly or upgraded.
-    let oldPath = NSTemporaryDirectory() + "bytemeter_selftest_v1ro_\(UUID().uuidString).db"
+    let oldPath = scratchFolder + "v1ro_\(UUID().uuidString).db"
     _ = rawExec(oldPath, "CREATE TABLE samples(minute INTEGER); PRAGMA user_version=1;")
     var oldRefused = false
     do { _ = try Database(readOnlyPath: oldPath) } catch { oldRefused = "\(error)".contains("schema version 1") }
@@ -1279,6 +1284,7 @@ do {
 runAppChecks()
 // MARK: - Result
 
+try? FileManager.default.removeItem(atPath: scratchFolder)
 print("Bytemeter self-test: \(checksRun) checks run, \(failures.count) failed.")
 for failure in failures { print("  FAILED: \(failure)") }
 exit(failures.isEmpty ? 0 : 1)
