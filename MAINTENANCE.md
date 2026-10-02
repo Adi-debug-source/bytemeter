@@ -232,9 +232,9 @@ python3 Scripts/make_demo_db.py /tmp/bytemeter-demo --now 2026-09-29T21:30 --for
   --user-data-dir="$(mktemp -d)" --hide-scrollbars --force-device-scale-factor=2 \
   --window-size=1400,3600 --screenshot=/tmp/bytemeter-demo/page.png \
   file:///tmp/bytemeter-demo/dashboard.html
-sips -c 1896 2360 --cropOffset 32 220   /tmp/bytemeter-demo/page.png --out docs/dashboard.png
-sips -c 852 2360  --cropOffset 1934 220 /tmp/bytemeter-demo/page.png --out docs/thirty-days.png
-sips -c 878 2336  --cropOffset 2788 232 /tmp/bytemeter-demo/page.png --out docs/heatmap.png
+sips -c 1898 2360 --cropOffset 32 220   /tmp/bytemeter-demo/page.png --out docs/dashboard.png
+sips -c 850 2360  --cropOffset 1936 220 /tmp/bytemeter-demo/page.png --out docs/thirty-days.png
+sips -c 880 2336  --cropOffset 2788 232 /tmp/bytemeter-demo/page.png --out docs/heatmap.png
 sips -s format png -Z 256 Resources/AppIcon.icns --out docs/icon.png
 ```
 
