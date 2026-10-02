@@ -3,12 +3,22 @@
 Make a synthetic Bytemeter database, for screenshots and for trying the
 dashboard without waiting a month.
 
-    python3 Scripts/make_demo_db.py <folder> [--force] [--seed N]
-    .build/release/Bytemeter --dashboard <folder>
+    python3 Scripts/make_demo_db.py <folder> [--now TIME] [--force] [--seed N]
+    .build/release/Bytemeter --dashboard <folder> [--as-of TIME]
 
 The first command writes <folder>/bytemeter.db. It refuses to replace an
 existing database unless given --force. The second builds dashboard.html from
 it without starting the menu bar app.
+
+TIME is a local date and time such as 2026-09-29T21:30. Given --now, the data
+ends at that minute instead of at the real clock, and nothing is written after
+it. Give the dashboard the same moment with --as-of and the page is drawn as
+if it were then, which is how the README's screenshots are made at a fixed,
+believable hour whatever the time of day they are regenerated. These are
+the README's own commands:
+
+    python3 Scripts/make_demo_db.py /tmp/bytemeter-demo --now 2026-09-29T21:30 --force
+    .build/release/Bytemeter --dashboard /tmp/bytemeter-demo --as-of 2026-09-29T21:30
 
 Every figure is invented
 ------------------------
@@ -17,12 +27,13 @@ daily rhythm, the volumes, the process names and the counter values are all
 made up in this file, so a screenshot of the result says nothing about whoever
 ran it. That is why the README's screenshots can be published.
 
-It is deterministic. The random seed is fixed, so two runs in the same minute
-produce the same rows, byte for byte with the same Python; a different Python
-writes the same content but stamps its own SQLite version in the file header.
-Times are relative to now and to this Mac's time zone,
-because the dashboard reads "today" from the clock; a run later in the same
-day keeps the same history and simply carries on further.
+It is deterministic. The random seed is fixed, so two runs with the same
+--now, or in the same minute without it, produce the same rows, byte for byte
+with the same Python; a different Python writes the same content but stamps
+its own SQLite version in the file header. Times are relative to that moment
+and to this Mac's time zone, because the dashboard works out "today" in local
+time; a later moment on the same day keeps the same history and simply
+carries on further.
 
 The schema is deliberately the old one
 --------------------------------------
@@ -382,12 +393,13 @@ def build_plan(seed: int, today: date, days: dict) -> dict:
     # Gap sizes for each sleep, decided here so they do not depend on the time
     # the script happens to run. A sleeping Mac usually moves a few MB in its
     # dark wakes. Last night it did more, as a Mac does when Power Nap pulls an
-    # iCloud sync and an update overnight, and that is deliberate: it is the
-    # night the Today chart shows, so the estimated marking is big enough to
-    # see in a screenshot rather than a sliver one pixel high.
+    # iCloud Photos sync and an update overnight, and that is deliberate: it is
+    # the night the Today chart shows, beside an evening of several hundred MB
+    # an hour, so the hatched hours need this much to be seen in a screenshot
+    # rather than drawn as slivers a pixel or two high.
     plan["sleep_sizes"] = {k: (rng.uniform(6, 28) * MB, rng.uniform(0.2, 0.4))
                            for k in plan["sleep_nights"]}
-    plan["sleep_sizes"][0] = (rng.uniform(180, 280) * MB, rng.uniform(0.08, 0.15))
+    plan["sleep_sizes"][0] = (rng.uniform(380, 520) * MB, rng.uniform(0.08, 0.15))
     plan["sleep_lag"] = {k: (rng.uniform(4, 18), rng.uniform(0, 59), rng.uniform(0, 59))
                          for k in plan["sleep_nights"]}
     plan["reset_counts"] = [(rng.randint(900_000, 3_200_000), rng.randint(250_000, 900_000))
@@ -724,18 +736,43 @@ def write(path: str, data: dict) -> None:
     db.close()
 
 
+def parse_now(text: str) -> int:
+    """A local date and time, as epoch seconds floored to the minute.
+
+    It takes exactly the two forms the app's --as-of takes (parseLocal in
+    TimeRanges.swift), so any moment that works for one works for the other,
+    and the page and the data cannot end up naming different moments.
+    """
+    for form in ("%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            moment = datetime.strptime(text, form)
+        except ValueError:
+            continue
+        return int(moment.timestamp()) // 60 * 60
+    raise argparse.ArgumentTypeError(f"wants a local time such as 2026-09-29T21:30, not \"{text}\"")
+
+
 GAP = re.compile(r"^en0 gap of (\d+) seconds\. (\d+) in and (\d+) out spread evenly across (\d+) minutes\.$")
 
 
-def check(path: str) -> list:
-    """Read the file back and prove the two things the app relies on.
+def check(path: str, now_ts: int) -> list:
+    """Read the file back and prove the three things the app relies on.
 
-    1. Each gap_sleep window holds exactly the rows the event describes, so
+    1. Nothing is recorded after `now`, so a page drawn as of that moment
+       shows everything there is.
+    2. Each gap_sleep window holds exactly the rows the event describes, so
        the app's migration marks the right ones.
-    2. The en0 counter in `state` equals the last post-reset baseline plus
+    3. The en0 counter in `state` equals the last post-reset baseline plus
        every byte recorded since, to the byte.
     """
     db = sqlite3.connect(path)
+    now_minute = now_ts // 60
+    late = (db.execute("SELECT COUNT(*) FROM samples WHERE minute>?;", (now_minute,)).fetchone()[0]
+            + db.execute("SELECT COUNT(*) FROM proc_samples WHERE minute>?;", (now_minute,)).fetchone()[0]
+            + db.execute("SELECT COUNT(*) FROM events WHERE ts>?;", (now_ts,)).fetchone()[0])
+    stamps = [int(v.split(",")[2]) for (v,) in db.execute("SELECT value FROM state WHERE key LIKE 'raw:%';")]
+    if late or any(at > now_ts for at in stamps):
+        raise SystemExit("Something was written after --now.")
     report = []
     for ts, detail in db.execute("SELECT ts, detail FROM events WHERE kind='gap_sleep' ORDER BY ts;"):
         found = GAP.match(detail)
@@ -812,6 +849,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Write a synthetic Bytemeter database for screenshots and demos.")
     parser.add_argument("folder", help="folder to write bytemeter.db into; created if missing")
+    parser.add_argument("--now", type=parse_now, metavar="TIME",
+                        help="local time the data ends at, for example 2026-09-29T21:30 "
+                             "(default: the current minute)")
     parser.add_argument("--force", action="store_true", help="replace an existing bytemeter.db")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="random seed (default %(default)s)")
     args = parser.parse_args()
@@ -827,8 +867,9 @@ def main() -> int:
         return 1
 
     os.makedirs(folder, exist_ok=True)
-    # Floored to the minute, so two runs in the same minute agree to the byte.
-    data = build(args.seed, int(time.time()) // 60 * 60)
+    # Floored to the minute, so two runs at the same moment agree to the byte.
+    now_ts = args.now if args.now is not None else int(time.time()) // 60 * 60
+    data = build(args.seed, now_ts)
 
     # Written beside the target and moved into place, so an interrupted run
     # never leaves a half written database where the app would find it.
@@ -840,9 +881,10 @@ def main() -> int:
         os.remove(p)
     os.replace(temporary, path)
 
-    gaps = check(path)
+    gaps = check(path, now_ts)
     summarise(path, gaps)
-    print("Checked: every sleep window matches its event, and the en0 counter matches the samples.")
+    print("Checked: nothing after the end moment, every sleep window matches its event, "
+          "and the en0 counter matches the samples.")
     return 0
 
 
