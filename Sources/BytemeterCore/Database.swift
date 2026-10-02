@@ -83,6 +83,46 @@ public final class Database {
         try migrate()
     }
 
+    /// The schema version this build writes and reads. Raise it with each new
+    /// step in `migrate()`.
+    public static let schemaVersion: Int64 = 2
+
+    /// Open an existing database for reading only, for `--demo`, which must
+    /// leave its folder exactly as it found it.
+    ///
+    /// Opened immutable: no migration, no journal mode, no locks, and nothing
+    /// written, not even the -wal and -shm files that WAL mode normally keeps
+    /// beside the database. Immutable means SQLite reads the main file alone,
+    /// so a write-ahead log that still holds changes is refused rather than
+    /// silently ignored, and so is a file at a different schema version.
+    public init(readOnlyPath path: String) throws {
+        self.path = path
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw BytemeterError.open("there is no database at \(path)")
+        }
+        let wal = (try? FileManager.default.attributesOfItem(atPath: path + "-wal"))?[.size] as? NSNumber
+        if let size = wal, size.int64Value > 0 {
+            throw BytemeterError.open("\(path) has changes in its write-ahead log that are not in the file yet. "
+                                      + "Quit whatever has it open, then try again")
+        }
+        let uri = URL(fileURLWithPath: path).absoluteString + "?immutable=1"
+        var db: OpaquePointer?
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_FULLMUTEX
+        guard sqlite3_open_v2(uri, &db, flags, nil) == SQLITE_OK, db != nil else {
+            let message = db.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
+            sqlite3_close(db)
+            throw BytemeterError.open(message)
+        }
+        handle = db
+        var version: Int64 = -1
+        try query("PRAGMA user_version;") { version = $0.int(0) }
+        guard version == Self.schemaVersion else {
+            throw BytemeterError.open("\(path) is at schema version \(version) and this build reads version "
+                                      + "\(Self.schemaVersion). Run Bytemeter --dashboard on its folder once to "
+                                      + "bring it up to date")
+        }
+    }
+
     deinit { sqlite3_close(handle) }
 
     // MARK: - Plumbing

@@ -3,12 +3,13 @@ import Foundation
 import Darwin
 #endif
 
-/// When the kernel booted, which is what tells a restart apart from an
-/// interface reset when a counter goes backwards.
+/// Which boot of the Mac this is, and when it began. Together they tell a
+/// restart apart from everything else, and say where the traffic since a
+/// restart belongs.
 ///
-/// `kern.boottime` is exact and available on iOS as well, so it lives in the
-/// shared engine. It is read here and passed into `Ledger.ingest`, which keeps
-/// the ledger itself free of system calls and testable with any boot time.
+/// Both are kernel values that iOS has as well, so they live in the shared
+/// engine. They are read here and passed into `Ledger.ingest`, which keeps the
+/// ledger itself free of system calls and testable with any values.
 public enum BootClock {
 
     /// Unix seconds at boot, or nil if it cannot be read.
@@ -21,5 +22,18 @@ public enum BootClock {
         }
         guard ok, size == MemoryLayout<timeval>.size, value.tv_sec > 0 else { return nil }
         return Int64(value.tv_sec)
+    }
+
+    /// `kern.bootsessionuuid`: a new value at every boot and at nothing else.
+    /// Unlike the boot time, setting the clock does not move it, which is why
+    /// it decides whether the Mac restarted. Nil if it cannot be read.
+    public static func bootSession() -> String? {
+        var size = 0
+        guard sysctlbyname("kern.bootsessionuuid", nil, &size, nil, 0) == 0, size > 1 else { return nil }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("kern.bootsessionuuid", &buffer, &size, nil, 0) == 0 else { return nil }
+        let value = String(cString: buffer).trimmingCharacters(in: .whitespacesAndNewlines)
+        // A comma would break the stored baseline's format; a real id never has one.
+        return value.isEmpty || value.contains(",") ? nil : value
     }
 }

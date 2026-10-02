@@ -5,8 +5,10 @@ import Foundation
 /// This matters more than it looks. Two copies would each read the same
 /// cumulative counters and the same stored baseline, each work out the same
 /// delta, and each write it, so every figure would come out roughly double.
-/// The LaunchAgent has KeepAlive set and the app can also be opened by hand, so
-/// the two can meet.
+/// The login item relaunches the app after a crash, and the app can also be
+/// opened by hand, so a second copy can start while the first is running.
+/// That copy steps aside and exits with status 0, which launchd treats as a
+/// clean exit and does not answer with another relaunch.
 ///
 /// An advisory lock on a file held for the life of the process is the simplest
 /// thing that cannot go stale: if the process dies, however it dies, the kernel

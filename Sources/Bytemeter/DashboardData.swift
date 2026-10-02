@@ -56,7 +56,7 @@ struct DashboardData {
         allTime = aggregator.allTime(now: now)
         cycleStart = cal.startOfCycle(now)
 
-        hourly = aggregator.hourly(day: now)
+        hourly = aggregator.hourly(day: now, now: now)
         let series = aggregator.daily(lastDays: 30, now: now)
         daily = series
 
@@ -95,10 +95,13 @@ struct DashboardData {
         capEnabled = settings.capEnabled
         capBytes = UInt64(max(0, settings.capBytes))
         counterSource = aggregator.db.state(StateKey.counterSource) ?? "unknown"
-        countingSince = aggregator.earliestMinute().map { BytemeterCalendar.date(fromMinute: $0) }
+        countingSince = allTime.since
 
         var rows: [(ts: Int64, kind: String, detail: String)] = []
-        try? aggregator.db.query("SELECT ts, kind, detail FROM events ORDER BY ts DESC LIMIT 10;") { row in
+        // Only what had happened by `now`, so a page drawn as of an earlier
+        // moment does not list events from after it.
+        try? aggregator.db.query("SELECT ts, kind, detail FROM events WHERE ts<=? ORDER BY ts DESC LIMIT 10;",
+                                 [.int(Int64(now.timeIntervalSince1970))]) { row in
             rows.append((row.int(0), row.string(1), row.string(2)))
         }
         events = rows

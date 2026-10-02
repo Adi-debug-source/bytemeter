@@ -13,6 +13,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let settings: Settings
     private let readData: (@escaping (Aggregator) -> Void) -> Void
+    /// The moment the figures describe. The clock, except in demo mode, where
+    /// it can be a fixed moment so a screenshot can be taken at any hour.
+    private let clock: () -> Date
 
     private var rateIn: Double = 0
     private var rateOut: Double = 0
@@ -25,10 +28,17 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     var onOpenPreferences: (() -> Void)?
     var onLiveSpeedChanged: (() -> Void)?
 
-    init(settings: Settings, readData: @escaping (@escaping (Aggregator) -> Void) -> Void) {
+    /// `autosaveName` keeps a demo's item from sharing the real item's name,
+    /// under which macOS remembers where the item sits in the menu bar.
+    init(settings: Settings,
+         clock: @escaping () -> Date = { Date() },
+         autosaveName: String? = nil,
+         readData: @escaping (@escaping (Aggregator) -> Void) -> Void) {
         self.settings = settings
+        self.clock = clock
         self.readData = readData
         super.init()
+        if let autosaveName { statusItem.autosaveName = autosaveName }
 
         if let button = statusItem.button {
             button.target = self
@@ -76,8 +86,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// Pull the current total for whichever mode is showing, then redraw.
     func refresh() {
         let mode = settings.statusMode
+        let now = clock()
         readData { [weak self] aggregator in
-            let now = Date()
             let totals: Totals
             var since: Date?
             switch mode {
@@ -124,82 +134,20 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.autoenablesItems = false
 
         var snapshot: MenuSnapshot?
-        readData { aggregator in snapshot = MenuSnapshot(aggregator: aggregator, now: Date()) }
+        let now = clock()
+        readData { aggregator in snapshot = MenuSnapshot(aggregator: aggregator, now: now) }
         guard let data = snapshot else { return menu }
 
         // Standard titles move right by a tick column whenever an item is
         // ticked, and live speed is the only item that can be, so the rows
         // follow it.
         let inset = MenuRows.leadingInset(tickColumn: settings.liveSpeed)
-        func header(_ text: String) -> NSMenuItem { MenuRows.header(text, inset: inset) }
-        func plain(_ text: String) -> NSMenuItem { MenuRows.text(text, inset: inset) }
-        // Strong rows are the four totals the menu bar figure cycles through,
-        // so the menu and the figure point at each other; the rest is grey.
-        func figure(_ label: String, _ totals: Totals, _ tone: MenuRows.Tone = .quiet) -> NSMenuItem {
-            MenuRows.figure(label, down: Units.bytes(totals.bytesIn), up: Units.bytes(totals.bytesOut),
-                            tone: tone, inset: inset)
-        }
-
-        if settings.liveSpeed {
-            menu.addItem(header("Live"))
-            menu.addItem(MenuRows.figure("Now", down: Units.rate(rateIn), up: Units.rate(rateOut),
-                                         tone: .quiet, inset: inset))
-            menu.addItem(.separator())
-        }
-
-        menu.addItem(header("Totals"))
-        menu.addItem(figure("Today", data.today, .strong))
-        menu.addItem(figure("Yesterday", data.yesterday))
-        menu.addItem(figure("This week, from Monday", data.thisWeek, .strong))
-        menu.addItem(figure("Last 7 days", data.last7))
-        menu.addItem(figure(data.cycleLabel, data.thisMonth, .strong))
-        menu.addItem(figure("Last 30 days", data.last30))
-        if let since = data.allTime.since {
-            menu.addItem(figure("All time", data.allTime.totals, .strong))
-            menu.addItem(MenuRows.caption("since \(data.cal.dateLabel(since)) · \(data.allTime.daysText) counted",
-                                          inset: inset))
-        }
-
-        menu.addItem(.separator())
-        menu.addItem(header("Averages"))
-        menu.addItem(figure("Per hour today", data.perHourToday))
-        menu.addItem(figure("Per day this week", data.perDayWeek))
-        menu.addItem(figure("Per day this month", data.perDayMonth))
-        if data.allTime.since != nil {
-            menu.addItem(figure("Per day, all time", data.allTime.perDay))
-        }
-
-        menu.addItem(.separator())
-        menu.addItem(header("Looking ahead"))
-        menu.addItem(plain("At that rate, \(data.cycleEndLabel) ends at \(Units.bytes(data.projected.total))"))
-        menu.addItem(plain(data.peakHourText))
-        menu.addItem(plain(data.peakDayText))
-
-        // Cap machinery: present and wired, switched off. When a cap is turned
-        // on, this is the progress bar that appears, with no rebuild needed.
-        if settings.capEnabled, settings.capBytes > 0 {
-            menu.addItem(.separator())
-            menu.addItem(header("Cap"))
-            menu.addItem(plain(capBarText(used: data.thisMonth.total, cap: UInt64(settings.capBytes))))
-        }
-
-        menu.addItem(.separator())
-        if settings.perAppSampling {
-            menu.addItem(header("Top talkers today"))
-            if data.topTalkers.isEmpty {
-                menu.addItem(plain("Nothing recorded yet"))
-            } else {
-                for talker in data.topTalkers {
-                    menu.addItem(figure(talker.name, talker.totals))
-                }
-            }
-            menu.addItem(MenuRows.text(
-                "A guide, not an exact split. See the dashboard.", inset: inset,
-                toolTip: "nettop reports totals per process, so a process that quits between samples "
-                    + "takes its last few seconds with it. The interface counters are the source of truth, "
-                    + "and the two will not reconcile exactly."))
-        } else {
-            menu.addItem(plain("Per-app sampling is off"))
+        let options = MenuModel.Options(liveSpeed: settings.liveSpeed, rateIn: rateIn, rateOut: rateOut,
+                                        capEnabled: settings.capEnabled,
+                                        capBytes: UInt64(max(0, settings.capBytes)),
+                                        perAppSampling: settings.perAppSampling)
+        for line in MenuModel.information(data, options: options) {
+            menu.addItem(item(for: line, inset: inset))
         }
 
         menu.addItem(.separator())
@@ -217,8 +165,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(preferences)
 
         menu.addItem(.separator())
-        menu.addItem(MenuRows.text("Right-click or two-finger click the figure to cycle today, week, month and all time.",
-                                   inset: inset, wraps: true))
+        menu.addItem(MenuRows.text(MenuModel.hint, inset: inset, wraps: true))
         let quit = NSMenuItem(title: "Quit Bytemeter", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -228,11 +175,21 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     // MARK: - Menu helpers
 
-    private func capBarText(used: UInt64, cap: UInt64) -> String {
-        let fraction = cap == 0 ? 0 : min(1.0, Double(used) / Double(cap))
-        let filled = Int((fraction * 12).rounded())
-        let bar = String(repeating: "▰", count: filled) + String(repeating: "▱", count: 12 - filled)
-        return "\(bar)  \(Int(fraction * 100))% of \(Units.bytes(cap))"
+    /// One line of the menu as a row. Strong lines, the four totals the menu
+    /// bar cycles through, are full contrast; every other row is grey.
+    private func item(for line: MenuLine, inset: CGFloat) -> NSMenuItem {
+        switch line {
+        case let .header(text):
+            return MenuRows.header(text, inset: inset)
+        case let .figure(label, down, up, strong):
+            return MenuRows.figure(label, down: down, up: up, tone: strong ? .strong : .quiet, inset: inset)
+        case let .text(text, toolTip):
+            return MenuRows.text(text, inset: inset, toolTip: toolTip)
+        case let .caption(text):
+            return MenuRows.caption(text, inset: inset)
+        case .separator:
+            return .separator()
+        }
     }
 
     // MARK: - Actions
@@ -246,57 +203,4 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func openDashboard() { onOpenDashboard?() }
     @objc private func openPreferences() { onOpenPreferences?() }
     @objc private func quit() { NSApp.terminate(nil) }
-}
-
-/// Everything the menu needs, gathered in one pass on the database queue.
-struct MenuSnapshot {
-    let today: Totals
-    let yesterday: Totals
-    let thisWeek: Totals
-    let last7: Totals
-    let thisMonth: Totals
-    let last30: Totals
-    let perHourToday: Totals
-    let perDayWeek: Totals
-    let perDayMonth: Totals
-    let projected: Totals
-    let allTime: AllTimeSummary
-    let cal: BytemeterCalendar
-    let cycleLabel: String
-    let cycleEndLabel: String
-    let peakHourText: String
-    let peakDayText: String
-    let topTalkers: [TopTalker]
-
-    init(aggregator: Aggregator, now: Date) {
-        let cal = aggregator.cal
-        today = aggregator.totals(cal.today(now))
-        yesterday = aggregator.totals(cal.yesterday(now))
-        thisWeek = aggregator.totals(cal.thisWeek(now))
-        last7 = aggregator.totals(cal.rollingDays(7, now: now))
-        thisMonth = aggregator.totals(cal.thisCycle(now))
-        last30 = aggregator.totals(cal.rollingDays(30, now: now))
-        perHourToday = aggregator.averagePerHourToday(now: now)
-        perDayWeek = aggregator.averagePerDay(cal.thisWeek(now), now: now)
-        perDayMonth = aggregator.averagePerDay(cal.thisCycle(now), now: now)
-
-        let forecast = aggregator.projection(now: now)
-        projected = forecast.projected
-        allTime = aggregator.allTime(now: now)
-        self.cal = cal
-        cycleLabel = cal.cycleLabel(now)
-        cycleEndLabel = cal.cycleStartDay == 1 ? cal.monthLabel(now) : "the cycle"
-
-        if let peak = aggregator.peakHourToday(now: now) {
-            peakHourText = String(format: "Peak hour today: %02d:00, %@", peak.hour, Units.bytes(peak.totals.total))
-        } else {
-            peakHourText = "Peak hour today: nothing yet"
-        }
-        if let peak = aggregator.peakDayThisCycle(now: now) {
-            peakDayText = "Peak day this month: \(peak.label), \(Units.bytes(peak.totals.total))"
-        } else {
-            peakDayText = "Peak day this month: nothing yet"
-        }
-        topTalkers = aggregator.topTalkers(cal.today(now), limit: 5)
-    }
 }

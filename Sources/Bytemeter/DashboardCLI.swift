@@ -11,9 +11,11 @@ import BytemeterCore
 /// sample anything.
 enum DashboardCLI {
 
-    /// An optional folder after the flag points at a different copy of the
-    /// data, which is how the page gets tested against a known set of figures.
-    static func run(folderArgument: String?) -> Int32 {
+    /// An optional folder points at a different copy of the data, which is how
+    /// the page gets tested against a known set of figures. `asOf` draws the
+    /// page as it would have looked at that moment, so screenshots can be
+    /// reproduced at any hour; it is passed through as `now`, never faked.
+    static func run(folderArgument: String?, asOf: Date?) -> Int32 {
         let folder = folderArgument.map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? AppDelegate.supportFolder
         let path = folder.appendingPathComponent("bytemeter.db").path
@@ -26,7 +28,7 @@ enum DashboardCLI {
             let settings = Settings(db: db, write: { work in work() })
             let cal = BytemeterCalendar(cycleStartDay: settings.cycleStartDay)
             let aggregator = Aggregator(db: db, cal: cal)
-            let data = DashboardData(aggregator: aggregator, settings: settings, now: Date())
+            let data = DashboardData(aggregator: aggregator, settings: settings, now: asOf ?? Date())
             let url = try DashboardGenerator.write(data: data, folder: folder)
             print(url.path)
             return 0

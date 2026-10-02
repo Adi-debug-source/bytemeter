@@ -160,5 +160,21 @@ public struct BytemeterCalendar {
         (cycleStartDay == 1 ? "This month" : "This cycle") + ", from " + dayLabel(startOfCycle(now))
     }
 
+    /// A local date and time as typed on the command line: ISO 8601 with no
+    /// zone, "2026-10-02T21:30", seconds optional, read in this calendar's
+    /// time zone. Nil for anything else, rather than a guess.
+    public func parseLocal(_ text: String) -> Date? {
+        for format in ["yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss"] {
+            let f = DateFormatter()
+            f.calendar = calendar
+            f.timeZone = calendar.timeZone
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.isLenient = false
+            f.dateFormat = format
+            if let date = f.date(from: text) { return date }
+        }
+        return nil
+    }
+
     public static let weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 }

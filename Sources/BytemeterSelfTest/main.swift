@@ -440,7 +440,7 @@ do {
                    BucketDelta(minute: minute + 1, iface: "en0", bytesIn: 100, bytesOut: 10)],
                   ssid: ssidPlaceholder, idle: true)
     let aggregator = Aggregator(db: db, cal: london)
-    let hour = aggregator.hourly(day: threeAM)[3]
+    let hour = aggregator.hourly(day: threeAM, now: threeAM.addingTimeInterval(3_600))[3]
     expect(hour.bytesIn, 1_000, "the hour's total counts both minutes")
     expect(hour.estimatedIn, 900, "the hour knows which part was spread")
     let day = aggregator.daily(lastDays: 1, now: threeAM.addingTimeInterval(3_600)).last?.totals
@@ -508,6 +508,65 @@ do {
           "and it is in the past")
 }
 
+// MARK: - A restart is decided first, whether or not the counter fell
+
+do {
+    let previous = ["en0": RawCounter(bytesIn: 1_000_000, bytesOut: 100_000, at: 1_000_000)]
+    let climbed = reading("en0", 5_000_000, 400_000)          // already past the old value
+
+    let byBootTime = Ledger.ingest(readings: [climbed], previous: previous, now: 1_000_537,
+                                   source: .mib64, reason: .relaunch, bootTime: 1_000_500)
+    expect(byBootTime.buckets.first?.bytesIn, 5_000_000,
+           "a restart where the counter has passed the old value books the full reading, not the difference")
+    expect(byBootTime.buckets.first?.bytesOut, 400_000, "and the full reading up")
+    check(byBootTime.events.first?.detail.contains("went from 1000000/100000 to 5000000/400000. The Mac restarted") == true,
+          "the event says the counter went up across a restart, got: \(byBootTime.events.first?.detail ?? "")")
+
+    let normal = Ledger.ingest(readings: [climbed], previous: previous, now: 1_000_005,
+                               source: .mib64, reason: .normal, bootTime: 900_000)
+    expect(normal.buckets.first?.bytesIn, 4_000_000, "a normal sample with the boot before the last reading takes the difference")
+    check(normal.events.isEmpty, "and logs nothing")
+
+    // With boot session ids on both sides, the id decides.
+    let sessionA = ["en0": RawCounter(bytesIn: 1_000_000, bytesOut: 100_000, at: 1_000_000, bootSession: "A")]
+    let newSession = Ledger.ingest(readings: [climbed], previous: sessionA, now: 1_000_537, source: .mib64,
+                                   reason: .relaunch, bootTime: 1_000_500, bootSession: "B")
+    expect(newSession.buckets.first?.bytesIn, 5_000_000, "a new boot session books the full reading")
+    expect(newSession.baselines["en0"]?.bootSession, "B", "the new baseline carries the current boot session")
+
+    // Setting the clock forward moves the kernel's boot time with it, past
+    // the last reading. The session is unchanged, so it is not a restart, and
+    // the traffic since boot must not be counted a second time.
+    let clockSet = Ledger.ingest(readings: [climbed], previous: sessionA, now: 1_086_405, source: .mib64,
+                                 reason: .normal, bootTime: 1_000_500, bootSession: "A")
+    expect(clockSet.buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }, 4_000_000,
+           "a clock set forward is not a restart: only the difference is counted")
+    check(!clockSet.events.contains { $0.kind == "counter_reset" }, "and no reset is logged")
+
+    // Restarted by the id, but no usable boot time: placed across the whole gap.
+    let unplaced = Ledger.ingest(readings: [climbed], previous: sessionA, now: 1_003_600, source: .mib64,
+                                 reason: .normal, bootTime: nil, bootSession: "B")
+    expect(unplaced.buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }, 5_000_000,
+           "a restart the boot time cannot place still books the full reading")
+    check(unplaced.buckets.allSatisfy(\.estimated) && unplaced.buckets.first?.minute == Ledger.floorDiv(1_000_000, 60) + 1,
+          "spread, as an estimate, from the minute after the last reading")
+    check(unplaced.events.first?.detail.contains("could not say when") == true,
+          "the event says the time was unknown, got: \(unplaced.events.first?.detail ?? "")")
+
+    let fellSameSession = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: sessionA,
+                                        now: 1_000_537, source: .mib64, reason: .normal,
+                                        bootTime: 1_000_500, bootSession: "A")
+    check(fellSameSession.buckets.isEmpty, "a fall in the same boot session is an interface reset and books nothing")
+
+    expect(RawCounter(encoded: "1,2,3,7DBE9237-C7FF"), RawCounter(bytesIn: 1, bytesOut: 2, at: 3, bootSession: "7DBE9237-C7FF"),
+           "a baseline with a boot session reads back")
+    expect(RawCounter(encoded: "1,2,3"), RawCounter(bytesIn: 1, bytesOut: 2, at: 3),
+           "a baseline saved before sessions were kept still reads, with no session")
+    expect(RawCounter(bytesIn: 1, bytesOut: 2, at: 3, bootSession: "X").encoded, "1,2,3,X", "the session is stored after the time")
+    expect(RawCounter(encoded: "1,2"), nil, "a malformed baseline is refused")
+    check(BootClock.bootSession() != nil, "this Mac's boot session id can be read")
+}
+
 // MARK: - All time is the sum of samples, without the first-seen lump
 
 do {
@@ -542,6 +601,161 @@ do {
 
     let empty = Aggregator(db: makeDatabase(), cal: london).allTime(now: now)
     check(empty.since == nil && empty.totals.isEmpty, "with nothing recorded, all time is empty and has no start")
+}
+
+// MARK: - As of a moment: the same figures as at that moment
+
+do {
+    expect(london.parseLocal("2026-10-02T21:30").map { london.calendar.dateComponents([.year, .month, .day, .hour, .minute], from: $0) },
+           DateComponents(year: 2026, month: 10, day: 2, hour: 21, minute: 30), "a local time reads in the calendar's zone")
+    check(london.parseLocal("2026-10-02T21:30:15") != nil, "seconds are allowed")
+    for bad in ["2026-10-02 21:30", "2026-13-02T21:30", "2026-10-02", "21:30", "tomorrow", ""] {
+        check(london.parseLocal(bad) == nil, "\"\(bad)\" is refused rather than guessed")
+    }
+
+    // Two databases. One runs three days past the moment asked about; the
+    // other holds only what existed at that moment. Asked as of the moment,
+    // the first must give exactly what the second gives at that moment.
+    let asOf = london.parseLocal("2026-10-02T21:30")!
+    let asOfMinute = BytemeterCalendar.minute(from: asOf)
+    let later = makeDatabase()
+    let atTheTime = makeDatabase()
+    later.transaction {
+        atTheTime.transaction {
+            for step in Int64(-8_300)...Int64(620) {
+                let minute = asOfMinute + step * 7
+                let bucket = BucketDelta(minute: minute, iface: minute % 3 == 0 ? "en1" : "en0",
+                                         bytesIn: UInt64(1_000 + (minute % 977) * 1_301),
+                                         bytesOut: UInt64(100 + (minute % 89) * 97),
+                                         estimated: minute % 11 == 0)
+                let procs: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [
+                    minute % 2 == 0 ? "Safari" : "Music": (UInt64(minute % 1_000) * 50, 10),
+                    "softwareupdated": (UInt64(minute % 37) * 900, 1)]
+                later.addBuckets([bucket], ssid: ssidPlaceholder, idle: minute % 5 == 0)
+                later.addProcBuckets(minute: minute, deltas: procs)
+                if minute <= asOfMinute {
+                    atTheTime.addBuckets([bucket], ssid: ssidPlaceholder, idle: minute % 5 == 0)
+                    atTheTime.addProcBuckets(minute: minute, deltas: procs)
+                }
+            }
+        }
+    }
+    let a = Aggregator(db: later, cal: london)
+    let b = Aggregator(db: atTheTime, cal: london)
+    let cal = london
+    for (name, range) in [("today", cal.today(asOf)), ("yesterday", cal.yesterday(asOf)), ("this week", cal.thisWeek(asOf)),
+                          ("this month", cal.thisCycle(asOf)), ("last 7 days", cal.rollingDays(7, now: asOf)),
+                          ("last 30 days", cal.rollingDays(30, now: asOf))] {
+        expect(a.totals(range), b.totals(range), "as of a moment, \(name) matches that moment")
+    }
+    expect(a.hourly(day: asOf, now: asOf), b.hourly(day: asOf, now: asOf), "as of a moment, the hourly chart stops there")
+    check(a.hourly(day: asOf, now: asOf) != a.hourly(day: asOf, now: asOf.addingTimeInterval(7_200)),
+          "and it does stop: two hours later the same day reads differently")
+    expect(a.daily(lastDays: 30, now: asOf).map(\.totals), b.daily(lastDays: 30, now: asOf).map(\.totals), "the 30 days match")
+    expect(a.heatmap(lastDays: 30, now: asOf).map(\.totals), b.heatmap(lastDays: 30, now: asOf).map(\.totals), "the heatmap matches")
+    expect(a.monthly(now: asOf).map(\.totals), b.monthly(now: asOf).map(\.totals), "month by month matches")
+    let allA = a.allTime(now: asOf), allB = b.allTime(now: asOf)
+    expect(allA.totals, allB.totals, "all time stops at the moment")
+    check(allA.since == allB.since && allA.days == allB.days && allA.perDay == allB.perDay,
+          "all time's start, day count and average match")
+    check(a.allTime(now: asOf.addingTimeInterval(3 * 86_400)).totals.bytesIn > allA.totals.bytesIn,
+          "and the later rows are really there to be left out")
+    expect(a.projection(now: asOf).projected, b.projection(now: asOf).projected, "the projection matches")
+    check(a.peakHourToday(now: asOf).map { [$0.hour] } == b.peakHourToday(now: asOf).map { [$0.hour] }
+          && a.peakHourToday(now: asOf)?.totals == b.peakHourToday(now: asOf)?.totals, "the peak hour matches")
+    check(a.peakDayThisCycle(now: asOf)?.totals == b.peakDayThisCycle(now: asOf)?.totals, "the peak day matches")
+    for (name, range) in [("today", cal.today(asOf)), ("this month", cal.thisCycle(asOf))] {
+        let ta = a.topTalkers(range, limit: 10), tb = b.topTalkers(range, limit: 10)
+        check(ta.map(\.name) == tb.map(\.name) && ta.map(\.totals) == tb.map(\.totals), "top talkers \(name) match")
+    }
+    let splitA = a.idleSplit(cal.rollingDays(30, now: asOf)), splitB = b.idleSplit(cal.rollingDays(30, now: asOf))
+    check(splitA.idle == splitB.idle && splitA.active == splitB.active, "idle against active matches")
+
+    // The menu, line by line, as the demo would build it and as the app would have at that moment.
+    let options = MenuModel.Options(liveSpeed: false, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0,
+                                    perAppSampling: true)
+    let menuLater = MenuModel.information(MenuSnapshot(aggregator: a, now: asOf), options: options)
+    let menuThen = MenuModel.information(MenuSnapshot(aggregator: b, now: asOf), options: options)
+    expect(menuLater, menuThen, "as of a moment, every menu line matches that moment")
+
+    // The rule for the rows: the four totals in the click cycle are full
+    // contrast, and nothing else is.
+    let strong = menuLater.compactMap { line -> String? in
+        if case let .figure(label, _, _, true) = line { return label } else { return nil }
+    }
+    expect(strong, ["Today", "This week, from Monday", "This month, from 1 Oct", "All time"],
+           "exactly the four cycle rows are full contrast, in order")
+    // 8,300 steps of 7 minutes before the moment: 40.35 days, from 23 Aug.
+    check(menuLater.contains(.caption("since 23 Aug 2026 · 40.3 days counted")),
+          "all time carries its start date and day count, got: \(menuLater.compactMap { if case let .caption(t) = $0 { return t } else { return nil } })")
+    check(menuLater.contains { if case .figure("Per day, all time", _, _, false) = $0 { return true } else { return false } },
+          "the all time average is a grey row in Averages")
+    expect(MenuModel.hint, "Right-click or two-finger click the figure to cycle today, week, month and all time.",
+           "the hint names the new clicks and all four modes")
+    let live = MenuModel.information(MenuSnapshot(aggregator: a, now: asOf),
+                                     options: MenuModel.Options(liveSpeed: true, rateIn: 2_100_000, rateOut: 0,
+                                                                capEnabled: true, capBytes: 100_000_000_000,
+                                                                perAppSampling: false))
+    expect(Array(live.prefix(2)), [.header("Live"), .figure(label: "Now", down: "2.1 MB/s", up: "0 B/s", strong: false)],
+           "live speed adds a grey Now row at the top")
+    check(live.contains(.header("Cap")) && live.contains(.text("Per-app sampling is off")),
+          "the cap row and the per-app note follow the settings")
+}
+
+// MARK: - The demo opens its database strictly read only
+
+do {
+    let folder = NSTemporaryDirectory() + "bytemeter_selftest_demo_\(UUID().uuidString)"
+    try! FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+    let path = folder + "/bytemeter.db"
+    do {
+        let db = try! Database(path: path)
+        db.addBuckets([BucketDelta(minute: 29_832_080, iface: "en0", bytesIn: 4_000, bytesOut: 400)],
+                      ssid: ssidPlaceholder, idle: false)
+        var version: Int64 = -1
+        try! db.query("PRAGMA user_version;") { version = $0.int(0) }
+        expect(version, Database.schemaVersion, "a new database is at the version this build reads")
+    }   // closed here, which folds the write-ahead log into the file
+
+    func fingerprint() -> [String] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder))?.sorted() ?? []
+        return names.map { name in
+            let data = FileManager.default.contents(atPath: folder + "/" + name) ?? Data()
+            return "\(name) \(data.count) \(data.hashValue)"
+        }
+    }
+    let before = fingerprint()
+    do {
+        let reader = try Database(readOnlyPath: path)
+        expect(Aggregator(db: reader, cal: london).totals(MinuteRange(start: 0, end: .max)).bytesIn, 4_000,
+               "the read only database reads")
+        var refused = false
+        do { try reader.run("INSERT INTO events(ts,kind,detail) VALUES(1,'x','y');") } catch { refused = true }
+        check(refused, "the read only database refuses a write")
+        reader.setState("status_mode", "week")          // what Settings would try; must come to nothing
+        expect(reader.state("status_mode"), nil, "a setting cannot be saved through it")
+    } catch {
+        check(false, "the read only database opens: \(error)")
+    }
+    expect(fingerprint(), before, "reading leaves every file in the folder exactly as it was, and adds none")
+
+    // A database from before version 2 is refused, not read wrongly or upgraded.
+    let oldPath = NSTemporaryDirectory() + "bytemeter_selftest_v1ro_\(UUID().uuidString).db"
+    _ = rawExec(oldPath, "CREATE TABLE samples(minute INTEGER); PRAGMA user_version=1;")
+    var oldRefused = false
+    do { _ = try Database(readOnlyPath: oldPath) } catch { oldRefused = "\(error)".contains("schema version 1") }
+    check(oldRefused, "a version 1 database is refused with the reason")
+    expect(rawInt(oldPath, "PRAGMA user_version;"), 1, "and is left at version 1")
+
+    // A write-ahead log that still holds changes is refused, because immutable mode would not see them.
+    FileManager.default.createFile(atPath: path + "-wal", contents: Data(repeating: 1, count: 32))
+    var walRefused = false
+    do { _ = try Database(readOnlyPath: path) } catch { walRefused = "\(error)".contains("write-ahead log") }
+    check(walRefused, "unsaved changes in the write-ahead log are refused, not ignored")
+    var missingRefused = false
+    do { _ = try Database(readOnlyPath: folder + "/nothing.db") } catch { missingRefused = true }
+    check(missingRefused, "a missing database is refused rather than created")
+    check(!FileManager.default.fileExists(atPath: folder + "/nothing.db"), "and nothing is created in its place")
 }
 
 // MARK: - Result

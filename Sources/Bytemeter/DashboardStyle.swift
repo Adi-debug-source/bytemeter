@@ -121,7 +121,10 @@ extension DashboardGenerator {
         .legend .est-key { margin-left: 14px; }
         .legend.keys .est-key { margin-left: 0; }
 
-        .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; }
+        /* Each table keeps its own height. Stretched to match the longer one,
+           a short table's rows grew tall and an empty one floated its note
+           in the middle of a box. */
+        .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; align-items: start; }
         table { width: 100%; border-collapse: collapse; }
         caption { text-align: left; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
           color: var(--muted); padding-bottom: 8px; }

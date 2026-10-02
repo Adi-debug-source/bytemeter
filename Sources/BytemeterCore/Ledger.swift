@@ -1,25 +1,35 @@
 import Foundation
 
-/// The last raw counter seen for an interface, and when it was seen.
+/// The last raw counter seen for an interface, when it was seen, and in which
+/// boot of the Mac.
 public struct RawCounter: Equatable {
     public var bytesIn: UInt64
     public var bytesOut: UInt64
     public var at: Int64          // unix seconds
+    /// The kernel's boot session id at the time, if it could be read. Nil for
+    /// a baseline saved before ids were kept.
+    public var bootSession: String?
 
-    public init(bytesIn: UInt64, bytesOut: UInt64, at: Int64) {
+    public init(bytesIn: UInt64, bytesOut: UInt64, at: Int64, bootSession: String? = nil) {
         self.bytesIn = bytesIn
         self.bytesOut = bytesOut
         self.at = at
+        self.bootSession = bootSession
     }
 
-    public var encoded: String { "\(bytesIn),\(bytesOut),\(at)" }
+    /// "bytesIn,bytesOut,unixSeconds", with ",bootSession" after it when known.
+    public var encoded: String {
+        "\(bytesIn),\(bytesOut),\(at)" + (bootSession.map { ",\($0)" } ?? "")
+    }
 
+    /// Reads both forms, so baselines saved by earlier versions still load.
     public init?(encoded: String) {
-        let parts = encoded.split(separator: ",")
-        guard parts.count == 3,
+        let parts = encoded.split(separator: ",", omittingEmptySubsequences: false)
+        guard parts.count == 3 || parts.count == 4,
               let bin = UInt64(parts[0]), let bout = UInt64(parts[1]), let at = Int64(parts[2])
         else { return nil }
-        self.init(bytesIn: bin, bytesOut: bout, at: at)
+        let session = parts.count == 4 && !parts[3].isEmpty ? String(parts[3]) : nil
+        self.init(bytesIn: bin, bytesOut: bout, at: at, bootSession: session)
     }
 }
 
@@ -101,21 +111,25 @@ public enum Ledger {
     ///
     /// Pure on purpose: everything it needs is passed in and everything it
     /// decides is returned, so the awkward cases can be tested without a
-    /// database, a timer or a network. That includes `bootTime`, the unix
-    /// second the kernel booted (see `BootClock`), or nil if it could not be
-    /// read; it is only consulted when a counter goes backwards.
+    /// database, a timer or a network. That includes what is known about the
+    /// current boot (see `BootClock`): `bootTime`, the unix second the kernel
+    /// booted, and `bootSession`, its boot session id, each nil if it could
+    /// not be read. Together they decide whether the Mac has restarted since
+    /// the last reading.
     public static func ingest(readings: [InterfaceReading],
                               previous: [String: RawCounter],
                               now: Int64,
                               source: CounterSource,
                               reason: GapReason,
-                              bootTime: Int64?) -> IngestOutcome {
+                              bootTime: Int64?,
+                              bootSession: String? = nil) -> IngestOutcome {
         var buckets: [BucketDelta] = []
         var events: [LedgerEvent] = []
         var baselines: [String: RawCounter] = [:]
 
         for reading in readings {
-            let current = RawCounter(bytesIn: reading.bytesIn, bytesOut: reading.bytesOut, at: now)
+            let current = RawCounter(bytesIn: reading.bytesIn, bytesOut: reading.bytesOut, at: now,
+                                     bootSession: bootSession)
 
             guard let prev = previous[reading.name] else {
                 // First time this interface has ever been seen. Its counter is
@@ -133,30 +147,58 @@ public enum Ledger {
             baselines[reading.name] = current
 
             let fellBack = reading.bytesIn < prev.bytesIn || reading.bytesOut < prev.bytesOut
+            let change = "\(reading.name) counter \(fellBack ? "fell" : "went") from \(prev.bytesIn)/\(prev.bytesOut) "
+                       + "to \(reading.bytesIn)/\(reading.bytesOut)."
+
+            // Has the Mac restarted since the last reading? Asked first, of
+            // every reading: a counter restarts from zero at boot, so after a
+            // restart everything it holds is traffic since then, and taking
+            // `current - prev` would be wrong whether or not it has already
+            // climbed back past the old value.
+            //
+            // The boot session id answers it exactly, because it changes at a
+            // boot and at nothing else. The boot time is the fallback, for a
+            // baseline saved before ids were kept: a boot later than the last
+            // reading is a restart. That rule leans on the wall clock, and the
+            // kernel moves its boot time when the clock is set, so setting the
+            // clock forward would look like a restart and count everything
+            // since boot a second time. Hence the id first. A boot time later
+            // than now is a clock that cannot be trusted, and is unreadable.
+            let restarted: Bool?
+            if let then = prev.bootSession, let session = bootSession {
+                restarted = then != session
+            } else {
+                restarted = bootTime.flatMap { boot in boot > now ? nil : boot > prev.at }
+            }
+
+            if restarted == true {
+                if let boot = bootTime, boot > prev.at, boot <= now {
+                    let booked = bookSinceRestart(iface: reading.name,
+                                                  bytesIn: reading.bytesIn, bytesOut: reading.bytesOut,
+                                                  boot: boot, now: now, buckets: &buckets)
+                    events.append(LedgerEvent(ts: now, kind: "counter_reset", detail: change + " " + booked))
+                } else {
+                    // The id says it restarted but the boot time cannot say
+                    // when, so the traffic since boot is placed across the
+                    // whole gap since the last reading, which certainly holds it.
+                    events.append(LedgerEvent(
+                        ts: now, kind: "counter_reset",
+                        detail: change + " The Mac restarted since the last reading, so the counter began again "
+                              + "from zero and all of it is traffic since then. The boot time could not say "
+                              + "when, so it is placed across the whole gap."))
+                    place(iface: reading.name, deltaIn: reading.bytesIn, deltaOut: reading.bytesOut,
+                          since: prev.at, now: now, reason: .relaunch,
+                          buckets: &buckets, events: &events)
+                }
+                continue
+            }
+
             if !fellBack {
                 place(iface: reading.name,
                       deltaIn: reading.bytesIn - prev.bytesIn,
                       deltaOut: reading.bytesOut - prev.bytesOut,
                       since: prev.at, now: now, reason: reason,
                       buckets: &buckets, events: &events)
-                continue
-            }
-
-            let fell = "\(reading.name) counter fell from \(prev.bytesIn)/\(prev.bytesOut) to "
-                     + "\(reading.bytesIn)/\(reading.bytesOut)."
-
-            // The boot time settles what a fall means. A boot later than the
-            // last reading is a restart, and a counter restarts from zero at
-            // boot, so everything it now holds is real traffic since then. A
-            // boot time later than now is a clock that cannot be trusted, and
-            // is treated as unreadable.
-            let restarted: Bool? = bootTime.flatMap { boot in boot > now ? nil : boot > prev.at }
-
-            if restarted == true, let boot = bootTime {
-                let booked = bookSinceRestart(iface: reading.name,
-                                              bytesIn: reading.bytesIn, bytesOut: reading.bytesOut,
-                                              boot: boot, now: now, buckets: &buckets)
-                events.append(LedgerEvent(ts: now, kind: "counter_reset", detail: fell + " " + booked))
                 continue
             }
 
@@ -194,7 +236,7 @@ public enum Ledger {
                 : "Reboot or interface reset; the boot time could not be read to tell which."
             events.append(LedgerEvent(
                 ts: now, kind: "counter_reset",
-                detail: fell + " " + why + " Baseline moved, no traffic recorded for the gap."))
+                detail: change + " " + why + " Baseline moved, no traffic recorded for the gap."))
         }
 
         return IngestOutcome(buckets: buckets, events: events, baselines: baselines)

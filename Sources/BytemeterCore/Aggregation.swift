@@ -129,12 +129,15 @@ public struct Aggregator {
     /// 24 buckets for one local day. Hours run 0 to 23 in local time.
     /// On the two clock change days a 23 or 25 hour day folds into the same 24
     /// slots; the daily total stays exact, only the hour split shifts.
-    public func hourly(day: Date) -> [Totals] {
+    /// Nothing after `now` is counted, so a page drawn as of an earlier moment
+    /// shows that moment's day, not the rest of it.
+    public func hourly(day: Date, now: Date) -> [Totals] {
         let start = cal.startOfDay(day)
         let end = cal.addDays(1, to: start)
         let startMinute = BytemeterCalendar.minute(from: start)
+        let dayRange = cal.range(from: start, to: end)
         var buckets = [Totals](repeating: Totals(), count: 24)
-        for row in minuteRows(cal.range(from: start, to: end)) {
+        for row in minuteRows(MinuteRange(start: dayRange.start, end: min(dayRange.end, endMinute(now)))) {
             let index = Int(min(max((row.minute - startMinute) / 60, 0), 23))
             buckets[index] = buckets[index] + row.totals
         }
@@ -184,7 +187,8 @@ public struct Aggregator {
         let limit = cal.endOfCycle(now)
         while cursor < limit {
             let next = cal.endOfCycle(cursor)
-            let totals = totals(cal.range(from: cursor, to: next))
+            let month = cal.range(from: cursor, to: next)
+            let totals = totals(MinuteRange(start: month.start, end: min(month.end, endMinute(now))))
             out.append(LabelledTotals(label: cal.monthLabel(cursor), date: cursor, totals: totals))
             cursor = next
             if out.count > 120 { break }   // a decade is plenty of guard rail
@@ -268,14 +272,14 @@ public struct Aggregator {
                        bytesOut: UInt64(Double(soFar.bytesOut) * factor)), end)
     }
 
-    /// Every byte on record, from the earliest minute onwards. No upper
-    /// bound: a row written while the clock was wrong still moved real data,
-    /// and "all time" should not quietly drop it.
+    /// Every byte on record from the earliest minute up to and including the
+    /// current one, so that, like every other figure, it can be asked as of
+    /// an earlier moment.
     public func allTime(now: Date) -> AllTimeSummary {
-        guard let earliest = earliestMinute() else {
+        guard let earliest = earliestMinute(), earliest < endMinute(now) else {
             return AllTimeSummary(totals: Totals(), since: nil, days: 0, perDay: Totals())
         }
-        let totals = totals(MinuteRange(start: earliest, end: Int64.max))
+        let totals = totals(MinuteRange(start: earliest, end: endMinute(now)))
         let since = BytemeterCalendar.date(fromMinute: earliest)
         let days = max(0, now.timeIntervalSince(since)) / 86_400.0
         // Under a day, the figure so far stands as the day's figure, the same
@@ -284,7 +288,7 @@ public struct Aggregator {
     }
 
     public func peakHourToday(now: Date) -> (hour: Int, totals: Totals)? {
-        let buckets = hourly(day: now)
+        let buckets = hourly(day: now, now: now)
         guard let best = buckets.enumerated().max(by: { $0.element.total < $1.element.total }),
               best.element.total > 0 else { return nil }
         return (best.offset, best.element)
@@ -300,6 +304,10 @@ public struct Aggregator {
     }
 
     // MARK: - Helpers
+
+    /// The first minute after `now`: every range in this file ends here at
+    /// the latest, so nothing later than the moment asked about is counted.
+    private func endMinute(_ now: Date) -> Int64 { BytemeterCalendar.minute(from: now) + 1 }
 
     private func divide(_ totals: Totals, by divisor: Double) -> Totals {
         guard divisor > 0 else { return Totals() }

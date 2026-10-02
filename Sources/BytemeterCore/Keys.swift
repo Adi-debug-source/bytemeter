@@ -2,7 +2,8 @@ import Foundation
 
 /// Every key used in the `state` table, in one place so nothing is typed twice.
 public enum StateKey {
-    /// Last raw counter per interface, as "bytesIn,bytesOut,unixSeconds".
+    /// Last raw counter per interface, as "bytesIn,bytesOut,unixSeconds", with
+    /// ",bootSession" after it once the boot session id is known.
     /// Persisting this after every sample is what lets the app recover the
     /// traffic that happened while it was not running.
     public static func rawCounter(_ iface: String) -> String { "raw:\(iface)" }

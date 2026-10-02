@@ -114,7 +114,8 @@ final class Sampler {
                                     now: now,
                                     source: snapshot.source,
                                     reason: reason,
-                                    bootTime: BootClock.bootTime())
+                                    bootTime: BootClock.bootTime(),
+                                    bootSession: BootClock.bootSession())
 
         db.transaction {
             db.addBuckets(outcome.buckets, ssid: ssid, idle: idle)
