@@ -2,9 +2,7 @@ class Bytemeter < Formula
   desc "Menu bar app that counts every byte your Mac sends and receives"
   homepage "https://github.com/Adi-debug-source/bytemeter"
   url "https://github.com/Adi-debug-source/bytemeter/archive/refs/tags/v1.0.0.tar.gz"
-  # PLACEHOLDER. The v1.0.0 tag does not exist yet. Once it does, replace this
-  # with: curl -sL <the url above> | shasum -a 256
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "2dcc28cc943c47d474c73445dc270e18f8f6d5fd70ce9b203c0712508d4d2a8b"
   license "MIT"
 
   depends_on macos: :ventura
