@@ -15,6 +15,8 @@ jobs:
         run: swift run -c release BytemeterSelfTest
       - name: Install script parses
         run: bash -n install.sh
+      - name: Homebrew formula parses
+        run: ruby -c Formula/bytemeter.rb
       - name: The app builds from a clean clone
         # The command a release and the Homebrew formula both build with, so
         # this proves on every push that the repository can produce the app,
