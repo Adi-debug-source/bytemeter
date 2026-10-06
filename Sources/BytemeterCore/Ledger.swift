@@ -222,6 +222,15 @@ public enum Ledger {
             }
 
             if restarted == true {
+                // An interface that read zero before the restart and zero
+                // after it carried nothing on either side, so there is nothing
+                // to book and nothing to say. Unused ports (en1 to en4 on a
+                // Mac with one network in use) would otherwise log a reset
+                // line each at every boot. The baseline above has already
+                // moved to this boot, so the next reading measures from here.
+                if prev.bytesIn == 0 && prev.bytesOut == 0 && reading.bytesIn == 0 && reading.bytesOut == 0 {
+                    continue
+                }
                 if let boot = bootTime, boot > prev.at, boot <= now {
                     let booked = bookSinceRestart(iface: reading.name,
                                                   bytesIn: reading.bytesIn, bytesOut: reading.bytesOut,

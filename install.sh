@@ -25,6 +25,9 @@ JOB="gui/$UID/$LABEL"
 # The app's binary wherever its bundle lives. Arguments are not allowed after
 # it, so a one-off "Bytemeter --dashboard" run is never mistaken for the app.
 RUNNING='Bytemeter\.app/Contents/MacOS/Bytemeter$'
+# The dashboard's fonts are compiled into the binary, so their licences go in
+# the bundle with it, in Contents/Resources/Fonts.
+FONT_DOCS=(OFL-Fraunces.txt OFL-InterTight.txt README.md)
 
 say() { printf '  %s\n' "$1"; }
 die() { printf '  %s\n' "$1" >&2; exit 1; }
@@ -181,6 +184,9 @@ else
     BUILD="$(sed -n 's/^BUILD=//p' "$SRC/VERSION" | tr -d '[:space:]')"
     [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "VERSION=$VERSION in the VERSION file is not like 1.2.3"
     [[ "$BUILD" =~ ^[0-9]+$ ]] || die "BUILD=$BUILD in the VERSION file is not a whole number"
+    for doc in "${FONT_DOCS[@]}"; do
+        [ -f "$SRC/Resources/Fonts/$doc" ] || die "Resources/Fonts/$doc is missing. The app carries the dashboard's fonts, so it is not built without their licences."
+    done
 fi
 
 TITLE="Bytemeter $VERSION (build $BUILD)"
@@ -219,6 +225,10 @@ assemble_bundle() {
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     cp "$BIN" "$app/Contents/MacOS/$NAME"
     cp "$SRC/Resources/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+    mkdir -p "$app/Contents/Resources/Fonts"
+    for doc in "${FONT_DOCS[@]}"; do
+        cp "$SRC/Resources/Fonts/$doc" "$app/Contents/Resources/Fonts/$doc"
+    done
     cp "$SRC/Scripts/Info.plist" "$app/Contents/Info.plist"
     plutil -replace CFBundleShortVersionString -string "$VERSION" "$app/Contents/Info.plist"
     plutil -replace CFBundleVersion -string "$BUILD" "$app/Contents/Info.plist"
@@ -263,6 +273,7 @@ elif [ "$DRY" = 1 ]; then
     say "    $SRC/.build/release/$NAME"
     say "    $SRC/Scripts/Info.plist, with version $VERSION and build $BUILD"
     say "    $SRC/Resources/AppIcon.icns"
+    say "    $SRC/Resources/Fonts/: ${FONT_DOCS[*]}, the fonts' licences and notes"
     say "would sign it ad hoc: codesign --force --sign -, then codesign --verify --deep --strict"
 else
     WORK="$(mktemp -d -t bytemeter)"

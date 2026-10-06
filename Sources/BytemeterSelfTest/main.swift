@@ -518,6 +518,62 @@ do {
           "and it is in the past")
 }
 
+// MARK: - An idle interface says nothing across a restart
+
+do {
+    // Unused ports read zero all their lives. A restart sends every counter
+    // back to zero, so zero before and zero after is no change at all, and
+    // must not add a reset line per interface at every boot.
+    let boot: Int64 = 1_000_500
+    let idleBefore = ["en1": RawCounter(bytesIn: 0, bytesOut: 0, at: 1_000_000, bootSession: "A")]
+    let quiet = Ledger.ingest(readings: [reading("en1", 0, 0)], previous: idleBefore, now: 1_000_537,
+                              reason: .relaunch, bootTime: boot, bootSession: "B")
+    check(quiet.events.isEmpty,
+          "an interface at zero before and after a restart logs nothing, got: \(quiet.events.map(\.kind))")
+    check(quiet.buckets.isEmpty, "and books nothing")
+    expect(quiet.baselines["en1"]?.bootSession, "B", "its baseline still moves to the new boot session")
+    expect(quiet.baselines["en1"]?.at, 1_000_537, "and to the time of the new reading")
+
+    let quietNoBootTime = Ledger.ingest(readings: [reading("en1", 0, 0)], previous: idleBefore, now: 1_003_600,
+                                        reason: .normal, bootTime: nil, bootSession: "B")
+    check(quietNoBootTime.events.isEmpty, "the same when the boot time cannot be read")
+
+    let quietByBootTime = Ledger.ingest(readings: [reading("en1", 0, 0)],
+                                        previous: ["en1": RawCounter(bytesIn: 0, bytesOut: 0, at: 1_000_000)],
+                                        now: 1_000_537, reason: .relaunch, bootTime: boot)
+    check(quietByBootTime.events.isEmpty, "the same when the boot time, not the session, shows the restart")
+
+    // Beside a busy interface, only the busy one is logged.
+    var busyAndIdle = idleBefore
+    busyAndIdle["en0"] = RawCounter(bytesIn: 5_000_000, bytesOut: 400_000, at: 1_000_000, bootSession: "A")
+    let both = Ledger.ingest(readings: [reading("en0", 9_071, 22_190), reading("en1", 0, 0)],
+                             previous: busyAndIdle, now: 1_000_537, reason: .relaunch,
+                             bootTime: boot, bootSession: "B")
+    expect(both.events.filter { $0.kind == "counter_reset" }.count, 1, "beside a busy interface, one reset is logged")
+    check(both.events.first?.detail.hasPrefix("en0 ") == true,
+          "and it is the busy one's, got: \(both.events.first?.detail ?? "")")
+
+    // Zero on one side only is a real change, and is still logged.
+    let woke = Ledger.ingest(readings: [reading("en1", 500, 0)], previous: idleBefore, now: 1_000_537,
+                             reason: .relaunch, bootTime: boot, bootSession: "B")
+    expect(woke.events.first?.kind, "counter_reset", "zero before a restart and traffic after it is still logged")
+    expect(woke.buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }, 500, "and its traffic since the restart is booked")
+    let fellToZero = Ledger.ingest(readings: [reading("en1", 0, 0)],
+                                   previous: ["en1": RawCounter(bytesIn: 100, bytesOut: 0, at: 1_000_000, bootSession: "A")],
+                                   now: 1_000_537, reason: .relaunch, bootTime: boot, bootSession: "B")
+    expect(fellToZero.events.first?.kind, "counter_reset", "traffic before a restart and zero after it is still logged")
+    let upOnly = Ledger.ingest(readings: [reading("en1", 0, 0)],
+                               previous: ["en1": RawCounter(bytesIn: 0, bytesOut: 64, at: 1_000_000, bootSession: "A")],
+                               now: 1_000_537, reason: .relaunch, bootTime: boot, bootSession: "B")
+    expect(upOnly.events.first?.kind, "counter_reset", "so is a counter that had only sent before the restart")
+
+    // The next ordinary reading measures from the quiet restart's baseline.
+    let after = Ledger.ingest(readings: [reading("en1", 1_000, 0)], previous: quiet.baselines, now: 1_000_542,
+                              reason: .normal, bootTime: boot, bootSession: "B")
+    expect(after.buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }, 1_000, "after it, traffic is counted from zero as normal")
+    check(after.events.isEmpty, "with nothing logged")
+}
+
 // MARK: - A restart is decided first, whether or not the counter fell
 
 do {

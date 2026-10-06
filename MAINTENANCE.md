@@ -29,6 +29,9 @@ are harmless. They name folders that only exist with full Xcode.
 | `Scripts/Info.plist` | template for the app's `Info.plist` |
 | `Scripts/bytemeter.plist` | template for the LaunchAgent that starts it at login |
 | `Resources/AppIcon.icns` | the icon, committed as a binary |
+| `Resources/Fonts/` | the dashboard's two fonts, their licences, and a README on where they came from |
+| `Scripts/make_fonts.py` | writes `Sources/Bytemeter/DashboardFonts.swift` from those fonts |
+| `Scripts/snapshot.swift` | renders the dashboard to a PNG for the README images |
 | `install.sh` | builds the app, and installs, updates or removes it |
 
 `./install.sh --help` lists its options. `--dry-run` works with all of them and
@@ -64,6 +67,28 @@ Its SHA-256 is
 `c5793d5e74ebd6e8da8b5195d6fdde4c549eec35005280c2f4c198cfdb34d6cd`. It holds
 the 32, 64, 256, 512 and 1024 pixel sizes, and macOS scales the others from
 those.
+
+## The dashboard's fonts
+
+The dashboard sets its big figure and its headings in Fraunces and everything
+else in Inter Tight, the same pair Tokenmeter uses. Every column of figures is
+Inter Tight, because it has tabular figures and this Fraunces does not. Both
+are SIL Open Font License 1.1. They live in `Resources/Fonts/` with their
+licences, `OFL-Fraunces.txt` and `OFL-InterTight.txt`, and a README saying
+where they came from and how to refresh them.
+
+They reach the page through `Sources/Bytemeter/DashboardFonts.swift`, which
+holds them as base64 inside `@font-face` rules. The page carries them, so it
+still makes no network requests. That file is generated, never edited by
+hand, and committed, so building never needs Python. After changing a font:
+
+    python3 Scripts/make_fonts.py
+
+then commit the Swift file with the font. `python3 Scripts/make_fonts.py
+--check` changes nothing and fails if the two disagree; CI runs it.
+
+`install.sh` copies both licences and the README into the app's
+`Contents/Resources/Fonts/`, and will not build the app if one is missing.
 
 ## The login item
 
@@ -105,7 +130,8 @@ to the Bin. It never touches the data or the log.
 
 ## Checks before a release
 
-1. The self-test passes.
+1. The self-test passes, and `python3 Scripts/make_fonts.py --check` says the
+   fonts match.
 2. `bash -n install.sh` is clean, and so is `shellcheck install.sh` if you have
    it.
 3. `./install.sh --dry-run` prints the paths you expect.
@@ -224,19 +250,18 @@ The README images are made from a synthetic month, never from a real database, s
 swift build -c release
 python3 Scripts/make_demo_db.py /tmp/bytemeter-demo --now 2026-09-29T21:30 --force
 .build/release/Bytemeter --dashboard /tmp/bytemeter-demo --as-of 2026-09-29T21:30
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
-  --user-data-dir="$(mktemp -d)" --hide-scrollbars --force-device-scale-factor=2 \
-  --window-size=1400,3600 --screenshot=/tmp/bytemeter-demo/page.png \
-  file:///tmp/bytemeter-demo/dashboard.html
-sips -c 1898 2360 --cropOffset 32 220   /tmp/bytemeter-demo/page.png --out docs/dashboard.png
-sips -c 850 2360  --cropOffset 1936 220 /tmp/bytemeter-demo/page.png --out docs/thirty-days.png
-sips -c 880 2336  --cropOffset 2788 232 /tmp/bytemeter-demo/page.png --out docs/heatmap.png
+swift Scripts/snapshot.swift /tmp/bytemeter-demo/dashboard.html /tmp/bytemeter-demo/page.png
+sips -c 2069 2360 --cropOffset 32 220   /tmp/bytemeter-demo/page.png --out docs/dashboard.png
+sips -c 878 2360  --cropOffset 2103 220 /tmp/bytemeter-demo/page.png --out docs/thirty-days.png
+sips -c 896 2336  --cropOffset 2983 232 /tmp/bytemeter-demo/page.png --out docs/heatmap.png
+swift Scripts/snapshot.swift --strip docs/dashboard.png docs/thirty-days.png docs/heatmap.png
 sips -s format png -Z 256 Resources/AppIcon.icns --out docs/icon.png
 ```
 
-1. Headless Chrome does not always exit after writing the file. Stop it once `page.png` exists.
-2. The crop offsets are twice the CSS boxes at 1400 pixels wide. If the dashboard's layout changes, measure them again.
-3. The menu image comes from the real menu running read-only against the same database: `.build/release/Bytemeter --demo /tmp/bytemeter-demo --as-of 2026-09-29T21:30`. Open the menu, capture it (Cmd+Shift+4, then Space, then click the menu), save it as `docs/menu.png`, and choose Quit from that menu to end it. The demo never writes and leaves a running Bytemeter alone.
+1. `Scripts/snapshot.swift` renders the page in WebKit, the engine Safari uses, 1400 CSS pixels wide and twice that in pixels. It needs no browser and fetches nothing. It takes the screen's scale, so it needs a Retina screen, and it stops with an error rather than write a blurry image.
+2. It prints where each part of the page sits in `page.png`, in pixels, and the crops follow those boxes. The first runs the width of the page body, from 32 pixels down to the bottom of Today by hour less the 2 pixel rule under it. Last 30 days runs from its top to its bottom less its rule. The heatmap takes its panel's own, wider box. If the dashboard's layout changes, run it and take the numbers again.
+3. `sips` swaps the PNG's sRGB mark for gAMA, cHRM and EXIF chunks while it crops. `--strip` takes them out and puts the sRGB mark back, and leaves the pixels alone.
+4. The menu image comes from the real menu running read-only against the same database: `.build/release/Bytemeter --demo /tmp/bytemeter-demo --as-of 2026-09-29T21:30`. Open the menu, capture it (Cmd+Shift+4, then Space, then click the menu), save it as `docs/menu.png`, and choose Quit from that menu to end it. The demo never writes and leaves a running Bytemeter alone.
 
 ## Known limits
 

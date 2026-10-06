@@ -4,9 +4,10 @@ import BytemeterCore
 /// Builds the dark dashboard as one self contained HTML file.
 ///
 /// Every chart is hand rolled inline SVG. There is no CDN, no external
-/// stylesheet, no web font and no script: the page opens and renders with the
-/// network switched off, which is the only honest way to build a tool that
-/// measures network use.
+/// stylesheet and no script, and the two typefaces travel inside the page as
+/// data (`DashboardFonts`), so it makes no network requests at all: the page
+/// opens and renders with the network switched off, which is the only honest
+/// way to build a tool that measures network use.
 enum DashboardGenerator {
 
     static func write(data: DashboardData, folder: URL) throws -> URL {

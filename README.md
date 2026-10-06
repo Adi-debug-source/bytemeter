@@ -151,7 +151,7 @@ Three targets, and the split is deliberate:
 
 ```bash
 swift build -c release                     # build
-swift run -c release BytemeterSelfTest     # run the self-test, 469 checks
+swift run -c release BytemeterSelfTest     # run the self-test, 526 checks
 ```
 
 The self-test is a plain executable rather than an XCTest target because XCTest cannot be resolved with the Command Line Tools alone; `swift test` needs a full Xcode install, and this project does not assume one. CI runs the self-test on every push, builds the app bundle from a clean checkout, and verifies its signature.
@@ -171,3 +171,5 @@ The screenshots in this README are made this way, from invented data, so nothing
 ## Licence
 
 MIT, see [LICENSE](LICENSE). Copyright (c) 2026 Aditya Kumar.
+
+The dashboard carries two fonts under the SIL Open Font License 1.1: Fraunces, by The Fraunces Project Authors, and Inter Tight, by The Inter Project Authors. Their licences are `OFL-Fraunces.txt` and `OFL-InterTight.txt` in [Resources/Fonts](Resources/Fonts).

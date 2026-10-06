@@ -9,6 +9,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: The embedded fonts match their files
+        # DashboardFonts.swift is generated from Resources/Fonts and committed,
+        # so the build never needs Python. This fails if the two disagree.
+        run: python3 Scripts/make_fonts.py --check
       - name: Builds
         run: swift build -c release
       - name: Self-test
@@ -28,4 +32,8 @@ jobs:
           codesign --verify --deep --strict "$app"
           plutil -lint "$app/Contents/Info.plist" Scripts/Info.plist Scripts/bytemeter.plist
           test -f "$app/Contents/Resources/AppIcon.icns"
+          # The fonts are in the binary, so their licences must be in the bundle.
+          for doc in OFL-Fraunces.txt OFL-InterTight.txt README.md; do
+            test -s "$app/Contents/Resources/Fonts/$doc"
+          done
           test "$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")" = "$(sed -n 's/^VERSION=//p' VERSION)"
