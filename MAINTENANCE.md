@@ -137,64 +137,58 @@ to the Bin. It never touches the data or the log.
 
 ## Cutting a release
 
+There is no prebuilt download. Bytemeter is ad hoc signed, not notarised, so a
+downloaded app would carry a quarantine mark and Gatekeeper would refuse it.
+Both install routes, Homebrew and a clone, build it on the Mac it runs on,
+where there is no such mark. A release is a tag, its notes, and the formula
+pointed at it.
+
 1. Bump the version as above and commit it.
-2. Build the app from a clean folder:
-
-        rm -rf dist
-        ./install.sh --bundle-only dist
-
-3. Zip it with `ditto`, which keeps the signature intact:
-
-        ditto -c -k --keepParent dist/Bytemeter.app dist/Bytemeter-1.0.1.zip
-
-4. Tag the commit and push the tag:
+2. Run the checks above, then tag the commit and push both:
 
         git tag -a v1.0.1 -m "Bytemeter 1.0.1"
         git push origin main v1.0.1
 
-5. Create the release with the zip attached:
+3. Create the release, with no files attached:
 
-        gh release create v1.0.1 dist/Bytemeter-1.0.1.zip \
-            --title "Bytemeter 1.0.1" --notes-file notes.md
+        gh release create v1.0.1 --title "Bytemeter 1.0.1" --notes-file notes.md
 
    Write the notes as prose: what changed and why, not a list of commits.
-   Say plainly that the zip is ad hoc signed and not notarised, so macOS will
-   refuse to open it from a download until it is allowed, and that Homebrew
-   or a clone is the route that works first time.
 
-Never move or re-push a tag once it is published. Homebrew pins the checksum
-of the tag's source tarball, so a moved tag breaks every install until the
-formula is updated.
+4. Point the formula at the new tag, below.
+
+Never move or re-push a tag once it is published. The formula pins the
+checksum of the tag's source tarball, so a moved tag breaks every install until
+the formula is updated.
 
 ## After a release
 
-1. The release page shows the zip and the notes, and the tag points at the
-   commit CI passed.
-2. Download the zip through a browser, unzip it, and run
-   `codesign --verify --deep --strict` on the app and
-   `plutil -p Bytemeter.app/Contents/Info.plist` for the version.
-3. Open the downloaded app once and note what Gatekeeper does, so the notes
-   and the README describe what a stranger sees.
-4. Update the Homebrew tap, below.
+1. The release page shows the notes, and the tag points at the commit CI
+   passed.
+2. The formula on `main` names the new tag and its checksum.
+3. Install it as a stranger would, below, and check the version.
 
 ## Homebrew
 
-The tap is its own repository, `homebrew-bytemeter`, and the file that matters
-is `Formula/bytemeter.rb`. It builds from source rather than shipping the zip.
-A downloaded app carries a quarantine mark, and Gatekeeper refuses an ad hoc
-signed app that has one. An app built on the Mac it runs on has no such mark.
-Notarising would fix the zip as well, but it needs a paid Apple Developer
-account.
+The formula lives in this repository, at `Formula/bytemeter.rb`. There is no
+separate tap repository: Homebrew is pointed at this one once, by its address.
+
+    brew tap adi-debug-source/bytemeter https://github.com/Adi-debug-source/bytemeter
+    brew install adi-debug-source/bytemeter/bytemeter
+    bytemeter-setup
 
 How it works:
 
-1. `brew install adi-debug-source/bytemeter/bytemeter` downloads the tag's
-   source tarball and runs `./install.sh --bundle-only #{prefix}
-   --disable-sandbox`. Homebrew builds inside a sandbox, and SwiftPM's own
-   sandbox cannot start inside another one, hence the flag.
-2. The formula keeps `install.sh` and `Scripts/` in `libexec` and writes a
+1. `brew tap` with an address clones this repository as a tap and finds the
+   formula in `Formula/`. The short form, without the address, only works for
+   a repository named `homebrew-something`, which is why the address is given.
+2. `brew install` downloads the tag's source tarball named in the formula and
+   runs `./install.sh --bundle-only #{prefix} --disable-sandbox`. Homebrew
+   builds inside a sandbox, and SwiftPM's own sandbox cannot start inside
+   another one, hence the flag.
+3. The formula keeps `install.sh` and `Scripts/` in `libexec` and writes a
    `bytemeter-setup` wrapper.
-3. `bytemeter-setup` runs `install.sh --app #{opt_prefix}/Bytemeter.app`,
+4. `bytemeter-setup` runs `install.sh --app #{opt_prefix}/Bytemeter.app`,
    which copies that app to `~/Applications` and loads the login item without
    building anything. Homebrew cannot write to the home folder itself, which
    is why this is a second step. `bytemeter-setup --uninstall` and
@@ -202,12 +196,14 @@ How it works:
 
 After each release:
 
-1. Take the checksum of the new tag's tarball:
+1. Take the checksum of the new tag's tarball, as GitHub serves it:
 
         curl -sL https://github.com/Adi-debug-source/bytemeter/archive/refs/tags/v1.0.1.tar.gz | shasum -a 256
 
-2. In `homebrew-bytemeter`, set `url` to the new tag and `sha256` to that
-   checksum. Commit it as `Bytemeter 1.0.1` and push.
+2. In `Formula/bytemeter.rb`, set `url` to the new tag and `sha256` to that
+   checksum. Commit it to `main` and push. This commit comes after the tag, so
+   the tagged tarball always carries the previous checksum; that is expected,
+   because Homebrew reads the formula from `main`, never from the tarball.
 3. Check it as a user would:
 
         brew update
@@ -245,11 +241,16 @@ sips -s format png -Z 256 Resources/AppIcon.icns --out docs/icon.png
 ## Known limits
 
 - **macOS 13 and later.**
-- **Not notarised.** Ad hoc signed only. Building from source, by Homebrew
-  or a clone, avoids this; a downloaded zip does not.
-- **The zip is for the architecture it was built on.** Built on Apple Silicon,
-  it runs only on Apple Silicon. `swift build -c release --arch arm64 --arch
-  x86_64` does produce a universal binary with only the command line tools,
-  but `install.sh` does not use it yet, and the Intel half has never been
-  run. Homebrew and a clone build for the Mac they are on, so they are not
-  affected.
+- **Not notarised.** Ad hoc signed only, so there is no prebuilt download.
+  Homebrew and a clone both build on the Mac they run on, which avoids
+  Gatekeeper's quarantine check.
+- **A clock set ahead and then corrected.** While the clock reads earlier than
+  the last reading, new readings are filed at the last reading's minute until
+  real time catches up. Every byte is still counted once, but the figures look
+  still for that stretch. A clock set backwards is handled fully. Using elapsed
+  time within a boot session would remove this, and is left for a later
+  version, since macOS sets the clock itself and this needs a clock moved by
+  hand.
+- **The 32 bit fallback.** It is used only if the 64 bit interface counter
+  cannot be read, and it can only recognise a wrap if under 200 MB moved
+  between two readings.
