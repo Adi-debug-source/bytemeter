@@ -42,7 +42,10 @@ public enum Maintenance {
     /// of its hour, so its bytes move back by up to 59 minutes, never across
     /// a local hour and so never across a day, a week or a month. Minute
     /// detail inside those old hours is the only thing lost, which is the
-    /// point. A collapsed hour is marked estimated if any minute in it was.
+    /// point. A collapsed hour keeps exactly the estimated bytes of its
+    /// minutes, so an hour with one spread minute does not come to count its
+    /// measured ones as estimated too. It is still marked estimated if any
+    /// minute in it was, for a build before schema version 3.
     ///
     /// Rows already at the start of their hour are left alone, so running
     /// it twice collapses nothing the second time. Everything it changes,
@@ -93,13 +96,13 @@ public enum Maintenance {
                 CREATE TEMP TABLE rollup_samples AS
                 SELECT \(start) AS m, iface, ssid,
                        SUM(bytes_in) AS bi, SUM(bytes_out) AS bo, MIN(idle) AS idl,
-                       MAX(estimated) AS est
+                       MAX(estimated) AS est, SUM(est_in) AS ei, SUM(est_out) AS eo
                 FROM samples WHERE minute>=? AND minute<? GROUP BY m, iface, ssid;
                 """, range)
             try db.run("DELETE FROM samples WHERE minute>=? AND minute<?;", range)
             try db.exec("""
-                INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated)
-                SELECT m, iface, ssid, bi, bo, idl, est FROM rollup_samples;
+                INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated,est_in,est_out)
+                SELECT m, iface, ssid, bi, bo, idl, est, ei, eo FROM rollup_samples;
                 """)
             try db.exec("DROP TABLE rollup_samples;")
 

@@ -3,9 +3,11 @@ import Foundation
 public struct Totals: Equatable {
     public let bytesIn: UInt64
     public let bytesOut: UInt64
-    /// How much of `bytesIn` and `bytesOut` sits in minutes marked estimated.
-    /// A part of the figures above, never an addition to them: the bytes are
-    /// real and every total counts them, only their timing is spread.
+    /// How much of `bytesIn` and `bytesOut` is estimated: traffic from a
+    /// stretch nobody watched, such as a sleep, booked to minutes by rule
+    /// rather than measured in them. A part of the figures above, never an
+    /// addition to them: the bytes are real and every total counts them,
+    /// only their timing is estimated.
     public let estimatedIn: UInt64
     public let estimatedOut: UInt64
 
@@ -103,8 +105,7 @@ public struct Aggregator {
         var result = Totals()
         try? db.query("""
             SELECT COALESCE(SUM(bytes_in),0), COALESCE(SUM(bytes_out),0),
-                   COALESCE(SUM(CASE WHEN estimated!=0 THEN bytes_in ELSE 0 END),0),
-                   COALESCE(SUM(CASE WHEN estimated!=0 THEN bytes_out ELSE 0 END),0)
+                   COALESCE(SUM(est_in),0), COALESCE(SUM(est_out),0)
             FROM samples WHERE minute>=? AND minute<?;
             """, [.int(range.start), .int(range.end)]) { row in
             result = Totals(bytesIn: row.uint(0), bytesOut: row.uint(1),
@@ -116,9 +117,7 @@ public struct Aggregator {
     public func minuteRows(_ range: MinuteRange) -> [MinuteRow] {
         var rows: [MinuteRow] = []
         try? db.query("""
-            SELECT minute, SUM(bytes_in), SUM(bytes_out), MIN(idle),
-                   SUM(CASE WHEN estimated!=0 THEN bytes_in ELSE 0 END),
-                   SUM(CASE WHEN estimated!=0 THEN bytes_out ELSE 0 END)
+            SELECT minute, SUM(bytes_in), SUM(bytes_out), MIN(idle), SUM(est_in), SUM(est_out)
             FROM samples WHERE minute>=? AND minute<? GROUP BY minute ORDER BY minute;
             """, [.int(range.start), .int(range.end)]) { row in
             rows.append(MinuteRow(minute: row.int(0), bytesIn: row.uint(1),

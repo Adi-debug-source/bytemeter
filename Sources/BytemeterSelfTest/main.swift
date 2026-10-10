@@ -314,8 +314,8 @@ do {
 
     let totals = Aggregator(db: db, cal: london).totals(MinuteRange(start: 0, end: 1_000))
     expect(totals.bytesIn, 302, "estimated bytes still count in the total")
-    expect(totals.estimatedIn, 300, "a marked minute counts as estimated in full, wake minute included")
-    expect(totals.estimatedOut, 30, "a marked minute counts as estimated in full, up")
+    expect(totals.estimatedIn, 200, "only the estimated bytes count as estimated, not those measured into the same minute")
+    expect(totals.estimatedOut, 20, "only the estimated bytes count as estimated, up")
 }
 
 // MARK: - A minute keeps exactly its estimated bytes
@@ -357,6 +357,14 @@ do {
         sums = [$0.int(0), $0.int(1), $0.int(2), $0.int(3)]
     }
     expect(sums, [605_000, 600_000, 60_500, 60_000], "every byte is counted, and only the spread ones are estimated")
+    let aggregator = Aggregator(db: db, cal: london)
+    expect(aggregator.minuteRows(MinuteRange(start: spread.minute, end: spread.minute + 1)).map {
+               [$0.bytesIn, $0.estimatedIn, $0.bytesOut, $0.estimatedOut]
+           }, [[spread.bytesIn + 5_000, spread.bytesIn, spread.bytesOut + 500, spread.bytesOut]],
+           "the wake minute reports only its spread bytes as estimated")
+    expect(aggregator.totals(MinuteRange(start: wake.buckets[0].minute, end: spread.minute + 1)),
+           Totals(bytesIn: 605_000, bytesOut: 60_500, estimatedIn: 600_000, estimatedOut: 60_000),
+           "and so does the hour asleep with it")
 
     // Two estimates in one minute add up, and measured bytes add nothing to them.
     db.addBuckets([BucketDelta(minute: 900, iface: "en0", bytesIn: 70, bytesOut: 7, estimated: true)],
@@ -642,7 +650,41 @@ do {
     expect(estimatedFlag(db, minute: oldHour + 60), 0, "an hour of measured minutes stays measured once collapsed")
     let after = Aggregator(db: db, cal: london).totals(everything)
     expect(after.bytesIn, before.bytesIn, "pruning with the new column loses no byte")
-    expect(after.estimatedIn, 60_000, "the collapsed hour reports its bytes as estimated")
+    expect(after.estimatedIn, 1_000, "the collapsed hour reports only its spread minute's bytes as estimated")
+}
+
+// MARK: - Pruning keeps the estimated bytes exactly
+
+do {
+    // One old hour: on en0 a single spread minute among 59 measured ones,
+    // and on en1, on another network, measured minutes only.
+    let db = makeDatabase()
+    let now = london.parseLocal("2026-10-02T12:00")!
+    let hour = BytemeterCalendar.minute(from: london.parseLocal("2026-05-02T10:00")!)
+    for offset in Int64(0)..<60 {
+        let spread = offset == 17
+        db.addBuckets([BucketDelta(minute: hour + offset, iface: "en0", bytesIn: spread ? 7_777 : 1_000,
+                                   bytesOut: spread ? 333 : 100, estimated: spread)], ssid: ssidPlaceholder, idle: false)
+        db.addBuckets([BucketDelta(minute: hour + offset, iface: "en1", bytesIn: 2_000, bytesOut: 200)], ssid: "Cafe", idle: false)
+    }
+    let aggregator = Aggregator(db: db, cal: london)
+    let range = MinuteRange(start: hour, end: hour + 60)
+    let before = aggregator.totals(range)
+    expect(before, Totals(bytesIn: 59_000 + 7_777 + 120_000, bytesOut: 5_900 + 333 + 12_000, estimatedIn: 7_777, estimatedOut: 333),
+           "the hour before pruning holds one spread minute's bytes as estimated")
+    expect(try! Maintenance.prune(db: db, now: now, timeZone: london.calendar.timeZone), 118,
+           "pruning collapses every minute row but the two already on the hour")
+    expect(aggregator.totals(range), before, "a pruned hour keeps exactly its spread minute's estimated bytes, and its total")
+    expect(estimatedBytes(db, minute: hour), [7_777, 333], "on the collapsed row of the interface it was spread on")
+    expect(estimatedBytes(db, minute: hour, iface: "en1"), [0, 0], "and none on the other interface's")
+    expect(estimatedFlag(db, minute: hour), 1, "the collapsed row keeps its mark")
+
+    let everyRow = "SELECT minute, bytes_in, bytes_out, idle, estimated, est_in, est_out FROM samples ORDER BY minute, iface, ssid;"
+    let rowsAfter = rawRows(db.path, everyRow)
+    expect(rowsAfter.count, 2, "one row is left for the hour on each interface and network")
+    expect(try! Maintenance.prune(db: db, now: now, timeZone: london.calendar.timeZone), 0, "a second prune collapses nothing")
+    expect(rawRows(db.path, everyRow), rowsAfter, "pruning twice changes nothing")
+    expect(aggregator.totals(range), before, "and the hour reads as it did")
 }
 
 // MARK: - The shaped views carry the estimated share
@@ -1184,9 +1226,8 @@ do {
         check(collapsed > 600, "\(zone) around \(around): the old minutes are collapsed, got \(collapsed)")
         expect(localHourTotals(db, cal), before, "\(zone) around \(around): no byte moves into another local hour")
         let dayAfter = Aggregator(db: db, cal: cal).daily(lastDays: 3, now: cal.parseLocal(around)!.addingTimeInterval(86_400))
-        // Bytes only: a collapsed hour is marked estimated if any minute in it was, so the estimated share may grow.
-        expect(dayAfter.map { [$0.totals.bytesIn, $0.totals.bytesOut] }, dayBefore.map { [$0.totals.bytesIn, $0.totals.bytesOut] },
-               "\(zone) around \(around): every day's figure is unchanged")
+        // Estimated share included: a collapsed hour keeps exactly its minutes' estimated bytes.
+        expect(dayAfter.map(\.totals), dayBefore.map(\.totals), "\(zone) around \(around): every day's figure is unchanged")
         var misplaced = 0
         try! db.query("SELECT minute FROM samples UNION SELECT minute FROM proc_samples;") { row in
             let date = BytemeterCalendar.date(fromMinute: row.int(0))
