@@ -101,7 +101,7 @@ public final class Database {
 
     /// The schema version this build writes and reads. Raise it with each new
     /// step in `migrate()`.
-    public static let schemaVersion: Int64 = 2
+    public static let schemaVersion: Int64 = 3
 
     /// Open an existing database for reading only, for `--demo`, which must
     /// leave its folder exactly as it found it.
@@ -331,6 +331,29 @@ public final class Database {
                 try run("INSERT INTO events(ts,kind,detail) VALUES(?,?,?);",
                         [.int(Int64(Date().timeIntervalSince1970)), .text("estimated_backfill"), .text(detail)])
             }
+        }
+
+        if version < 3 {
+            // Version 3 keeps how many of a row's bytes are estimated, not
+            // only a mark. The 90 day tidy up gave a collapsed hour the mark
+            // of any minute in it, so the measured bytes around a wake or a
+            // restart came to count as estimated too. A row marked before
+            // this step was counted as estimated in full, so that is what it
+            // keeps, and every figure reads exactly as it did. Nothing the
+            // user sees changes, so no event is written.
+            //
+            // The mark stays, and is still written with MAX, for an older
+            // build that opens this file. Its app and --dashboard open it
+            // without migrating, because they only migrate a file older than
+            // they are, and read the mark. The estimated rows it writes leave
+            // est_in and est_out at 0, and so do the hours its tidy up
+            // collapses, so their estimated share reads low here. Its --demo
+            // refuses the file, because it reads only its own version.
+            try exec("""
+            ALTER TABLE samples ADD COLUMN est_in INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE samples ADD COLUMN est_out INTEGER NOT NULL DEFAULT 0;
+            UPDATE samples SET est_in=bytes_in, est_out=bytes_out WHERE estimated!=0;
+            """)
         }
     }
 

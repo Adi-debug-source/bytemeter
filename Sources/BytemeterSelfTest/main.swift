@@ -339,6 +339,20 @@ func rawInt(_ path: String, _ sql: String) -> Int64 {
     return sqlite3_column_int64(statement, 0)
 }
 
+/// Every row a query returns, each as its integer columns.
+func rawRows(_ path: String, _ sql: String) -> [[Int64]] {
+    var handle: OpaquePointer?
+    var statement: OpaquePointer?
+    guard sqlite3_open(path, &handle) == SQLITE_OK else { return [] }
+    defer { sqlite3_finalize(statement); sqlite3_close(handle) }
+    guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+    var rows: [[Int64]] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+        rows.append((0..<sqlite3_column_count(statement)).map { sqlite3_column_int64(statement, $0) })
+    }
+    return rows
+}
+
 do {
     // A schema 1 database, exactly as the first release created it.
     let path = scratchFolder + "v1_\(UUID().uuidString).db"
@@ -419,7 +433,16 @@ do {
     expect(rawInt(path, "SELECT COUNT(*) FROM samples;"), rowsBefore, "the migration leaves the row count alone")
     expect(rawInt(path, "SELECT SUM(bytes_in) FROM samples;"), inBefore, "the migration leaves the download total alone")
     expect(rawInt(path, "SELECT SUM(bytes_out) FROM samples;"), outBefore, "the migration leaves the upload total alone")
-    expect(rawInt(path, "PRAGMA user_version;"), 2, "the schema is now version 2")
+    expect(rawInt(path, "PRAGMA user_version;"), 3, "the schema is now version 3")
+
+    // The same open goes on through version 3's step, which reads the marks
+    // version 2's step has just made: a marked row keeps all its bytes as
+    // estimated, the wake minutes included, and no other row has any.
+    expect(rawInt(path, "SELECT COUNT(*) FROM samples WHERE estimated!=0 AND (est_in!=bytes_in OR est_out!=bytes_out);"), 0,
+           "a version 1 file goes through both steps: every row marked by the backfill keeps its bytes as estimated")
+    expect(rawInt(path, "SELECT COUNT(*) FROM samples WHERE estimated=0 AND (est_in!=0 OR est_out!=0);"), 0,
+           "and no unmarked row has any estimated bytes")
+    check(rawInt(path, "SELECT SUM(est_in) FROM samples;") > 0, "the backfilled rows carry estimated bytes")
 
     var detail = ""
     try! db.query("SELECT detail FROM events WHERE kind='estimated_backfill';") { detail = $0.string(0) }
@@ -436,6 +459,116 @@ do {
     var freshEvents: Int64 = -1
     try! fresh.query("SELECT COUNT(*) FROM events;") { freshEvents = $0.int(0) }
     expect(freshEvents, 0, "a new database has nothing to backfill and says nothing")
+}
+
+// MARK: - The version 3 migration keeps every figure exactly as it was
+
+do {
+    // A schema 2 database, as 1.0.0 created it: version 1's tables, then the estimated column.
+    let path = scratchFolder + "v2_\(UUID().uuidString).db"
+    var sql = """
+    CREATE TABLE samples(minute INTEGER NOT NULL, iface TEXT NOT NULL, ssid TEXT NOT NULL,
+        bytes_in INTEGER NOT NULL DEFAULT 0, bytes_out INTEGER NOT NULL DEFAULT 0,
+        idle INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(minute, iface, ssid));
+    CREATE TABLE proc_samples(minute INTEGER NOT NULL, proc TEXT NOT NULL,
+        bytes_in INTEGER NOT NULL DEFAULT 0, bytes_out INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(minute, proc));
+    CREATE TABLE state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE events(ts INTEGER NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');
+    CREATE INDEX idx_samples_minute ON samples(minute);
+    CREATE INDEX idx_proc_minute ON proc_samples(minute);
+    CREATE INDEX idx_events_ts ON events(ts);
+    ALTER TABLE samples ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;
+    PRAGMA user_version=2;
+
+    """
+    // Six hours on two interfaces and two networks, written with 1.0.0's
+    // upsert: an hour asleep spread on en0, ending in a wake minute that
+    // also holds bytes measured after waking, and a short spread on en1.
+    let start: Int64 = 29_500_000
+    func write(_ step: Int64, _ iface: String, _ ssid: String, _ bytesIn: Int64, _ bytesOut: Int64, estimated: Bool) {
+        sql += """
+        INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated)
+        VALUES(\(start + step),'\(iface)','\(ssid)',\(bytesIn),\(bytesOut),0,\(estimated ? 1 : 0))
+        ON CONFLICT(minute,iface,ssid) DO UPDATE SET bytes_in=bytes_in+excluded.bytes_in,
+            bytes_out=bytes_out+excluded.bytes_out, idle=MIN(idle,excluded.idle), estimated=MAX(estimated,excluded.estimated);
+
+        """
+    }
+    for step in Int64(0)..<360 {
+        if (61...120).contains(step) { write(step, "en0", ssidPlaceholder, 200_003, 20_001, estimated: true) }
+        if !(61..<120).contains(step) {
+            write(step, "en0", ssidPlaceholder, 1_000 + step * 37 % 500, 100 + step % 13, estimated: false)
+        }
+        if (180..<240).contains(step) { write(step, "en1", "Cafe", 50_000 + step, 3_000, estimated: (200...202).contains(step)) }
+    }
+    check(rawExec(path, sql), "the schema 2 fixture builds")
+
+    // The figures as 1.0.0 worked them out, from the mark.
+    let minutesBefore = rawRows(path, """
+        SELECT minute, SUM(bytes_in), SUM(bytes_out),
+               SUM(CASE WHEN estimated!=0 THEN bytes_in ELSE 0 END), SUM(CASE WHEN estimated!=0 THEN bytes_out ELSE 0 END)
+        FROM samples GROUP BY minute ORDER BY minute;
+        """)
+    func markedTotals(_ range: MinuteRange) -> Totals {
+        let row = rawRows(path, """
+            SELECT COALESCE(SUM(bytes_in),0), COALESCE(SUM(bytes_out),0),
+                   COALESCE(SUM(CASE WHEN estimated!=0 THEN bytes_in ELSE 0 END),0),
+                   COALESCE(SUM(CASE WHEN estimated!=0 THEN bytes_out ELSE 0 END),0)
+            FROM samples WHERE minute>=\(range.start) AND minute<\(range.end);
+            """).first ?? [-1, -1, -1, -1]
+        return Totals(bytesIn: UInt64(row[0]), bytesOut: UInt64(row[1]), estimatedIn: UInt64(row[2]), estimatedOut: UInt64(row[3]))
+    }
+    let whole = MinuteRange(start: start, end: start + 360)
+    let wakeMinute = MinuteRange(start: start + 120, end: start + 121)
+    let ranges = (Int64(0)..<6).map { MinuteRange(start: start + $0 * 60, end: start + $0 * 60 + 60) }
+        + [whole, MinuteRange(start: start + 61, end: start + 121), wakeMinute, MinuteRange(start: start + 200, end: start + 202)]
+    let totalsBefore = ranges.map(markedTotals)
+    let wholeBefore = markedTotals(whole)
+    let rowsBefore = rawInt(path, "SELECT COUNT(*) FROM samples;")
+    expect(minutesBefore.count, 360, "the fixture has a row for every minute")
+    check(wholeBefore.estimatedIn > 0 && wholeBefore.estimatedOut > 0, "the fixture has estimated rows")
+    expect(markedTotals(wakeMinute).estimatedIn, markedTotals(wakeMinute).bytesIn,
+           "1.0.0 counts the wake minute as estimated in full, measured bytes included")
+
+    // The read only open, which --demo uses, refuses it rather than reading it wrongly or upgrading it.
+    var refusal = ""
+    do { _ = try Database(readOnlyPath: path) } catch { refusal = "\(error)" }
+    check(refusal.contains("is at schema version 2 and this build reads version 3. Run Bytemeter --dashboard on its folder once"),
+          "a version 2 database is refused read only, with the reason and what to do, got: \(refusal)")
+    expect(rawInt(path, "PRAGMA user_version;"), 2, "and is left at version 2")
+
+    do {
+        let db = try! Database(path: path)                             // runs the migration
+        let aggregator = Aggregator(db: db, cal: london)
+        expect(rawInt(path, "PRAGMA user_version;"), 3, "a version 2 database is brought to version 3")
+        expect(rawInt(path, "SELECT COUNT(*) FROM samples WHERE estimated!=0 AND (est_in!=bytes_in OR est_out!=bytes_out);"), 0,
+               "every marked row keeps exactly its bytes as estimated")
+        expect(rawInt(path, "SELECT COUNT(*) FROM samples WHERE estimated=0 AND (est_in!=0 OR est_out!=0);"), 0,
+               "and every unmarked row none")
+        expect(rawInt(path, "SELECT COUNT(*) FROM samples;"), rowsBefore, "the step leaves the row count alone")
+        expect(rawInt(path, "SELECT COUNT(*) FROM events;"), 0, "and writes no event, because nothing the user sees changes")
+        expect(aggregator.minuteRows(MinuteRange(start: 0, end: .max)).map {
+                   [$0.minute, Int64($0.bytesIn), Int64($0.bytesOut), Int64($0.estimatedIn), Int64($0.estimatedOut)]
+               }, minutesBefore, "every minute reads as it did before the step, estimated share included")
+        // A closure rather than `aggregator.totals` itself, which kept the
+        // database open after this block, and the read only open below needs
+        // it closed, with its write-ahead log folded into the file.
+        expect(ranges.map { aggregator.totals($0) }, totalsBefore,
+               "every total reads as it did before the step, estimated share included")
+    }
+
+    let everyRow = "SELECT minute, bytes_in, bytes_out, idle, estimated, est_in, est_out FROM samples ORDER BY minute, iface, ssid;"
+    let rowsAfter = rawRows(path, everyRow)
+    _ = try! Database(path: path)
+    expect(rawRows(path, everyRow), rowsAfter, "opening it again changes nothing")
+
+    do {
+        let reader = try Database(readOnlyPath: path)
+        expect(Aggregator(db: reader, cal: london).totals(whole), wholeBefore,
+               "a version 3 database opens read only, with the same figures")
+    } catch {
+        check(false, "a version 3 database opens read only: \(error)")
+    }
 }
 
 // MARK: - Pruning keeps the mark
@@ -1416,7 +1549,7 @@ do {
     sqlite3_close(holder)
     group.wait()
     expect(results.sorted, ["opened", "opened"], "two processes opening an old database at once both succeed")
-    expect(rawInt(path, "PRAGMA user_version;"), 2, "the file ends at version 2")
+    expect(rawInt(path, "PRAGMA user_version;"), 3, "the file ends at version 3")
     expect(rawInt(path, "SELECT COUNT(*) FROM events WHERE kind='estimated_backfill';"), 1, "and the migration ran exactly once")
 }
 
