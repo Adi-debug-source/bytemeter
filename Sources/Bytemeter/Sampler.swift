@@ -133,10 +133,7 @@ final class Sampler {
         // bytes of this one are counted then rather than lost. The gap label
         // is kept for that reading too.
         let written = db.transaction {
-            try db.writeBuckets(outcome.buckets, ssid: ssid, idle: idle)
-            try db.writeBaselines(outcome.baselines)
-            try db.writeEvents(outcome.events)
-            try db.writeState(StateKey.counterSource, snapshot.source.rawValue)
+            try db.writeReading(outcome, ssid: ssid, idle: idle, reason: reason, counterSource: snapshot.source)
         }
         if written { gate.readingWritten() }
 

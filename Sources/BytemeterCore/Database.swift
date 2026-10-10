@@ -441,11 +441,11 @@ public final class Database {
     //
     // Each write comes in two forms. The throwing one (`writeBuckets`,
     // `writeEvents`) is for a transaction that must stop at the first
-    // failure, which is what the sampler uses. The forgiving one
-    // (`addBuckets`, `addEvents`) drops the error, for callers with nothing
-    // to do about it. Inside a transaction even the forgiving form cannot
-    // let a commit through without its rows: the failure is remembered and
-    // the transaction rolls back.
+    // failure, which is what `writeReading` builds on for the sampler. The
+    // forgiving one (`addBuckets`, `addEvents`) drops the error, for callers
+    // with nothing to do about it. Inside a transaction even the forgiving
+    // form cannot let a commit through without its rows: the failure is
+    // remembered and the transaction rolls back.
 
     public func addEvent(ts: Int64, kind: String, detail: String) {
         try? writeEvents([LedgerEvent(ts: ts, kind: kind, detail: detail)])
@@ -467,11 +467,14 @@ public final class Database {
     /// `estimated` uses MAX for the mirror reason: once any part of a minute
     /// is an estimate, bytes measured into it later must not clear the mark.
     /// The wake minute after a sleep is exactly that case.
-    public func addBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool) {
-        try? writeBuckets(buckets, ssid: ssid, idle: idle)
+    ///
+    /// `estimatedIdle`, when given, is the flag for the estimated buckets in
+    /// place of `idle`; measured buckets always take `idle`. See `writeReading`.
+    public func addBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool, estimatedIdle: Bool? = nil) {
+        try? writeBuckets(buckets, ssid: ssid, idle: idle, estimatedIdle: estimatedIdle)
     }
 
-    public func writeBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool) throws {
+    public func writeBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool, estimatedIdle: Bool? = nil) throws {
         guard !buckets.isEmpty else { return }
         let sql = """
         INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated) VALUES(?,?,?,?,?,?,?)
@@ -482,11 +485,35 @@ public final class Database {
             estimated = MAX(estimated, excluded.estimated);
         """
         for bucket in buckets {
+            let bucketIdle = bucket.estimated ? (estimatedIdle ?? idle) : idle
             try run(sql, [.int(bucket.minute), .text(bucket.iface), .text(ssid),
                            .int(Int64(bitPattern: bucket.bytesIn)),
                            .int(Int64(bitPattern: bucket.bytesOut)),
-                           .int(idle ? 1 : 0),
+                           .int(bucketIdle ? 1 : 0),
                            .int(bucket.estimated ? 1 : 0)])
+        }
+    }
+
+    /// Everything one reading writes, in this order: the buckets, the
+    /// baselines, the events, and which counter the interfaces were read
+    /// from, which is left alone when `counterSource` is nil. Every write
+    /// throws, for use inside `inTransaction` or `transaction`, so a reading
+    /// is written whole or not at all.
+    ///
+    /// Estimated buckets from a reading after a sleep are written idle.
+    /// Nobody can type into a sleeping Mac, and waking it is itself input,
+    /// so the wake moment's flag would book a night's Power Nap and backup
+    /// traffic as someone at the keyboard. Estimated buckets for any other
+    /// reason, and every measured bucket, take `idle`. A wake minute that
+    /// also holds measured traffic still ends active if anyone was there,
+    /// because a minute keeps the lower flag.
+    public func writeReading(_ outcome: IngestOutcome, ssid: String, idle: Bool, reason: GapReason,
+                             counterSource: CounterSource?) throws {
+        try writeBuckets(outcome.buckets, ssid: ssid, idle: idle, estimatedIdle: reason == .sleep || idle)
+        try writeBaselines(outcome.baselines)
+        try writeEvents(outcome.events)
+        if let source = counterSource {
+            try writeState(StateKey.counterSource, source.rawValue)
         }
     }
 

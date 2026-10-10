@@ -647,12 +647,12 @@ def build(seed: int, now_ts: int) -> dict:
             bout = each_out + (rem_out if last else 0)
             if bin_ == 0 and bout == 0:
                 continue
-            row = rows.setdefault((i, "en0"), [0, 0, 0])
-            # The spread rows are written in the same call as the wake sample,
-            # with the wake minute's idle flag, and someone just woke it.
+            # The spread rows are written idle, as the app writes them, and a
+            # minute keeps the lower of the two flags, so a spread minute stays
+            # idle unless someone touched the Mac in the five minutes up to it.
+            row = rows.setdefault((i, "en0"), [0, 0, 1])
             row[0] += bin_
             row[1] += bout
-            row[2] = 0
         events.append((wake_ts, "gap_sleep",
                        f"en0 gap of {wake_ts - sleep_ts} seconds. "
                        f"{delta_in} in and {delta_out} out spread evenly across {parts} minutes."))
