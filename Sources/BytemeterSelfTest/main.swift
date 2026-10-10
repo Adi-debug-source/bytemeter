@@ -144,6 +144,29 @@ do {
     expect(Units.rate(2_100_000), "2.1 MB/s", "rate formatting")
 }
 
+// MARK: - Figures never print as 1000 of a smaller unit
+
+do {
+    // Each of these rounds up to the next threshold, where the larger
+    // figure's rule must take over.
+    let cases: [(String, String, String)] = [
+        (Units.bytes(999_499), "999 kB", "just under 1 MB stays in kB"),
+        (Units.bytes(999_600), "1.0 MB", "999.6 kB rounds to 1.0 MB, not 1000 kB"),
+        (Units.bytes(9_960), "10 kB", "9.96 kB drops its decimal at 10 kB"),
+        (Units.bytes(99_960_000), "100 MB", "99.96 MB drops its decimal at 100 MB"),
+        (Units.bytes(999_600_000), "1.00 GB", "999.6 MB rounds to 1.00 GB, not 1000 MB"),
+        (Units.bytes(9_996_000_000), "10.0 GB", "9.996 GB keeps one decimal at 10 GB"),
+        (Units.bytes(999_600, compact: true), "1 MB", "the menu bar's 999.6 kB is 1 MB"),
+        (Units.bytes(999_600_000, compact: true), "1.0 GB", "the menu bar's 999.6 MB is 1.0 GB"),
+        (Units.rate(999.6), "1 kB/s", "a rate of 999.6 B/s is 1 kB/s"),
+        (Units.rate(999_600), "1.0 MB/s", "a rate of 999.6 kB/s is 1.0 MB/s"),
+        (Units.rate(999_960_000), "1.00 GB/s", "a rate of 999.96 MB/s is 1.00 GB/s"),
+    ]
+    for (actual, expected, message) in cases {
+        expect(actual, expected, message)
+    }
+}
+
 // MARK: - Database behaviour
 
 do {

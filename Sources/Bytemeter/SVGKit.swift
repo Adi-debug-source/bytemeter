@@ -84,13 +84,16 @@ enum SVGKit {
         return step * magnitude
     }
 
-    /// One decimal at most, and no trailing ".0", for axis ticks.
+    /// For axis ticks: one decimal at most, unless one would round the
+    /// figure, then two, and no trailing zeros. A 2.5 GB axis marks its
+    /// middle line 1.25 GB, where one decimal said 1.3 GB.
     static func axisLabel(_ bytes: Double) -> String {
         func trim(_ value: Double) -> String {
-            let rounded = (value * 10).rounded() / 10
-            return rounded == rounded.rounded()
-                ? String(format: "%.0f", rounded)
-                : String(format: "%.1f", rounded)
+            let decimals = (value * 10).rounded() == value * 10 ? 1 : 2
+            var text = String(format: "%.\(decimals)f", value)
+            while text.hasSuffix("0") { text.removeLast() }
+            if text.hasSuffix(".") { text.removeLast() }
+            return text
         }
         if bytes >= Units.GB { return trim(bytes / Units.GB) + " GB" }
         if bytes >= Units.MB { return trim(bytes / Units.MB) + " MB" }
