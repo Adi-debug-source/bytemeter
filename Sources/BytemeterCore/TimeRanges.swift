@@ -114,6 +114,17 @@ public struct BytemeterCalendar {
         range(from: startOfDay(now, offsetBy: -1), to: startOfDay(now))
     }
 
+    /// Yesterday up to the same time on the clock as now, that minute
+    /// included, as `today` includes the current one: the fair figure to set
+    /// today so far against. Never past the start of today and never before
+    /// yesterday's start, which a clock change could otherwise make it: the
+    /// same time yesterday may not exist, or may have happened twice.
+    public func yesterdayUntil(_ now: Date) -> MinuteRange {
+        let start = Self.minute(from: startOfDay(now, offsetBy: -1))
+        let sameTime = Self.minute(from: addDays(-1, to: now)) + 1
+        return MinuteRange(start: start, end: min(max(sameTime, start), Self.minute(from: startOfDay(now))))
+    }
+
     public func thisWeek(_ now: Date) -> MinuteRange {
         range(from: startOfWeek(now), to: Self.date(fromMinute: Self.minute(from: now) + 1))
     }

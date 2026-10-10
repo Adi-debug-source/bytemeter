@@ -30,6 +30,7 @@ enum DashboardGenerator {
         let dayValues = data.daily.map { (label: $0.label, totals: $0.totals) }
         let heatPeak = data.heat.map(\.average.total).max() ?? 0
         let projectionBasis = data.projection.isTooEarly ? ProjectionWording.tooEarlyBasis : ProjectionWording.basis
+        let comparison = DayComparison.text(today: data.today, yesterdaySoFar: data.yesterdaySoFar, yesterday: data.yesterday)
 
         var body = ""
 
@@ -49,7 +50,7 @@ enum DashboardGenerator {
             <div class="eyebrow">Today, \(esc(cal.fullDayLabel(data.generatedAt)))</div>
             <div class="hero-figure"><span class="value">\(esc(hero.number))</span><span class="unit">\(esc(hero.unit))</span></div>
             <div class="hero-sub">downloaded<span class="sep">·</span>\(esc(Units.bytes(data.today.bytesOut))) uploaded</div>
-            <div class="hero-compare">\(esc(comparisonText(today: data.today, yesterday: data.yesterday)))</div>
+            <div class="hero-compare">\(esc(comparison))</div>
           </div>
           <dl class="hero-stats">
             \(statRow("This week, from Monday", data.thisWeek))
@@ -321,18 +322,6 @@ enum DashboardGenerator {
             return "<li><span class=\"when\">\(esc(when))</span><span class=\"kind\">\(esc(event.kind))</span>"
                  + "<span class=\"detail\">\(esc(event.detail))</span></li>"
         }.joined() + "</ul>"
-    }
-
-    private static func comparisonText(today: Totals, yesterday: Totals) -> String {
-        guard yesterday.bytesIn > 0 else { return "No figure for yesterday to compare against yet." }
-        let change = Double(today.bytesIn) / Double(yesterday.bytesIn)
-        let yesterdayText = Units.bytes(yesterday.bytesIn)
-        if change >= 1.05 {
-            return "Up on yesterday, which came to \(yesterdayText)."
-        } else if change <= 0.95 {
-            return "Down on yesterday, which came to \(yesterdayText)."
-        }
-        return "About the same as yesterday, which came to \(yesterdayText)."
     }
 
     private static func peakHourNote(_ data: DashboardData) -> String {

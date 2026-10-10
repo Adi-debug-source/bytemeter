@@ -9,6 +9,8 @@ struct DashboardData {
 
     let today: Totals
     let yesterday: Totals
+    /// Yesterday up to the same time of day, for the comparison under today's figure.
+    let yesterdaySoFar: Totals
     let thisWeek: Totals
     let last7: Totals
     let thisMonth: Totals
@@ -55,6 +57,7 @@ struct DashboardData {
 
         today = aggregator.totals(cal.today(now))
         yesterday = aggregator.totals(cal.yesterday(now))
+        yesterdaySoFar = aggregator.totals(cal.yesterdayUntil(now))
         thisWeek = aggregator.totals(cal.thisWeek(now))
         last7 = aggregator.totals(cal.rollingDays(7, now: now))
         thisMonth = aggregator.totals(cal.thisCycle(now))

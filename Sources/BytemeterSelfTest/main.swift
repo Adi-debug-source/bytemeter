@@ -1313,6 +1313,47 @@ do {
     check(raised.allSatisfy { (after[$0] ?? 0) - (before[$0] ?? 0) == 1_000_000_000 }, "each by a seventh of the extra")
 }
 
+// MARK: - Today against the same time yesterday
+
+do {
+    let mb: UInt64 = 1_000_000
+    let yesterday = Totals(bytesIn: 1_440 * mb)
+    let soFar = Totals(bytesIn: 721 * mb)
+    let reached = "at this time, when it had reached 721 MB. Yesterday came to 1.44 GB in all."
+    expect(DayComparison.text(today: Totals(bytesIn: 5 * mb), yesterdaySoFar: Totals(), yesterday: Totals()),
+           "No figure for yesterday to compare against yet.", "nothing yesterday, nothing to compare")
+    expect(DayComparison.text(today: Totals(bytesIn: 5 * mb), yesterdaySoFar: Totals(), yesterday: yesterday),
+           "Yesterday had nothing by this time, and came to 1.44 GB in all.", "nothing yesterday by this time")
+    expect(DayComparison.text(today: Totals(bytesIn: 800 * mb), yesterdaySoFar: soFar, yesterday: yesterday),
+           "Up on yesterday " + reached, "more than five per cent up")
+    expect(DayComparison.text(today: Totals(bytesIn: 600 * mb), yesterdaySoFar: soFar, yesterday: yesterday),
+           "Down on yesterday " + reached, "more than five per cent down")
+    expect(DayComparison.text(today: Totals(bytesIn: 730 * mb, bytesOut: 900 * mb), yesterdaySoFar: soFar, yesterday: yesterday),
+           "About the same as yesterday " + reached, "within five per cent, and download only")
+
+    // Two identical days, asked at Thursday noon: the morning against
+    // yesterday's morning, not against all of yesterday.
+    let now = london.parseLocal("2026-10-08T12:00")!
+    let steady = Aggregator(db: steadyTraffic(from: "2026-10-06T00:00", to: "2026-10-08T12:01", down: mb), cal: london)
+    expect(london.yesterdayUntil(now), MinuteRange(start: BytemeterCalendar.minute(from: london.parseLocal("2026-10-07T00:00")!),
+                                                   end: BytemeterCalendar.minute(from: london.parseLocal("2026-10-07T12:00")!) + 1),
+           "yesterday until now runs from its midnight to the same minute, that minute included")
+    expect(DayComparison.text(today: steady.totals(london.today(now)), yesterdaySoFar: steady.totals(london.yesterdayUntil(now)),
+                              yesterday: steady.totals(london.yesterday(now))),
+           "About the same as yesterday " + reached, "two identical days read about the same")
+
+    // The same time yesterday may not exist, or may have happened twice.
+    for (zone, text) in [("Europe/London", "2026-10-26T01:30"), ("Europe/London", "2026-03-30T01:30"),
+                         ("America/Santiago", "2026-09-07T00:30")] {
+        let cal = BytemeterCalendar(timeZone: TimeZone(identifier: zone)!)
+        let at = cal.parseLocal(text)!
+        let range = cal.yesterdayUntil(at)
+        let whole = cal.yesterday(at)
+        check(range.start == whole.start && range.end > range.start && range.end <= whole.end,
+              "\(zone) at \(text): yesterday until now stays inside yesterday, got \(range) in \(whole)")
+    }
+}
+
 // MARK: - Engine fixes: two processes migrating the same file
 
 final class OpenResults: @unchecked Sendable {
