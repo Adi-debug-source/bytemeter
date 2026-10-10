@@ -20,7 +20,14 @@ final class NettopSampler {
     /// positioning escape sequences rather than rows. Parsing that would be
     /// guesswork, so it is run once per sample instead. Verified 20
     /// September 2026.
-    private static let arguments = ["-P", "-L", "1", "-x", "-J", "bytes_in,bytes_out"]
+    ///
+    /// `-t external` leaves out loopback. Loopback traffic never leaves the
+    /// Mac, so without it a local development server, a database or a VPN
+    /// client's local proxy could top Top talkers with bytes that no counted
+    /// interface carried. `external` is every interface but loopback (man
+    /// nettop). A run also returns in hundredths of a second rather than
+    /// about five. Verified 10 October 2026.
+    private static let arguments = ["-P", "-L", "1", "-t", "external", "-x", "-J", "bytes_in,bytes_out"]
 
     /// Returns bytes used per process since the previous call, keyed by process
     /// name with the pid stripped.
