@@ -88,20 +88,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let mode = settings.statusMode
         let now = clock()
         readData { [weak self] aggregator in
-            let totals: Totals
-            var since: Date?
-            switch mode {
-            case .today: totals = aggregator.totals(aggregator.cal.today(now))
-            case .week: totals = aggregator.totals(aggregator.cal.thisWeek(now))
-            case .month: totals = aggregator.totals(aggregator.cal.thisCycle(now))
-            case .allTime:
-                let summary = aggregator.allTime(now: now)
-                totals = summary.totals
-                since = summary.since
-            }
+            // Only the one figure: this runs every five seconds.
+            let figure = Headlines.figure(for: mode, aggregator: aggregator, now: now)
             DispatchQueue.main.async {
-                self?.currentTotal = totals
-                self?.currentSince = since
+                self?.currentTotal = figure.totals
+                self?.currentSince = figure.since
                 self?.render()
             }
         }

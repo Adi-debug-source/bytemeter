@@ -55,14 +55,16 @@ struct DashboardData {
         generatedAt = now
         cal = aggregator.cal
 
-        today = aggregator.totals(cal.today(now))
-        yesterday = aggregator.totals(cal.yesterday(now))
+        // The same figures the menu and the menu bar show, from one place.
+        let headlines = Headlines(aggregator: aggregator, now: now)
+        today = headlines.today
+        yesterday = headlines.yesterday
         yesterdaySoFar = aggregator.totals(cal.yesterdayUntil(now))
-        thisWeek = aggregator.totals(cal.thisWeek(now))
-        last7 = aggregator.totals(cal.rollingDays(7, now: now))
-        thisMonth = aggregator.totals(cal.thisCycle(now))
-        last30 = aggregator.totals(cal.rollingDays(30, now: now))
-        allTime = aggregator.allTime(now: now)
+        thisWeek = headlines.thisWeek
+        last7 = headlines.last7
+        thisMonth = headlines.thisMonth
+        last30 = headlines.last30
+        allTime = headlines.allTime
         cycleStart = cal.startOfCycle(now)
 
         hourly = aggregator.hourly(day: now, now: now)
@@ -86,9 +88,9 @@ struct DashboardData {
         byInterface = aggregator.byInterface(cal.rollingDays(30, now: now))
         bySSID = aggregator.bySSID(cal.rollingDays(30, now: now))
 
-        projection = ProjectionWording(projected: aggregator.projection(now: now).projected, now: now, cal: cal)
-        peakHour = aggregator.peakDownloadHourToday(now: now)
-        peakDay = aggregator.peakDownloadDayThisCycle(now: now)
+        projection = headlines.projection
+        peakHour = headlines.peakHour
+        peakDay = headlines.peakDay
 
         ssidCapture = settings.ssidCapture
         self.networkNames = networkNames

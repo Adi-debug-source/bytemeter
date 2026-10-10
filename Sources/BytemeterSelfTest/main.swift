@@ -2007,6 +2007,50 @@ do {
           "the cap row and the per-app note follow the settings")
 }
 
+// MARK: - One set of headline figures, and the menu bar's figure is one of them
+
+do {
+    // Traffic on four days, so today, this week, this month and all time all
+    // differ, and a row after the moment that none of them may count.
+    let db = makeDatabase()
+    func at(_ local: String, _ bytesIn: UInt64, _ bytesOut: UInt64) {
+        db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal(local)!), iface: "en0",
+                                   bytesIn: bytesIn, bytesOut: bytesOut)], ssid: ssidPlaceholder, idle: false)
+    }
+    at("2026-08-20T10:00", 7_000_000_000, 700_000_000)
+    at("2026-10-02T09:00", 3_000_000_000, 300_000_000)    // a Friday: this month, not this week
+    at("2026-10-06T14:00", 2_000_000_000, 200_000_000)
+    at("2026-10-08T08:30", 1_000_000_000, 100_000_000)
+    at("2026-10-08T15:00", 9_000_000_000, 900_000_000)    // after the moment
+    let now = london.parseLocal("2026-10-08T12:00")!
+    let aggregator = Aggregator(db: db, cal: london)
+    let headlines = Headlines(aggregator: aggregator, now: now)
+    let lines = MenuModel.information(MenuSnapshot(aggregator: aggregator, now: now), options: MenuModel.Options(
+        liveSpeed: false, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0, perAppSampling: true))
+    let strong = lines.compactMap { line -> (label: String, down: String, up: String)? in
+        if case let .figure(label, down, up, true) = line { return (label, down, up) } else { return nil }
+    }
+    expect(strong.map(\.label), ["Today", "This week, from Monday", "This month, from 1 Oct", "All time"],
+           "the strong rows are the four the menu bar cycles through, in its order")
+    let download: [UInt64] = [1_000_000_000, 3_000_000_000, 6_000_000_000, 13_000_000_000]
+    for (index, mode) in StatusMode.allCases.enumerated() where index < strong.count {
+        let figure = headlines.figure(for: mode)
+        expect(figure.totals.bytesIn, download[index], "\(mode.label): the figure is that period's download")
+        expect([Units.bytes(figure.totals.bytesIn), Units.bytes(figure.totals.bytesOut)], [strong[index].down, strong[index].up],
+               "\(mode.label): the menu bar's figure is the strong row \(strong[index].label)")
+        let alone = Headlines.figure(for: mode, aggregator: aggregator, now: now)
+        check(alone.totals == figure.totals && alone.since == figure.since,
+              "\(mode.label): worked out on its own, as the menu bar does, it is the same figure")
+    }
+    expect(headlines.figure(for: .allTime).since, london.parseLocal("2026-08-20T10:00"), "all time carries its start date")
+    check([StatusMode.today, .week, .month].allSatisfy { headlines.figure(for: $0).since == nil },
+          "and only all time carries one")
+    let none = Aggregator(db: makeDatabase(), cal: london)
+    let empty = Headlines.figure(for: .allTime, aggregator: none, now: now)
+    check(empty.totals.isEmpty && empty.since == nil && Headlines(aggregator: none, now: now).figure(for: .allTime).since == nil,
+          "with nothing counted, all time has no start date")
+}
+
 // MARK: - The demo opens its database strictly read only
 
 do {

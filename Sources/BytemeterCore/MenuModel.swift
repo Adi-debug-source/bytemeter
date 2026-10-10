@@ -19,6 +19,8 @@ public enum MenuLine: Equatable {
 }
 
 /// Everything the menu needs, gathered in one pass on the database queue.
+/// The totals, the projection and the peaks come from `Headlines`, the same
+/// figures the dashboard and the menu bar show.
 public struct MenuSnapshot {
     public let today: Totals
     public let yesterday: Totals
@@ -29,7 +31,7 @@ public struct MenuSnapshot {
     public let perHourToday: Totals
     public let perDayWeek: Totals
     public let perDayMonth: Totals
-    /// Worded once, here, for the menu and the dashboard alike.
+    /// Worded once, in `Headlines`, for the menu and the dashboard alike.
     public let projection: ProjectionWording
     public let allTime: AllTimeSummary
     public let cal: BytemeterCalendar
@@ -42,32 +44,30 @@ public struct MenuSnapshot {
     /// a fixed moment for a demo or a test.
     public init(aggregator: Aggregator, now: Date) {
         let cal = aggregator.cal
-        today = aggregator.totals(cal.today(now))
-        yesterday = aggregator.totals(cal.yesterday(now))
-        thisWeek = aggregator.totals(cal.thisWeek(now))
-        last7 = aggregator.totals(cal.rollingDays(7, now: now))
-        thisMonth = aggregator.totals(cal.thisCycle(now))
-        last30 = aggregator.totals(cal.rollingDays(30, now: now))
+        let headlines = Headlines(aggregator: aggregator, now: now)
+        today = headlines.today
+        yesterday = headlines.yesterday
+        thisWeek = headlines.thisWeek
+        last7 = headlines.last7
+        thisMonth = headlines.thisMonth
+        last30 = headlines.last30
         perHourToday = aggregator.averagePerHourToday(now: now)
         perDayWeek = aggregator.averagePerDay(cal.thisWeek(now), now: now)
         perDayMonth = aggregator.averagePerDay(cal.thisCycle(now), now: now)
 
-        let forecast = aggregator.projection(now: now)
-        projection = ProjectionWording(projected: forecast.projected, now: now, cal: cal)
-        allTime = aggregator.allTime(now: now)
+        projection = headlines.projection
+        allTime = headlines.allTime
         self.cal = cal
         cycleLabel = cal.cycleLabel(now)
 
-        // Download only, like every headline figure and like the dashboard's
-        // busiest hour, so the peak day can never read larger than the month
-        // printed above it.
-        if let peak = aggregator.peakDownloadHourToday(now: now) {
+        // The peaks are by download, so they are marked ↓.
+        if let peak = headlines.peakHour {
             peakHourText = String(format: "Peak hour today: %02d:00, ↓ %@", peak.hour, Units.bytes(peak.totals.bytesIn))
         } else {
             peakHourText = "Peak hour today: nothing yet"
         }
         let period = cal.cycleStartDay == 1 ? "this month" : "this cycle"
-        if let peak = aggregator.peakDownloadDayThisCycle(now: now) {
+        if let peak = headlines.peakDay {
             peakDayText = "Peak day \(period): \(peak.label), ↓ \(Units.bytes(peak.totals.bytesIn))"
         } else {
             peakDayText = "Peak day \(period): nothing yet"
