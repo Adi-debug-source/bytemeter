@@ -274,10 +274,11 @@ enum SVGKit {
 
     /// Weekday against hour of day. The view that shows when the data goes.
     ///
-    /// The colour is the whole hour's traffic, estimated or not. The share
-    /// that was spread across a gap is hatched up from the bottom of the cell,
-    /// so a night the Mac slept through reads as fully hatched rather than as
-    /// steady overnight use.
+    /// The colour is the hour's average traffic over the counted days,
+    /// estimated or not. The share that was spread across a gap is hatched up
+    /// from the bottom of the cell, so a night the Mac slept through reads as
+    /// fully hatched rather than as steady overnight use. That share is a
+    /// ratio, so it is worked out from the totals: averaging cannot change it.
     static func heatmap(id: String, cells: [HeatCell], estimateNote: (HeatCell) -> String) -> String {
         let cellW = 38.0
         let cellH = heatCellHeight
@@ -287,7 +288,7 @@ enum SVGKit {
         let width = leftPad + 24 * cellW
         let height = topPad + 7 * cellH + 16
 
-        let peak = cells.map(\.totals.total).max() ?? 0
+        let peak = cells.map(\.average.total).max() ?? 0
         var svg = """
         <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" role="img" class="chart heat" preserveAspectRatio="xMidYMid meet">
         """
@@ -310,13 +311,16 @@ enum SVGKit {
         for cell in cells {
             let x = leftPad + Double(cell.hour) * cellW
             let y = topPad + Double(cell.weekday) * cellH
-            let fraction = peak == 0 ? 0 : Double(cell.totals.total) / Double(peak)
+            let fraction = peak == 0 ? 0 : Double(cell.average.total) / Double(peak)
             // Step 0 means no traffic at all; anything above zero lands in 1 to 6.
             let step = fraction <= 0 ? 0 : min(heatRamp.count - 1, max(1, Int((fraction * Double(heatRamp.count - 1)).rounded(.up))))
             let colour = heatRamp[step]
-            let label = "\(BytemeterCalendar.weekdayNames[cell.weekday]) \(String(format: "%02d", cell.hour)):00 to "
-                + "\(String(format: "%02d", (cell.hour + 1) % 24)):00, down \(Units.bytes(cell.totals.bytesIn)), "
-                + "up \(Units.bytes(cell.totals.bytesOut))." + estimateNote(cell)
+            let slot = "\(BytemeterCalendar.weekdayNames[cell.weekday]) \(String(format: "%02d", cell.hour)):00 to "
+                + "\(String(format: "%02d", (cell.hour + 1) % 24)):00"
+            let label = cell.days == 0
+                ? slot + ", not counted yet."
+                : slot + ", on average down \(Units.bytes(cell.average.bytesIn)), up \(Units.bytes(cell.average.bytesOut)), "
+                    + "over \(cell.days) \(cell.days == 1 ? "week" : "weeks")." + estimateNote(cell)
             svg += """
             <g class="cell"><title>\(escape(label))</title>\
             <rect x="\(fmt(x + gap / 2))" y="\(fmt(y + gap / 2))" width="\(fmt(cellW - gap))" \

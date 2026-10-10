@@ -455,7 +455,12 @@ do {
     expect(hour.estimatedIn, 900, "the hour knows which part was spread")
     let day = aggregator.daily(lastDays: 1, now: threeAM.addingTimeInterval(3_600)).last?.totals
     expect(day?.estimatedOut, 90, "the day knows which part was spread")
-    let heat = aggregator.heatmap(lastDays: 1, now: threeAM.addingTimeInterval(3_600))
+    // The heatmap counts only whole days from when counting began, and
+    // leaves today out, so the day needs a row at its start and is asked
+    // about the morning after.
+    db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.startOfDay(threeAM)), iface: "en0",
+                               bytesIn: 0, bytesOut: 0)], ssid: ssidPlaceholder, idle: true)
+    let heat = aggregator.heatmap(weeks: 1, now: threeAM.addingTimeInterval(86_400 + 3_600))
     expect(heat.map(\.totals.estimatedIn).reduce(0, +), 900, "the heatmap knows which part was spread")
 }
 
@@ -868,7 +873,11 @@ do {
         let starts = cal.dayStarts(from: first, dayCount: 7).map(BytemeterCalendar.date(fromMinute:))
         check(starts.allSatisfy { cal.startOfDay($0) == $0 }, "\(zone): every day start is the start of its day")
         check(zip(starts, starts.dropFirst()).allSatisfy { cal.daysBetween($0, $1) == 1 }, "\(zone): one day apart each")
-        expect(agg.heatmap(lastDays: 8, now: now).reduce(UInt64(0)) { $0 + $1.totals.bytesIn }, expected.reduce(0, +),
+        // The first day's traffic is 30 minutes in, so a row at its start
+        // makes it a whole counted day for the heatmap's week.
+        db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: first), iface: "en0", bytesIn: 0, bytesOut: 0)],
+                      ssid: ssidPlaceholder, idle: false)
+        expect(agg.heatmap(weeks: 1, now: now).reduce(UInt64(0)) { $0 + $1.totals.bytesIn }, expected.reduce(0, +),
                "\(zone): the heatmap counts every byte once")
         expect(agg.hourly(day: changeDay, now: now).reduce(UInt64(0)) { $0 + $1.bytesIn }, expected[3],
                "\(zone): the change day's hours hold its own traffic and none of the next day's")
@@ -905,7 +914,10 @@ do {
         let later = at.addingTimeInterval(3 * 3_600)
         expect(aggregator.peakHourToday(now: later)?.hour, 15, "traffic at 15:20 on \(text.prefix(10)) peaks at 15:00")
         expect(aggregator.hourly(day: at, now: later)[15].bytesIn, 9_000_000, "and sits in the 15:00 slot")
-        expect(aggregator.heatmap(lastDays: 1, now: later)[6 * 24 + 15].totals.bytesIn, 9_000_000,
+        // A row at the day's start, so the heatmap counts the whole day, asked the day after.
+        db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.startOfDay(at)), iface: "en0",
+                                   bytesIn: 0, bytesOut: 0)], ssid: ssidPlaceholder, idle: false)
+        expect(aggregator.heatmap(weeks: 1, now: at.addingTimeInterval(86_400))[6 * 24 + 15].totals.bytesIn, 9_000_000,
                "and in Sunday's 15:00 cell of the heatmap")
     }
     // 25 Oct 2026: 01:30 happens twice, at 00:30 and 01:30 UTC. Both are the 01:00 slot.
@@ -1232,6 +1244,39 @@ do {
            "and the figure says so")
 }
 
+// MARK: - The heatmap averages the last four whole weeks
+
+do {
+    // Thursday 8 October at noon. Every hour of every day carries 60 MB
+    // down and 6 MB up, so every cell must read alike: summing 30 days
+    // counted two weekdays five times and the rest four.
+    let now = london.parseLocal("2026-10-08T12:00")!
+    let uniformDB = steadyTraffic(from: "2026-08-29T12:00", to: "2026-10-08T12:00", down: 1_000_000, up: 100_000)
+    let uniform = Aggregator(db: uniformDB, cal: london)
+    let cells = uniform.heatmap(now: now)
+    expect(cells.count, 168, "a cell for every hour of every weekday")
+    check(cells.allSatisfy { $0.days == 4 }, "forty days in, every weekday is counted four times")
+    check(cells.allSatisfy { $0.average == Totals(bytesIn: 60_000_000, bytesOut: 6_000_000) },
+          "and every cell averages 60 MB down and 6 MB up, got \(Set(cells.map(\.average.bytesIn)).sorted())")
+
+    // Counting began at noon ten days before: that day is not whole, so it
+    // is left out, and the nine days after count once or twice each.
+    let tenDays = Aggregator(db: steadyTraffic(from: "2026-09-28T12:00", to: "2026-10-08T12:00",
+                                               down: 1_000_000, up: 100_000), cal: london).heatmap(now: now)
+    check(tenDays.allSatisfy { $0.average == Totals(bytesIn: 60_000_000, bytesOut: 6_000_000) },
+          "counted for nine whole days, every cell still averages the same, got \(Set(tenDays.map(\.average.bytesIn)).sorted())")
+    check(tenDays.allSatisfy { (1...2).contains($0.days) }, "each weekday is counted once or twice")
+    expect(tenDays[1 * 24].days, 2, "Tuesday came round twice")
+    expect(Totals(bytesIn: 5, estimatedIn: 5).divided(by: 0), Totals(),
+           "a weekday never counted averages to nothing, not to a division by zero")
+
+    // A burst this morning: today is not over, so it is in no cell.
+    uniformDB.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-10-08T10:30")!),
+                                      iface: "en0", bytesIn: 10_000_000_000, bytesOut: 0)],
+                         ssid: ssidPlaceholder, idle: false)
+    expect(uniform.heatmap(now: now), cells, "nothing from today is in any cell")
+}
+
 // MARK: - Engine fixes: two processes migrating the same file
 
 final class OpenResults: @unchecked Sendable {
@@ -1423,7 +1468,7 @@ do {
     check(a.hourly(day: asOf, now: asOf) != a.hourly(day: asOf, now: asOf.addingTimeInterval(7_200)),
           "and it does stop: two hours later the same day reads differently")
     expect(a.daily(lastDays: 30, now: asOf).map(\.totals), b.daily(lastDays: 30, now: asOf).map(\.totals), "the 30 days match")
-    expect(a.heatmap(lastDays: 30, now: asOf).map(\.totals), b.heatmap(lastDays: 30, now: asOf).map(\.totals), "the heatmap matches")
+    expect(a.heatmap(weeks: 4, now: asOf), b.heatmap(weeks: 4, now: asOf), "the heatmap matches")
     expect(a.monthly(now: asOf).map(\.totals), b.monthly(now: asOf).map(\.totals), "month by month matches")
     let allA = a.allTime(now: asOf), allB = b.allTime(now: asOf)
     expect(allA.totals, allB.totals, "all time stops at the moment")

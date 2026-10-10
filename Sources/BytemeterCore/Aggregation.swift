@@ -22,6 +22,14 @@ public struct Totals: Equatable {
         Totals(bytesIn: a.bytesIn &+ b.bytesIn, bytesOut: a.bytesOut &+ b.bytesOut,
                estimatedIn: a.estimatedIn &+ b.estimatedIn, estimatedOut: a.estimatedOut &+ b.estimatedOut)
     }
+    /// Each of the four figures divided by `count`, rounded down, or empty
+    /// when `count` is not above zero: an average over a number of days.
+    public func divided(by count: Int) -> Totals {
+        guard count > 0 else { return Totals() }
+        let n = UInt64(count)
+        return Totals(bytesIn: bytesIn / n, bytesOut: bytesOut / n,
+                      estimatedIn: estimatedIn / n, estimatedOut: estimatedOut / n)
+    }
 }
 
 public struct MinuteRow {
@@ -66,10 +74,15 @@ public struct TopTalker {
     public let totals: Totals
 }
 
-public struct HeatCell {
+public struct HeatCell: Equatable {
     public let weekday: Int   // 0 is Monday
     public let hour: Int
+    /// The sum over the counted days.
     public let totals: Totals
+    /// How many of this weekday were counted, from 0 to the weeks asked for.
+    public let days: Int
+    /// The hour's traffic on an average counted day, or empty if none was.
+    public var average: Totals { totals.divided(by: days) }
 }
 
 /// Every figure in the app is derived from the `samples` table at query time,
@@ -166,22 +179,40 @@ public struct Aggregator {
         }
     }
 
-    /// Weekday against hour. This is the view that shows when the data really goes.
-    public func heatmap(lastDays count: Int, now: Date) -> [HeatCell] {
+    /// Weekday against hour, as an average over the last `weeks` whole weeks.
+    /// This is the view that shows when the data really goes.
+    ///
+    /// Whole weeks, so every weekday is counted as often as every other: 30
+    /// days held two weekdays five times and the rest four, and the colours
+    /// made those rows look busier than they were. The window is the
+    /// `7 * weeks` whole days before today. Today is left out because it is
+    /// not over. A day counts only if counting had begun by its start, so a
+    /// new install's average is over the days it measured, not diluted by
+    /// days it never saw; rows in a day that does not count are ignored.
+    public func heatmap(weeks: Int = 4, now: Date) -> [HeatCell] {
         var grid = [Totals](repeating: Totals(), count: 7 * 24)
-        guard count > 0 else { return (0..<(7 * 24)).map { HeatCell(weekday: $0 / 24, hour: $0 % 24, totals: grid[$0]) } }
-        let starts = cal.dayStarts(from: cal.startOfDay(now, offsetBy: -(count - 1)), dayCount: count)
-        let endMinute = BytemeterCalendar.minute(from: now) + 1
-
-        for row in minuteRows(MinuteRange(start: starts[0], end: endMinute)) {
-            guard let index = dayIndex(for: row.minute, in: starts) else { continue }
-            let date = BytemeterCalendar.date(fromMinute: starts[index])
-            let weekday = mondayIndex(date)
-            let hour = min(max(cal.hour(ofMinute: row.minute), 0), 23)   // the wall clock hour, as in `hourly`
-            let slot = weekday * 24 + hour
-            grid[slot] = grid[slot] + row.totals
+        var counted = [Int](repeating: 0, count: 7)
+        let dayCount = 7 * max(0, weeks)
+        let starts = cal.dayStarts(from: cal.startOfDay(now, offsetBy: -dayCount), dayCount: dayCount)
+        // Rows after `now` are ignored here too, so the page as of an earlier
+        // moment counts the days that moment would have.
+        if let first = earliestMinute(in: MinuteRange(start: 1, end: endMinute(now))),
+           let firstCounted = starts.firstIndex(where: { $0 >= first }) {
+            for start in starts[firstCounted...] {
+                counted[mondayIndex(BytemeterCalendar.date(fromMinute: start))] += 1
+            }
+            let today = BytemeterCalendar.minute(from: cal.startOfDay(now))
+            for row in minuteRows(MinuteRange(start: starts[firstCounted], end: today)) {
+                guard let index = dayIndex(for: row.minute, in: starts) else { continue }
+                let weekday = mondayIndex(BytemeterCalendar.date(fromMinute: starts[index]))
+                let hour = min(max(cal.hour(ofMinute: row.minute), 0), 23)   // the wall clock hour, as in `hourly`
+                let slot = weekday * 24 + hour
+                grid[slot] = grid[slot] + row.totals
+            }
         }
-        return (0..<(7 * 24)).map { HeatCell(weekday: $0 / 24, hour: $0 % 24, totals: grid[$0]) }
+        return (0..<(7 * 24)).map {
+            HeatCell(weekday: $0 / 24, hour: $0 % 24, totals: grid[$0], days: counted[$0 / 24])
+        }
     }
 
     /// The most months `monthly` lists: a decade.

@@ -28,7 +28,7 @@ enum DashboardGenerator {
 
         let hourValues = data.hourly.enumerated().map { (label: String(format: "%02d", $0.offset), totals: $0.element) }
         let dayValues = data.daily.map { (label: $0.label, totals: $0.totals) }
-        let heatPeak = data.heat.map(\.totals.total).max() ?? 0
+        let heatPeak = data.heat.map(\.average.total).max() ?? 0
         let projectionBasis = data.projection.isTooEarly ? ProjectionWording.tooEarlyBasis : ProjectionWording.basis
 
         var body = ""
@@ -106,9 +106,9 @@ enum DashboardGenerator {
         <section class="panel feature">
           <div class="panel-head">
             <h2>When the data actually goes</h2>
-            <p class="note">Day of the week against hour of the day, over the last 30 days. Darker is quieter.</p>
+            <p class="note">Day of the week against hour of the day, as an average over the last four whole weeks. Darker is quieter.</p>
           </div>
-          <div class="heat-wrap">\(SVGKit.heatmap(id: "heat", cells: data.heat) { estimateNote($0.totals) })</div>
+          <div class="heat-wrap">\(SVGKit.heatmap(id: "heat", cells: data.heat) { estimateNote($0.average) })</div>
           \(SVGKit.heatLegend(peak: heatPeak, estimateKey: SVGKit.heatShowsEstimate(data.heat)
               ? "<span class=\"key est-key\"><i class=\"swatch heat-est\"></i>Hatched from the bottom: the estimated "
                 + "share. \(asleepLine)</span>"

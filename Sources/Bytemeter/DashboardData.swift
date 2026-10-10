@@ -77,7 +77,7 @@ struct DashboardData {
         }
         rollingAverage = averages
 
-        heat = aggregator.heatmap(lastDays: 30, now: now)
+        heat = aggregator.heatmap(weeks: 4, now: now)
         monthly = aggregator.monthly(now: now)
 
         topTalkersToday = aggregator.topTalkers(cal.today(now), limit: 10)
