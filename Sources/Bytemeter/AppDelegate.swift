@@ -107,10 +107,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let folder = Self.supportFolder
         let cal = BytemeterCalendar(cycleStartDay: settings.cycleStartDay)
         let networkStatus = networkNames.status
+        let options = DashboardData.Options(ssidCapture: settings.ssidCapture,
+                                            perAppSampling: settings.perAppSampling,
+                                            capEnabled: settings.capEnabled,
+                                            capBytes: UInt64(max(0, settings.capBytes)))
         dbQueue.async { [weak self] in
             guard let self else { return }
             let aggregator = Aggregator(db: self.db, cal: cal)
-            let data = DashboardData(aggregator: aggregator, settings: self.settings, now: Date(),
+            let data = DashboardData(aggregator: aggregator, options: options, now: Date(),
                                      networkNames: networkStatus)
             do {
                 let url = try DashboardGenerator.write(data: data, folder: folder)

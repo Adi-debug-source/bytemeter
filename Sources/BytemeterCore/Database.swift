@@ -458,6 +458,20 @@ public final class Database {
         }
     }
 
+    // MARK: - Events
+
+    /// The newest events at or before `ts`, newest first. Only what had
+    /// happened by then, so a page drawn as of an earlier moment does not
+    /// list events from after it.
+    public func recentEvents(upTo ts: Int64, limit: Int) -> [LedgerEvent] {
+        var events: [LedgerEvent] = []
+        try? query("SELECT ts, kind, detail FROM events WHERE ts<=? ORDER BY ts DESC LIMIT ?;",
+                   [.int(ts), .int(Int64(limit))]) { row in
+            events.append(LedgerEvent(ts: row.int(0), kind: row.string(1), detail: row.string(2)))
+        }
+        return events
+    }
+
     // MARK: - Writes
     //
     // Each write comes in two forms. The throwing one (`writeBuckets`,

@@ -2051,6 +2051,22 @@ do {
           "with nothing counted, all time has no start date")
 }
 
+// MARK: - Recent events stop at the moment asked for
+
+do {
+    // Written out of order, so the order read back is the query's own.
+    let db = makeDatabase()
+    db.addEvents([600, 120, 360, 240, 480].map { LedgerEvent(ts: Int64($0), kind: "k\($0)", detail: "d\($0)") })
+    expect(db.recentEvents(upTo: 600, limit: 10).map(\.ts), [600, 480, 360, 240, 120], "recent events come newest first")
+    expect(db.recentEvents(upTo: 360, limit: 10).map(\.ts), [360, 240, 120],
+           "and stop at the moment asked for, which is included")
+    expect(db.recentEvents(upTo: 600, limit: 2).map(\.ts), [600, 480], "and stop at the limit")
+    expect(db.recentEvents(upTo: 600, limit: 1).first, LedgerEvent(ts: 600, kind: "k600", detail: "d600"),
+           "each event reads back whole")
+    check(db.recentEvents(upTo: 119, limit: 10).isEmpty && makeDatabase().recentEvents(upTo: 600, limit: 10).isEmpty,
+          "before the first event, or with none at all, there is nothing to list")
+}
+
 // MARK: - The demo opens its database strictly read only
 
 do {

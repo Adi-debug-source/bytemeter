@@ -4,6 +4,16 @@ import BytemeterCore
 /// Everything the dashboard shows, gathered in one pass on the database queue
 /// so the page generator itself is pure string work.
 struct DashboardData {
+
+    /// The preferences the page reads, as plain values, so the page needs
+    /// nothing from the app but the engine and these.
+    struct Options {
+        var ssidCapture: Bool
+        var perAppSampling: Bool
+        var capEnabled: Bool
+        var capBytes: UInt64
+    }
+
     let generatedAt: Date
     let cal: BytemeterCalendar
 
@@ -43,12 +53,12 @@ struct DashboardData {
     let capEnabled: Bool
     let capBytes: UInt64
     let counterSource: String
-    let events: [(ts: Int64, kind: String, detail: String)]
+    let events: [LedgerEvent]
 
     /// `networkNames` comes from the running app, which knows what macOS has
     /// said. Without it, as from the command line, Location Services is not
     /// consulted and the note only says whether the box is on.
-    init(aggregator: Aggregator, settings: Settings, now: Date, networkNames: NetworkNames.Status? = nil) {
+    init(aggregator: Aggregator, options: Options, now: Date, networkNames: NetworkNames.Status? = nil) {
         generatedAt = now
         cal = aggregator.cal
 
@@ -88,21 +98,13 @@ struct DashboardData {
         peakHour = headlines.peakHour
         peakDay = headlines.peakDay
 
-        ssidCapture = settings.ssidCapture
+        ssidCapture = options.ssidCapture
         self.networkNames = networkNames
-            ?? NetworkNames.status(boxTicked: settings.ssidCapture, permission: nil, asking: false)
-        perAppSampling = settings.perAppSampling
-        capEnabled = settings.capEnabled
-        capBytes = UInt64(max(0, settings.capBytes))
+            ?? NetworkNames.status(boxTicked: options.ssidCapture, permission: nil, asking: false)
+        perAppSampling = options.perAppSampling
+        capEnabled = options.capEnabled
+        capBytes = options.capBytes
         counterSource = aggregator.db.state(StateKey.counterSource) ?? "unknown"
-
-        var rows: [(ts: Int64, kind: String, detail: String)] = []
-        // Only what had happened by `now`, so a page drawn as of an earlier
-        // moment does not list events from after it.
-        try? aggregator.db.query("SELECT ts, kind, detail FROM events WHERE ts<=? ORDER BY ts DESC LIMIT 10;",
-                                 [.int(Int64(now.timeIntervalSince1970))]) { row in
-            rows.append((row.int(0), row.string(1), row.string(2)))
-        }
-        events = rows
+        events = aggregator.db.recentEvents(upTo: Int64(now.timeIntervalSince1970), limit: 10)
     }
 }
