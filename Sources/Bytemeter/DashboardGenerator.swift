@@ -24,7 +24,7 @@ enum DashboardGenerator {
     static func html(_ data: DashboardData) -> String {
         let cal = data.cal
         let hero = heroParts(data.today.bytesIn)
-        let since = data.countingSince.map { cal.timestampLabel($0) } ?? "just now"
+        let since = data.allTime.since.map { cal.timestampLabel($0) } ?? "just now"
 
         let hourValues = data.hourly.enumerated().map { (label: String(format: "%02d", $0.offset), totals: $0.element) }
         let dayValues = data.daily.map { (label: $0.label, totals: $0.totals) }

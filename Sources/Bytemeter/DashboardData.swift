@@ -16,8 +16,6 @@ struct DashboardData {
     let thisMonth: Totals
     let last30: Totals
     let allTime: AllTimeSummary
-    /// The first day of this month, or of the billing cycle if one is set.
-    let cycleStart: Date
 
     let hourly: [Totals]
     let daily: [LabelledTotals]
@@ -45,7 +43,6 @@ struct DashboardData {
     let capEnabled: Bool
     let capBytes: UInt64
     let counterSource: String
-    let countingSince: Date?
     let events: [(ts: Int64, kind: String, detail: String)]
 
     /// `networkNames` comes from the running app, which knows what macOS has
@@ -65,7 +62,6 @@ struct DashboardData {
         thisMonth = headlines.thisMonth
         last30 = headlines.last30
         allTime = headlines.allTime
-        cycleStart = cal.startOfCycle(now)
 
         hourly = aggregator.hourly(day: now, now: now)
         let series = aggregator.daily(lastDays: 30, now: now)
@@ -99,7 +95,6 @@ struct DashboardData {
         capEnabled = settings.capEnabled
         capBytes = UInt64(max(0, settings.capBytes))
         counterSource = aggregator.db.state(StateKey.counterSource) ?? "unknown"
-        countingSince = allTime.since
 
         var rows: [(ts: Int64, kind: String, detail: String)] = []
         // Only what had happened by `now`, so a page drawn as of an earlier
