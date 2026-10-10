@@ -1483,6 +1483,79 @@ do {
     expect(buckets.reduce(UInt64(0)) { $0 + $1.bytesIn }, 670_000, "and every byte is counted")
 }
 
+// MARK: - Per-app deltas from nettop's totals
+
+/// A tally's result in a form `expect` can compare.
+func flat(_ deltas: [String: (bytesIn: UInt64, bytesOut: UInt64)]) -> [String: [UInt64]] {
+    deltas.mapValues { [$0.bytesIn, $0.bytesOut] }
+}
+
+do {
+    // nettop's own shape: a header with an empty first field, then "name.pid,in,out," per process.
+    let output = """
+    ,bytes_in,bytes_out,
+    Example Helper.512,1000,200,
+    com.example.agent.77,5000,50,
+    Spaced.9, 300 , 30,
+    not a row
+    Broken.10,lots,5,
+    ,4,4,
+    Short.11,7
+    """
+    expect(flat(ProcessTally.parse(output)),
+           ["Example Helper.512": [1_000, 200], "com.example.agent.77": [5_000, 50], "Spaced.9": [300, 30]],
+           "parse keeps every process row, names with dots included, and skips the header and malformed lines")
+    expect(flat(ProcessTally.parse("")), [:], "an empty run parses to nothing")
+
+    var tally = ProcessTally()
+    expect(flat(tally.deltas(["Example Helper.512": (1_000, 200), "Mail.40": (9_000, 900)])), [:],
+           "first sight of a process returns nothing")
+    expect(flat(tally.deltas(["Example Helper.512": (1_500, 260), "Mail.40": (9_000, 900)])), ["Example Helper": [500, 60]],
+           "a rise returns the difference by display name, and a process that did nothing is left out")
+    expect(flat(tally.deltas(["Example Helper.512": (100, 10), "Mail.40": (9_000, 900)])), [:],
+           "a fall, a reused pid, returns nothing")
+    expect(flat(tally.deltas(["Example Helper.512": (400, 30), "Mail.40": (9_000, 900)])), ["Example Helper": [300, 20]],
+           "and re-baselines, so the next rise counts from the lower total")
+    expect(flat(tally.deltas([:])), [:], "an empty run returns nothing")
+    expect(flat(tally.deltas(["Example Helper.512": (450, 30), "Mail.40": (9_000, 900)])), ["Example Helper": [50, 0]],
+           "and leaves the previous totals as they were")
+
+    var pair = ProcessTally()
+    _ = pair.deltas(["Helper.10": (100, 10), "Helper.11": (200, 20), "com.example.agent.7": (5, 5), "Build.v2": (1, 1)])
+    expect(flat(pair.deltas(["Helper.10": (150, 15), "Helper.11": (260, 26), "com.example.agent.7": (10, 5), "Build.v2": (2, 1)])),
+           ["Helper": [110, 11], "com.example.agent": [5, 0], "Build.v2": [1, 0]],
+           "two pids of one name add up, a dotted name loses only its pid, and a tail that is not all digits stays")
+
+    // Per-app sampling switched off, then on again: the time it was off must not land in one minute.
+    var paused = ProcessTally()
+    _ = paused.deltas(["Backup.300": (1_000, 1_000)])
+    paused.forget()
+    expect(flat(paused.deltas(["Backup.300": (900_000_000, 50_000_000)])), [:],
+           "after forget, the next call only baselines, however far the totals rose")
+    expect(flat(paused.deltas(["Backup.300": (900_001_000, 50_000_000)])), ["Backup": [1_000, 0]],
+           "and the call after that counts from there")
+}
+
+// MARK: - Per-app rows are filed no earlier than the last reading
+
+do {
+    let lastMinute = Ledger.floorDiv(1_790_000_030, 60)
+    let baselines = ["en0": RawCounter(bytesIn: 0, bytesOut: 0, at: 1_790_000_030, bootSession: "A", source: .mib64),
+                     "en1": RawCounter(bytesIn: 0, bytesOut: 0, at: 1_789_000_000, bootSession: "A", source: .mib64)]
+    expect(Ledger.heldMinute(Ledger.floorDiv(978_307_200, 60), baselines: baselines), lastMinute,
+           "with the clock behind, per-app rows are held at the newest baseline's minute")
+    expect(Ledger.heldMinute(lastMinute + 3, baselines: baselines), lastMinute + 3,
+           "with the clock right, they are filed at the clock's minute")
+    expect(Ledger.heldMinute(lastMinute, baselines: baselines), lastMinute, "and in the baseline's own minute, at it")
+    expect(Ledger.heldMinute(29_832_080, baselines: [:]), 29_832_080, "with no baselines, at the clock's minute")
+
+    // The hold matches the one the interface buckets get from Ledger.ingest under the same clock.
+    let behind = Ledger.ingest(readings: [reading("en0", 5_000, 500)], previous: baselines, now: 978_307_200,
+                               reason: .normal, bootTime: nil, bootSession: "A")
+    expect(Ledger.heldMinute(Ledger.floorDiv(978_307_200, 60), baselines: behind.baselines), behind.buckets.first?.minute,
+           "and is the minute the interface rows of that reading were booked in")
+}
+
 // MARK: - All time is the sum of samples, without the first-seen lump
 
 do {

@@ -9,8 +9,9 @@ import BytemeterCore
 /// counters are the source of truth and the two will not reconcile exactly.
 final class NettopSampler {
 
-    /// Cumulative totals from the previous run, keyed by "name.pid".
-    private var previous: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
+    /// The previous run's totals and the arithmetic on them. Touched only
+    /// on the queue that runs this sampler.
+    private var tally = ProcessTally()
 
     /// One shot invocations rather than a long lived stream.
     ///
@@ -30,55 +31,17 @@ final class NettopSampler {
     private static let arguments = ["-P", "-L", "1", "-t", "external", "-x", "-J", "bytes_in,bytes_out"]
 
     /// Returns bytes used per process since the previous call, keyed by process
-    /// name with the pid stripped.
+    /// name with the pid stripped. A run that fails leaves the previous
+    /// totals as they were.
     func sampleDeltas() -> [String: (bytesIn: UInt64, bytesOut: UInt64)] {
         guard let output = runNettop() else { return [:] }
-
-        var current: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
-        for line in output.split(separator: "\n") {
-            let fields = line.split(separator: ",", omittingEmptySubsequences: false)
-            guard fields.count >= 3 else { continue }
-            let key = String(fields[0])
-            guard !key.isEmpty,
-                  let bytesIn = UInt64(fields[1].trimmingCharacters(in: .whitespaces)),
-                  let bytesOut = UInt64(fields[2].trimmingCharacters(in: .whitespaces))
-            else { continue }
-            current[key] = (bytesIn, bytesOut)
-        }
-        guard !current.isEmpty else { return [:] }
-
-        defer { previous = current }
-
-        var deltas: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
-        for (key, now) in current {
-            // A process seen for the first time is baselined and contributes
-            // nothing this round. Its figures are totals since it started,
-            // which can be hours of traffic, and counting them as this minute's
-            // usage would put a large phantom figure at the top of the list.
-            // At worst this loses the first half minute of a new process, which
-            // is well inside what the per-app figures already claim.
-            guard let before = previous[key] else { continue }
-
-            // A fall means the pid was reused by a different process. Re-baseline
-            // rather than treat the new process's lifetime total as a delta.
-            let deltaIn = now.bytesIn >= before.bytesIn ? now.bytesIn - before.bytesIn : 0
-            let deltaOut = now.bytesOut >= before.bytesOut ? now.bytesOut - before.bytesOut : 0
-
-            guard deltaIn > 0 || deltaOut > 0 else { continue }
-            let name = displayName(from: key)
-            let running = deltas[name] ?? (0, 0)
-            deltas[name] = (running.bytesIn &+ deltaIn, running.bytesOut &+ deltaOut)
-        }
-        return deltas
+        return tally.deltas(ProcessTally.parse(output))
     }
 
-    /// "Example Helper.512" becomes "Example Helper". Process names can contain
-    /// dots, so only a trailing all digit segment is treated as the pid.
-    private func displayName(from key: String) -> String {
-        guard let dot = key.lastIndex(of: "."), dot != key.startIndex else { return key }
-        let tail = key[key.index(after: dot)...]
-        guard !tail.isEmpty, tail.allSatisfy({ $0.isNumber }) else { return key }
-        return String(key[key.startIndex..<dot])
+    /// Drop the previous totals, so the next sample only baselines. Called
+    /// while per-app sampling is off; see `ProcessTally.forget`.
+    func forget() {
+        tally.forget()
     }
 
     private func runNettop() -> String? {

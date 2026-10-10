@@ -398,6 +398,16 @@ public enum Ledger {
                                  deltaOut: deltaOut, parts: spanMinutes)))
     }
 
+    /// The minute to file something measured at `minute` in, held as `place`
+    /// holds the interface buckets: never earlier than the minute of the
+    /// newest saved baseline. While the clock reads earlier than the last
+    /// reading, the per-app rows then land in the same minute as the
+    /// interface rows, not in the past. With no baselines, `minute` itself.
+    public static func heldMinute(_ minute: Int64, baselines: [String: RawCounter]) -> Int64 {
+        guard let newest = baselines.values.map(\.at).max() else { return minute }
+        return max(minute, floorDiv(newest, 60))
+    }
+
     /// After a restart the counter began again from zero, so the whole reading
     /// is traffic since boot. Returns the sentence the event uses to say how
     /// it was booked.

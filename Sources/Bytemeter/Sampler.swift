@@ -146,12 +146,24 @@ final class Sampler {
     /// Runs on `processQueue`. The sleep check is asked of `queue`, which
     /// owns it; nothing on `queue` ever waits for `processQueue`.
     private func takeProcessSample() {
-        guard settings.perAppSampling, !queue.sync(execute: { gate.asleep }) else { return }
+        // Switched off, the last totals are dropped, so switching it back on
+        // only baselines instead of booking the whole time it was off into
+        // one minute.
+        guard settings.perAppSampling else {
+            nettop.forget()
+            return
+        }
+        guard !queue.sync(execute: { gate.asleep }) else { return }
         let deltas = nettop.sampleDeltas()
         guard !deltas.isEmpty else { return }
-        let minute = BytemeterCalendar.minute(from: Date())
+        let clockMinute = BytemeterCalendar.minute(from: Date())
+        // Filed on `queue`, which owns the baselines, and never before the
+        // last interface reading's minute, so a clock set back puts nothing
+        // in the past here either.
         queue.async { [weak self] in
-            self?.db.addProcBuckets(minute: minute, deltas: deltas)
+            guard let self else { return }
+            let minute = Ledger.heldMinute(clockMinute, baselines: self.db.baselines())
+            self.db.addProcBuckets(minute: minute, deltas: deltas)
         }
     }
 
