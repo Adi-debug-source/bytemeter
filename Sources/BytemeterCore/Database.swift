@@ -487,9 +487,14 @@ public final class Database {
 
     /// Add traffic to minute buckets. `idle` uses MIN so that a minute with any
     /// activity at all counts as active; only a wholly idle minute stays idle.
-    /// `estimated` uses MAX for the mirror reason: once any part of a minute
-    /// is an estimate, bytes measured into it later must not clear the mark.
-    /// The wake minute after a sleep is exactly that case.
+    ///
+    /// An estimated bucket adds its bytes to `est_in` and `est_out` as well,
+    /// and a measured one adds nothing there, so a minute keeps exactly how
+    /// much of it is estimated. The wake minute after a sleep is the case that
+    /// needs it: it holds the end of the spread and then the bytes measured
+    /// after waking, and only the first part is estimated. `estimated` still
+    /// uses MAX, so bytes measured into a minute later never clear its mark,
+    /// which is all a build before schema version 3 reads.
     ///
     /// `estimatedIdle`, when given, is the flag for the estimated buckets in
     /// place of `idle`; measured buckets always take `idle`. See `writeReading`.
@@ -500,12 +505,15 @@ public final class Database {
     public func writeBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool, estimatedIdle: Bool? = nil) throws {
         guard !buckets.isEmpty else { return }
         let sql = """
-        INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated) VALUES(?,?,?,?,?,?,?)
+        INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated,est_in,est_out)
+        VALUES(?,?,?,?,?,?,?,?,?)
         ON CONFLICT(minute,iface,ssid) DO UPDATE SET
             bytes_in  = bytes_in  + excluded.bytes_in,
             bytes_out = bytes_out + excluded.bytes_out,
             idle      = MIN(idle, excluded.idle),
-            estimated = MAX(estimated, excluded.estimated);
+            estimated = MAX(estimated, excluded.estimated),
+            est_in    = est_in    + excluded.est_in,
+            est_out   = est_out   + excluded.est_out;
         """
         for bucket in buckets {
             let bucketIdle = bucket.estimated ? (estimatedIdle ?? idle) : idle
@@ -513,7 +521,9 @@ public final class Database {
                            .int(Int64(bitPattern: bucket.bytesIn)),
                            .int(Int64(bitPattern: bucket.bytesOut)),
                            .int(bucketIdle ? 1 : 0),
-                           .int(bucket.estimated ? 1 : 0)])
+                           .int(bucket.estimated ? 1 : 0),
+                           .int(bucket.estimated ? Int64(bitPattern: bucket.bytesIn) : 0),
+                           .int(bucket.estimated ? Int64(bitPattern: bucket.bytesOut) : 0)])
         }
     }
 

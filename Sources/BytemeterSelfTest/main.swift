@@ -318,6 +318,57 @@ do {
     expect(totals.estimatedOut, 30, "a marked minute counts as estimated in full, up")
 }
 
+// MARK: - A minute keeps exactly its estimated bytes
+
+/// A row's estimated bytes, down then up, or nothing if there is no row.
+func estimatedBytes(_ db: Database, minute: Int64, iface: String = "en0") -> [Int64] {
+    var bytes: [Int64] = []
+    try? db.query("SELECT est_in, est_out FROM samples WHERE minute=? AND iface=?;",
+                  [.int(minute), .text(iface)]) { bytes = [$0.int(0), $0.int(1)] }
+    return bytes
+}
+
+do {
+    // An hour asleep, then a reading measured into the wake minute, as the sampler writes them.
+    let slept: Int64 = 1_790_000_000
+    let woke = slept + 3_600
+    let before = ["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: slept, bootSession: "A", source: .mib64)]
+    let db = makeDatabase()
+    let wake = Ledger.ingest(readings: [reading("en0", 1_000 + 600_000, 100 + 60_000)], previous: before, now: woke,
+                             reason: .sleep, bootTime: nil, bootSession: "A")
+    check(wake.buckets.count == 60 && wake.buckets.allSatisfy(\.estimated), "the hour asleep is spread over 60 minutes")
+    check(db.transaction { try db.writeReading(wake, ssid: ssidPlaceholder, idle: false, reason: .sleep, counterSource: nil) },
+          "the wake reading is written")
+    let after = Ledger.ingest(readings: [reading("en0", 1_000 + 600_000 + 5_000, 100 + 60_000 + 500)],
+                              previous: db.baselines(), now: woke + 3, reason: .normal, bootTime: nil, bootSession: "A")
+    let spread = wake.buckets.last!
+    expect(after.buckets.map(\.minute), [spread.minute], "the next reading lands in the wake minute")
+    check(db.transaction { try db.writeReading(after, ssid: ssidPlaceholder, idle: false, reason: .normal, counterSource: nil) },
+          "the next reading is written")
+
+    expect(wake.buckets.dropLast().map { estimatedBytes(db, minute: $0.minute) },
+           wake.buckets.dropLast().map { [Int64($0.bytesIn), Int64($0.bytesOut)] },
+           "each minute asleep keeps its spread bytes as estimated")
+    expect(estimatedBytes(db, minute: spread.minute), [Int64(spread.bytesIn), Int64(spread.bytesOut)],
+           "the wake minute keeps only its spread bytes as estimated, not those measured after waking")
+    expect(estimatedFlag(db, minute: spread.minute), 1, "and keeps its mark")
+    var sums: [Int64] = []
+    try! db.query("SELECT SUM(bytes_in), SUM(est_in), SUM(bytes_out), SUM(est_out) FROM samples;") {
+        sums = [$0.int(0), $0.int(1), $0.int(2), $0.int(3)]
+    }
+    expect(sums, [605_000, 600_000, 60_500, 60_000], "every byte is counted, and only the spread ones are estimated")
+
+    // Two estimates in one minute add up, and measured bytes add nothing to them.
+    db.addBuckets([BucketDelta(minute: 900, iface: "en0", bytesIn: 70, bytesOut: 7, estimated: true)],
+                  ssid: ssidPlaceholder, idle: false)
+    db.addBuckets([BucketDelta(minute: 900, iface: "en0", bytesIn: 30, bytesOut: 3, estimated: true)],
+                  ssid: ssidPlaceholder, idle: false)
+    expect(estimatedBytes(db, minute: 900), [100, 10], "two estimates in one minute add up")
+    db.addBuckets([BucketDelta(minute: 901, iface: "en0", bytesIn: 40, bytesOut: 4)], ssid: ssidPlaceholder, idle: false)
+    db.addBuckets([BucketDelta(minute: 901, iface: "en0", bytesIn: 40, bytesOut: 4)], ssid: ssidPlaceholder, idle: false)
+    expect(estimatedBytes(db, minute: 901), [0, 0], "a measured minute has no estimated bytes")
+}
+
 // MARK: - The version 2 migration finds the old spread rows, and only them
 
 /// Run raw SQL against a file, as the first release would have, without going
