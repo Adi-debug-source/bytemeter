@@ -10,10 +10,15 @@ import BytemeterCore
 /// way to build a tool that measures network use.
 enum DashboardGenerator {
 
+    /// The page and its CSV are written side by side under these names, and
+    /// the page's export link points at the CSV by name.
+    static let pageFile = "dashboard.html"
+    static let csvFile = "bytemeter_export.csv"
+
     static func write(data: DashboardData, folder: URL) throws -> URL {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let page = folder.appendingPathComponent("dashboard.html")
-        let csv = folder.appendingPathComponent("bytemeter_export.csv")
+        let page = folder.appendingPathComponent(pageFile)
+        let csv = folder.appendingPathComponent(csvFile)
         try html(data).write(to: page, atomically: true, encoding: .utf8)
         try csvExport(data).write(to: csv, atomically: true, encoding: .utf8)
         return page
@@ -21,34 +26,38 @@ enum DashboardGenerator {
 
     // MARK: - Page
 
+    /// The sections in page order. A section with nothing to show, such as
+    /// the cap with no cap set, adds nothing.
     static func html(_ data: DashboardData) -> String {
-        let cal = data.cal
-        let hero = heroParts(data.today.bytesIn)
-        let since = data.allTime.since.map { cal.timestampLabel($0) } ?? "just now"
+        let sections = [masthead(data), hero(data), capPanel(data), hourlyPanel(data), dailyPanel(data),
+                        heatmapPanel(data), splitsRow(data), monthlyPanel(data), footer(data)]
+        return page(body: sections.joined())
+    }
 
-        let hourValues = data.hourly.enumerated().map { (label: String(format: "%02d", $0.offset), totals: $0.element) }
-        let dayValues = data.daily.map { (label: $0.label, totals: $0.totals) }
-        let heatPeak = data.heat.map(\.average.total).max() ?? 0
-        let projectionBasis = data.projection.isTooEarly ? ProjectionWording.tooEarlyBasis : ProjectionWording.basis
-        let comparison = DayComparison.text(today: data.today, yesterdaySoFar: data.yesterdaySoFar, yesterday: data.yesterday)
+    // MARK: - Sections
 
-        var body = ""
-
-        // Masthead
-        body += """
+    private static func masthead(_ data: DashboardData) -> String {
+        let since = data.allTime.since.map { data.cal.timestampLabel($0) } ?? "just now"
+        return """
         <header class="masthead">
           <div class="brand">Bytemeter</div>
-          <div class="meta">\(esc(cal.timestampLabel(data.generatedAt)))<br>
+          <div class="meta">\(esc(data.cal.timestampLabel(data.generatedAt)))<br>
           <span class="muted">Counting since \(esc(since))</span></div>
         </header>
         """
+    }
 
-        // Hero: today's figure, then the wider picture beside it.
-        body += """
+    /// Today's figure, then the wider picture beside it.
+    private static func hero(_ data: DashboardData) -> String {
+        let cal = data.cal
+        let figure = heroParts(data.today.bytesIn)
+        let projectionBasis = data.projection.isTooEarly ? ProjectionWording.tooEarlyBasis : ProjectionWording.basis
+        let comparison = DayComparison.text(today: data.today, yesterdaySoFar: data.yesterdaySoFar, yesterday: data.yesterday)
+        return """
         <section class="hero">
           <div class="hero-main">
             <div class="eyebrow">Today, \(esc(cal.fullDayLabel(data.generatedAt)))</div>
-            <div class="hero-figure"><span class="value">\(esc(hero.number))</span><span class="unit">\(esc(hero.unit))</span></div>
+            <div class="hero-figure"><span class="value">\(esc(figure.number))</span><span class="unit">\(esc(figure.unit))</span></div>
             <div class="hero-sub">downloaded<span class="sep">·</span>\(esc(Units.bytes(data.today.bytesOut))) uploaded</div>
             <div class="hero-compare">\(esc(comparison))</div>
           </div>
@@ -65,13 +74,26 @@ enum DashboardGenerator {
           </dl>
         </section>
         """
+    }
 
-        if data.capEnabled, data.capBytes > 0 {
-            body += capPanel(used: data.thisMonth.total, cap: data.capBytes)
-        }
+    /// Only while a cap is set.
+    private static func capPanel(_ data: DashboardData) -> String {
+        guard data.capEnabled, data.capBytes > 0 else { return "" }
+        let used = data.thisMonth.total
+        let cap = data.capBytes
+        let fraction = cap == 0 ? 0 : min(1.0, Double(used) / Double(cap))
+        return """
+        <section class="panel cap">
+          <div class="panel-head"><h2>Monthly cap</h2>
+            <p class="note">\(esc(Units.bytes(used))) of \(esc(Units.bytes(cap))) used.</p></div>
+          <div class="capbar"><span style="width:\(String(format: "%.1f", fraction * 100))%"></span></div>
+        </section>
+        """
+    }
 
-        // Today by hour
-        body += """
+    private static func hourlyPanel(_ data: DashboardData) -> String {
+        let hourValues = data.hourly.enumerated().map { (label: String(format: "%02d", $0.offset), totals: $0.element) }
+        return """
         <section class="panel">
           <div class="panel-head">
             <h2>Today by hour</h2>
@@ -79,15 +101,18 @@ enum DashboardGenerator {
           </div>
           \(SVGKit.mirroredBars(id: "hourly", values: hourValues, labelEvery: 2) { index in
               let totals = data.hourly[index]
-              return String(format: "%02d:00 to %02d:00, down %@, up %@.", index, (index + 1) % 24,
-                            Units.bytes(totals.bytesIn), Units.bytes(totals.bytesOut)) + estimateNote(totals)
+              return "\(SVGKit.hourSpan(index)), down \(Units.bytes(totals.bytesIn)), "
+                   + "up \(Units.bytes(totals.bytesOut))." + estimateNote(totals)
           })
           \(downUpLegend(estimated: SVGKit.barsShowEstimate(hourValues)))
         </section>
         """
+    }
 
-        // Last 30 days
-        body += """
+    private static func dailyPanel(_ data: DashboardData) -> String {
+        let cal = data.cal
+        let dayValues = data.daily.map { (label: $0.label, totals: $0.totals) }
+        return """
         <section class="panel">
           <div class="panel-head">
             <h2>Last 30 days</h2>
@@ -104,9 +129,12 @@ enum DashboardGenerator {
           \(downUpLegend(averages: data.rollingAverage, estimated: SVGKit.barsShowEstimate(dayValues)))
         </section>
         """
+    }
 
-        // Heatmap, given the most room because it answers the most useful question
-        body += """
+    /// Given the most room, because it answers the most useful question.
+    private static func heatmapPanel(_ data: DashboardData) -> String {
+        let heatPeak = data.heat.map(\.average.total).max() ?? 0
+        return """
         <section class="panel feature">
           <div class="panel-head">
             <h2>When the data actually goes</h2>
@@ -119,9 +147,11 @@ enum DashboardGenerator {
               : ""))
         </section>
         """
+    }
 
-        // Top talkers beside the smaller splits
-        body += """
+    /// Top talkers beside the smaller splits.
+    private static func splitsRow(_ data: DashboardData) -> String {
+        """
         <div class="row">
           <section class="panel">
             <div class="panel-head">
@@ -146,23 +176,27 @@ enum DashboardGenerator {
           </section>
         </div>
         """
+    }
 
-        if data.monthly.count > 1 {
-            let monthValues = data.monthly.map { (label: $0.label, totals: $0.totals) }
-            body += """
-            <section class="panel">
-              <div class="panel-head"><h2>Month by month</h2></div>
-              \(SVGKit.mirroredBars(id: "monthly", values: monthValues, labelEvery: 1) { index in
-                  let entry = data.monthly[index]
-                  return "\(entry.label), down \(Units.bytes(entry.totals.bytesIn)), "
-                       + "up \(Units.bytes(entry.totals.bytesOut))." + estimateNote(entry.totals)
-              })
-            </section>
-            """
-        }
+    /// Only once a second month has begun.
+    private static func monthlyPanel(_ data: DashboardData) -> String {
+        guard data.monthly.count > 1 else { return "" }
+        let monthValues = data.monthly.map { (label: $0.label, totals: $0.totals) }
+        return """
+        <section class="panel">
+          <div class="panel-head"><h2>Month by month</h2></div>
+          \(SVGKit.mirroredBars(id: "monthly", values: monthValues, labelEvery: 1) { index in
+              let entry = data.monthly[index]
+              return "\(entry.label), down \(Units.bytes(entry.totals.bytesIn)), "
+                   + "up \(Units.bytes(entry.totals.bytesOut))." + estimateNote(entry.totals)
+          })
+        </section>
+        """
+    }
 
-        // Footer: how the numbers were made, and what happened
-        body += """
+    /// How the numbers were made, and what happened.
+    private static func footer(_ data: DashboardData) -> String {
+        """
         <footer>
           <div class="foot-grid">
             <div>
@@ -187,13 +221,11 @@ enum DashboardGenerator {
             </div>
           </div>
           <div class="foot-bar">
-            <a class="export" href="bytemeter_export.csv" download>Export CSV</a>
+            <a class="export" href="\(csvFile)" download>Export CSV</a>
             <span class="muted">Generated by Bytemeter on this Mac. Nothing here has left the machine.</span>
           </div>
         </footer>
         """
-
-        return page(body: body)
     }
 
     // MARK: - Fragments
@@ -273,16 +305,18 @@ enum DashboardGenerator {
                 """
             }.joined()
         }
+        func table(_ caption: String, _ talkers: [TopTalker]) -> String {
+            """
+              <table><caption>\(esc(caption))</caption>
+                <thead><tr><th>Process</th><th class="num">Down</th><th class="num">Up</th><th></th></tr></thead>
+                <tbody>\(rows(talkers))</tbody>
+              </table>
+            """
+        }
         return """
         <div class="tables">
-          <table><caption>Today</caption>
-            <thead><tr><th>Process</th><th class="num">Down</th><th class="num">Up</th><th></th></tr></thead>
-            <tbody>\(rows(today))</tbody>
-          </table>
-          <table><caption>This month</caption>
-            <thead><tr><th>Process</th><th class="num">Down</th><th class="num">Up</th><th></th></tr></thead>
-            <tbody>\(rows(month))</tbody>
-          </table>
+        \(table("Today", today))
+        \(table("This month", month))
         </div>
         """
     }
@@ -304,17 +338,6 @@ enum DashboardGenerator {
         return note + breakdownList(named)
     }
 
-    private static func capPanel(used: UInt64, cap: UInt64) -> String {
-        let fraction = cap == 0 ? 0 : min(1.0, Double(used) / Double(cap))
-        return """
-        <section class="panel cap">
-          <div class="panel-head"><h2>Monthly cap</h2>
-            <p class="note">\(esc(Units.bytes(used))) of \(esc(Units.bytes(cap))) used.</p></div>
-          <div class="capbar"><span style="width:\(String(format: "%.1f", fraction * 100))%"></span></div>
-        </section>
-        """
-    }
-
     private static func eventList(_ data: DashboardData) -> String {
         guard !data.events.isEmpty else { return "<p class=\"note\">Nothing to report.</p>" }
         return "<ul class=\"events\">" + data.events.map { event in
@@ -326,8 +349,7 @@ enum DashboardGenerator {
 
     private static func peakHourNote(_ data: DashboardData) -> String {
         guard let peak = data.peakHour else { return "Nothing recorded yet today." }
-        return String(format: "Busiest hour so far: %02d:00 to %02d:00, %@ down.",
-                      peak.hour, (peak.hour + 1) % 24, Units.bytes(peak.totals.bytesIn))
+        return "Busiest hour so far: \(SVGKit.hourSpan(peak.hour)), \(Units.bytes(peak.totals.bytesIn)) down."
     }
 
     private static func topTalkerNote(_ data: DashboardData) -> String {

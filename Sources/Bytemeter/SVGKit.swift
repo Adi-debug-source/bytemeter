@@ -72,6 +72,12 @@ enum SVGKit {
         String(format: "%.2f", value)
     }
 
+    /// An hour of the day as a span, "09:00 to 10:00", for tooltips and notes.
+    /// The last hour ends at 00:00.
+    static func hourSpan(_ hour: Int) -> String {
+        String(format: "%02d:00 to %02d:00", hour, (hour + 1) % 24)
+    }
+
     /// Round an axis maximum up to something a person would choose, so the
     /// quarter gridlines land on readable figures rather than on 114 MB.
     static func niceCeiling(_ value: Double) -> Double {
@@ -328,8 +334,7 @@ enum SVGKit {
             // Step 0 means no traffic at all; anything above zero lands in 1 to 6.
             let step = fraction <= 0 ? 0 : min(heatRamp.count - 1, max(1, Int((fraction * Double(heatRamp.count - 1)).rounded(.up))))
             let colour = heatRamp[step]
-            let slot = "\(BytemeterCalendar.weekdayNames[cell.weekday]) \(String(format: "%02d", cell.hour)):00 to "
-                + "\(String(format: "%02d", (cell.hour + 1) % 24)):00"
+            let slot = "\(BytemeterCalendar.weekdayNames[cell.weekday]) \(hourSpan(cell.hour))"
             let label = cell.days == 0
                 ? slot + ", not counted yet."
                 : slot + ", on average down \(Units.bytes(cell.average.bytesIn)), up \(Units.bytes(cell.average.bytesOut)), "
