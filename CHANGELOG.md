@@ -15,6 +15,12 @@
 - Today is compared with yesterday at the same time of day, so an ordinary morning no longer reads as down on yesterday.
 - Chart axes use two decimals where one would round, so a 2.5 GB axis marks its middle line 1.25 GB.
 
+### Counting and accuracy
+
+- Per-app figures leave out loopback traffic, which never leaves the Mac, so a local development server, a database or a VPN client's local proxy can no longer top Top talkers.
+- Per-app sampling switched off and on again starts afresh, instead of booking everything the apps did while it was off into one minute, and with the clock set back it files its rows no earlier than the last reading, as the interface counts already did.
+- Traffic spread across a sleep is recorded as idle, because nobody can use a sleeping Mac, rather than taking the flag of the moment it woke; the minute it woke in still counts as active if someone was there.
+
 ## 1.0.0, 6 October 2026
 
 First public release. Bytemeter was built as a personal utility in September 2026; this release packages it so anyone can build and run it.
