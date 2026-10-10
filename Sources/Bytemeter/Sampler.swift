@@ -15,6 +15,7 @@ final class Sampler {
     private let settings: Settings
     let queue: DispatchQueue
     private let processQueue = DispatchQueue(label: "io.github.adi-debug-source.bytemeter.nettop", qos: .utility)
+    private let rateQueue = DispatchQueue(label: "io.github.adi-debug-source.bytemeter.rate", qos: .utility)
 
     private var sampleTimer: DispatchSourceTimer?
     private var processTimer: DispatchSourceTimer?
@@ -27,8 +28,12 @@ final class Sampler {
     /// the main thread and the timer's readings never race.
     private let gate = SleepGate()
 
-    /// The rate timer's last reading. Touched only on `processQueue`, where
-    /// the rate timer runs; resets from elsewhere are sent there.
+    /// The rate timer's last reading. Touched only on `rateQueue`, where the
+    /// rate timer runs; resets from elsewhere are sent there. The live rate
+    /// has a queue of its own because `processQueue` is blocked for as long
+    /// as each nettop run lasts, which would freeze the live speed with it.
+    /// `InterfaceMonitor` keeps no state, so reading it here as well as on
+    /// `queue` is safe.
     private var lastRateReading: (bytesIn: UInt64, bytesOut: UInt64, at: Date)?
 
     var onSample: (() -> Void)?
@@ -73,12 +78,12 @@ final class Sampler {
     func updateRateTimer() {
         rateTimer?.cancel()
         rateTimer = nil
-        processQueue.async { [weak self] in self?.lastRateReading = nil }
+        rateQueue.async { [weak self] in self?.lastRateReading = nil }
         guard settings.liveSpeed else {
             onRate?(0, 0)
             return
         }
-        let timer = DispatchSource.makeTimerSource(queue: processQueue)
+        let timer = DispatchSource.makeTimerSource(queue: rateQueue)
         timer.schedule(deadline: .now() + Self.rateInterval, repeating: Self.rateInterval, leeway: .milliseconds(200))
         timer.setEventHandler { [weak self] in self?.takeRateReading() }
         timer.resume()
@@ -100,7 +105,7 @@ final class Sampler {
             guard let self else { return }
             self.gate.wake { self.takeSample() }
         }
-        processQueue.async { [weak self] in self?.lastRateReading = nil }
+        rateQueue.async { [weak self] in self?.lastRateReading = nil }
     }
 
     // MARK: - Sampling
