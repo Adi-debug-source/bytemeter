@@ -142,6 +142,13 @@ public struct Aggregator {
         return found
     }
 
+    /// When counting began as far as `now` knows: the earliest minute on
+    /// record up to and including the current one, so rows after `now` are
+    /// ignored.
+    private func earliestMinute(upTo now: Date) -> Int64? {
+        earliestMinute(in: MinuteRange(start: 1, end: BytemeterCalendar.endMinute(after: now)))
+    }
+
     // MARK: - Shaped views
 
     /// 24 buckets for one local day. Hours run 0 to 23 in local time, each
@@ -153,8 +160,9 @@ public struct Aggregator {
     /// shows that moment's day, not the rest of it.
     public func hourly(day: Date, now: Date) -> [Totals] {
         let dayRange = cal.range(from: cal.startOfDay(day), to: cal.startOfDay(day, offsetBy: 1))
+        let end = min(dayRange.end, BytemeterCalendar.endMinute(after: now))
         var buckets = [Totals](repeating: Totals(), count: 24)
-        for row in minuteRows(MinuteRange(start: dayRange.start, end: min(dayRange.end, endMinute(now)))) {
+        for row in minuteRows(MinuteRange(start: dayRange.start, end: end)) {
             let index = min(max(cal.hour(ofMinute: row.minute), 0), 23)
             buckets[index] = buckets[index] + row.totals
         }
@@ -165,10 +173,9 @@ public struct Aggregator {
     public func daily(lastDays count: Int, now: Date) -> [LabelledTotals] {
         guard count > 0 else { return [] }
         let starts = cal.dayStarts(from: cal.startOfDay(now, offsetBy: -(count - 1)), dayCount: count)
-        let endMinute = BytemeterCalendar.minute(from: now) + 1
         var buckets = [Totals](repeating: Totals(), count: count)
 
-        for row in minuteRows(MinuteRange(start: starts[0], end: endMinute)) {
+        for row in minuteRows(MinuteRange(start: starts[0], end: BytemeterCalendar.endMinute(after: now))) {
             guard let index = dayIndex(for: row.minute, in: starts) else { continue }
             buckets[index] = buckets[index] + row.totals
         }
@@ -195,7 +202,7 @@ public struct Aggregator {
         let starts = cal.dayStarts(from: cal.startOfDay(now, offsetBy: -dayCount), dayCount: dayCount)
         // Rows after `now` are ignored here too, so the page as of an earlier
         // moment counts the days that moment would have.
-        if let first = earliestMinute(in: MinuteRange(start: 1, end: endMinute(now))),
+        if let first = earliestMinute(upTo: now),
            let firstCounted = starts.firstIndex(where: { $0 >= first }) {
             for start in starts[firstCounted...] {
                 counted[mondayIndex(BytemeterCalendar.date(fromMinute: start))] += 1
@@ -224,18 +231,19 @@ public struct Aggregator {
     /// push the current month off the end.
     public func monthly(now: Date) -> [LabelledTotals] {
         let current = cal.startOfCycle(now)
-        let oldestNoon = cal.calendar.date(bySettingHour: 12, minute: 0, second: 0, of: current) ?? current
+        let oldestNoon = cal.noon(of: current)
         let oldest = cal.startOfCycle(
             cal.calendar.date(byAdding: .month, value: -(Self.maxMonths - 1), to: oldestNoon) ?? oldestNoon)
-        guard let earliest = earliestMinute(in: MinuteRange(start: BytemeterCalendar.minute(from: oldest),
-                                                            end: endMinute(now))) else { return [] }
+        let end = BytemeterCalendar.endMinute(after: now)
+        guard let earliest = earliestMinute(in: MinuteRange(start: BytemeterCalendar.minute(from: oldest), end: end))
+        else { return [] }
         var out: [LabelledTotals] = []
         var cursor = cal.startOfCycle(BytemeterCalendar.date(fromMinute: earliest))
         let limit = cal.endOfCycle(now)
         while cursor < limit && out.count < Self.maxMonths {
             let next = cal.endOfCycle(cursor)
             let month = cal.range(from: cursor, to: next)
-            let totals = totals(MinuteRange(start: month.start, end: min(month.end, endMinute(now))))
+            let totals = totals(MinuteRange(start: month.start, end: min(month.end, end)))
             out.append(LabelledTotals(label: cal.monthLabel(cursor), date: cursor, totals: totals))
             cursor = next
         }
@@ -270,22 +278,24 @@ public struct Aggregator {
         return (idle, active)
     }
 
-    public func byInterface(_ range: MinuteRange) -> [(String, Totals)] {
-        var out: [(String, Totals)] = []
-        try? db.query("""
-            SELECT iface, SUM(bytes_in), SUM(bytes_out) FROM samples
-            WHERE minute>=? AND minute<? GROUP BY iface ORDER BY SUM(bytes_in)+SUM(bytes_out) DESC;
-            """, [.int(range.start), .int(range.end)]) { row in
-            out.append((row.string(0), Totals(bytesIn: row.uint(1), bytesOut: row.uint(2))))
-        }
-        return out
+    public func byInterface(_ range: MinuteRange) -> [(String, Totals)] { grouped(by: .iface, in: range) }
+
+    public func bySSID(_ range: MinuteRange) -> [(String, Totals)] { grouped(by: .ssid, in: range) }
+
+    /// The two columns traffic is split by. A column name is written into the
+    /// SQL rather than bound, so it is only ever one of these fixed names,
+    /// never outside text.
+    private enum Column: String {
+        case iface
+        case ssid
     }
 
-    public func bySSID(_ range: MinuteRange) -> [(String, Totals)] {
+    /// The traffic in a range for each value of `column`, the most first.
+    private func grouped(by column: Column, in range: MinuteRange) -> [(String, Totals)] {
         var out: [(String, Totals)] = []
         try? db.query("""
-            SELECT ssid, SUM(bytes_in), SUM(bytes_out) FROM samples
-            WHERE minute>=? AND minute<? GROUP BY ssid ORDER BY SUM(bytes_in)+SUM(bytes_out) DESC;
+            SELECT \(column.rawValue), SUM(bytes_in), SUM(bytes_out) FROM samples
+            WHERE minute>=? AND minute<? GROUP BY \(column.rawValue) ORDER BY SUM(bytes_in)+SUM(bytes_out) DESC;
             """, [.int(range.start), .int(range.end)]) { row in
             out.append((row.string(0), Totals(bytesIn: row.uint(1), bytesOut: row.uint(2))))
         }
@@ -304,7 +314,7 @@ public struct Aggregator {
     /// figure asked as of an earlier moment gets that moment's answer.
     public func countingStart(from periodStart: Date, now: Date) -> Date {
         let start = BytemeterCalendar.minute(from: periodStart)
-        guard let first = earliestMinute(in: MinuteRange(start: 1, end: endMinute(now))), first > start else {
+        guard let first = earliestMinute(upTo: now), first > start else {
             return periodStart
         }
         return BytemeterCalendar.date(fromMinute: first)
@@ -347,7 +357,7 @@ public struct Aggregator {
     /// Rows after `now` are ignored, so it can be asked as of an earlier moment.
     public func projection(now: Date) -> (projected: Totals?, cycleEnd: Date) {
         let end = cal.endOfCycle(now)
-        guard let first = earliestMinute(in: MinuteRange(start: 1, end: endMinute(now))) else { return (nil, end) }
+        guard let first = earliestMinute(upTo: now) else { return (nil, end) }
         let start = countingStart(from: cal.startOfCycle(now), now: now)
         let soFar = totals(cal.thisCycle(now))
         let elapsed = now.timeIntervalSince(start)
@@ -379,7 +389,7 @@ public struct Aggregator {
     /// nothing, which drew a rising trend that was not there, and today's
     /// part day as a whole one, which pulled the end of every line down.
     public func sevenDayAverage(_ series: [LabelledTotals], now: Date) -> [Double?] {
-        let first = earliestMinute(in: MinuteRange(start: 1, end: endMinute(now)))
+        let first = earliestMinute(upTo: now)
         let whole = series.indices.map { index in
             guard let first, index < series.count - 1 else { return false }
             return first <= BytemeterCalendar.minute(from: series[index].date)
@@ -394,10 +404,11 @@ public struct Aggregator {
     /// current one, so that, like every other figure, it can be asked as of
     /// an earlier moment.
     public func allTime(now: Date) -> AllTimeSummary {
-        guard let earliest = earliestMinute(), earliest < endMinute(now) else {
+        let end = BytemeterCalendar.endMinute(after: now)
+        guard let earliest = earliestMinute(), earliest < end else {
             return AllTimeSummary(totals: Totals(), since: nil, days: 0, perDay: Totals())
         }
-        let totals = totals(MinuteRange(start: earliest, end: endMinute(now)))
+        let totals = totals(MinuteRange(start: earliest, end: end))
         let since = BytemeterCalendar.date(fromMinute: earliest)
         let days = max(0, now.timeIntervalSince(since)) / 86_400.0
         // Under a day, the figure so far stands as the day's figure, the same
@@ -427,10 +438,6 @@ public struct Aggregator {
     }
 
     // MARK: - Helpers
-
-    /// The first minute after `now`: every range in this file ends here at
-    /// the latest, so nothing later than the moment asked about is counted.
-    private func endMinute(_ now: Date) -> Int64 { BytemeterCalendar.minute(from: now) + 1 }
 
     private func divide(_ totals: Totals, by divisor: Double) -> Totals {
         guard divisor > 0 else { return Totals() }

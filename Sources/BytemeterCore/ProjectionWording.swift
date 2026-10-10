@@ -34,12 +34,7 @@ public struct ProjectionWording: Equatable {
         let lastDay = cal.addDays(-1, to: cal.endOfCycle(now))
         let period: String
         if cal.cycleStartDay == 1 {
-            let f = DateFormatter()
-            f.calendar = cal.calendar
-            f.timeZone = cal.calendar.timeZone
-            f.locale = Locale(identifier: "en_GB")
-            f.dateFormat = "MMMM"
-            period = f.string(from: lastDay)
+            period = cal.monthName(lastDay)
             deadline = "by the end of " + period
         } else {
             period = "the cycle ending " + cal.dayLabel(lastDay)

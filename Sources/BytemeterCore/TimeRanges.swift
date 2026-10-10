@@ -45,21 +45,30 @@ public struct BytemeterCalendar {
         Date(timeIntervalSince1970: TimeInterval(minute * 60))
     }
 
+    /// The first minute after `now`. Every range that runs up to now ends
+    /// here, so the current minute is counted and nothing later is, and a
+    /// figure asked as of an earlier moment gets that moment's answer.
+    public static func endMinute(after now: Date) -> Int64 { minute(from: now) + 1 }
+
     public func startOfDay(_ date: Date) -> Date { calendar.startOfDay(for: date) }
+
+    /// Noon on the day holding `date`, the one safe moment to step a day or
+    /// a month from; see the note above.
+    func noon(of date: Date) -> Date {
+        calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
+    }
 
     /// The start of the day `days` after the one holding `date` (before it,
     /// if negative). Midnight, or the first moment of that day where a clock
     /// change skips midnight. Worked out from noon; see the note above.
     public func startOfDay(_ date: Date, offsetBy days: Int) -> Date {
-        let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
-        return startOfDay(calendar.date(byAdding: .day, value: days, to: noon) ?? noon)
+        let midday = noon(of: date)
+        return startOfDay(calendar.date(byAdding: .day, value: days, to: midday) ?? midday)
     }
 
     /// Calendar days from the day holding `from` to the day holding `to`.
     public func daysBetween(_ from: Date, _ to: Date) -> Int {
-        let a = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: from) ?? from
-        let b = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: to) ?? to
-        return calendar.dateComponents([.day], from: a, to: b).day ?? 0
+        calendar.dateComponents([.day], from: noon(of: from), to: noon(of: to)).day ?? 0
     }
 
     /// The local hour, 0 to 23, of an epoch minute, from the calendar. The
@@ -96,9 +105,8 @@ public struct BytemeterCalendar {
     /// The start of the next cycle. A month added to noon on the first day,
     /// then taken back to that day's start, for the same reason as the days.
     public func endOfCycle(_ date: Date) -> Date {
-        let start = startOfCycle(date)
-        let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: start) ?? start
-        return startOfDay(calendar.date(byAdding: .month, value: 1, to: noon) ?? noon)
+        let midday = noon(of: startOfCycle(date))
+        return startOfDay(calendar.date(byAdding: .month, value: 1, to: midday) ?? midday)
     }
 
     public func range(from: Date, to: Date) -> MinuteRange {
@@ -106,7 +114,7 @@ public struct BytemeterCalendar {
     }
 
     public func today(_ now: Date) -> MinuteRange {
-        range(from: startOfDay(now), to: Self.date(fromMinute: Self.minute(from: now) + 1))
+        MinuteRange(start: Self.minute(from: startOfDay(now)), end: Self.endMinute(after: now))
     }
 
     public func yesterday(_ now: Date) -> MinuteRange {
@@ -120,21 +128,21 @@ public struct BytemeterCalendar {
     /// same time yesterday may not exist, or may have happened twice.
     public func yesterdayUntil(_ now: Date) -> MinuteRange {
         let start = Self.minute(from: startOfDay(now, offsetBy: -1))
-        let sameTime = Self.minute(from: addDays(-1, to: now)) + 1
+        let sameTime = Self.endMinute(after: addDays(-1, to: now))
         return MinuteRange(start: start, end: min(max(sameTime, start), Self.minute(from: startOfDay(now))))
     }
 
     public func thisWeek(_ now: Date) -> MinuteRange {
-        range(from: startOfWeek(now), to: Self.date(fromMinute: Self.minute(from: now) + 1))
+        MinuteRange(start: Self.minute(from: startOfWeek(now)), end: Self.endMinute(after: now))
     }
 
     public func rollingDays(_ count: Int, now: Date) -> MinuteRange {
         let start = startOfDay(now, offsetBy: -(count - 1))
-        return range(from: start, to: Self.date(fromMinute: Self.minute(from: now) + 1))
+        return MinuteRange(start: Self.minute(from: start), end: Self.endMinute(after: now))
     }
 
     public func thisCycle(_ now: Date) -> MinuteRange {
-        range(from: startOfCycle(now), to: Self.date(fromMinute: Self.minute(from: now) + 1))
+        MinuteRange(start: Self.minute(from: startOfCycle(now)), end: Self.endMinute(after: now))
     }
 
     /// The start of each of `dayCount` days from the one holding `from`, as
@@ -147,52 +155,35 @@ public struct BytemeterCalendar {
 
     // MARK: - Formatting: day first and 24 hour, whatever the region setting
 
-    public func dayLabel(_ date: Date) -> String {
+    /// `date` in this calendar and its zone, in British English, so the
+    /// labels read the same on every Mac.
+    private func format(_ date: Date, _ pattern: String) -> String {
         let f = DateFormatter()
         f.calendar = calendar
         f.timeZone = calendar.timeZone
         f.locale = Locale(identifier: "en_GB")
-        f.dateFormat = "d MMM"
+        f.dateFormat = pattern
         return f.string(from: date)
     }
 
-    public func fullDayLabel(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.calendar = calendar
-        f.timeZone = calendar.timeZone
-        f.locale = Locale(identifier: "en_GB")
-        f.dateFormat = "EEEE d MMMM yyyy"
-        return f.string(from: date)
-    }
+    /// "29 Sep".
+    public func dayLabel(_ date: Date) -> String { format(date, "d MMM") }
+
+    /// "Tuesday 29 September 2026".
+    public func fullDayLabel(_ date: Date) -> String { format(date, "EEEE d MMMM yyyy") }
 
     /// "20 Sep 2026": short, day first, with the year, for a start date that
     /// may be in an earlier year than the one on screen.
-    public func dateLabel(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.calendar = calendar
-        f.timeZone = calendar.timeZone
-        f.locale = Locale(identifier: "en_GB")
-        f.dateFormat = "d MMM yyyy"
-        return f.string(from: date)
-    }
+    public func dateLabel(_ date: Date) -> String { format(date, "d MMM yyyy") }
 
-    public func monthLabel(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.calendar = calendar
-        f.timeZone = calendar.timeZone
-        f.locale = Locale(identifier: "en_GB")
-        f.dateFormat = "MMM yyyy"
-        return f.string(from: date)
-    }
+    /// "Sep 2026".
+    public func monthLabel(_ date: Date) -> String { format(date, "MMM yyyy") }
 
-    public func timestampLabel(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.calendar = calendar
-        f.timeZone = calendar.timeZone
-        f.locale = Locale(identifier: "en_GB")
-        f.dateFormat = "d MMM yyyy 'at' HH:mm"
-        return f.string(from: date)
-    }
+    /// "September": the month's full name, as the projection words it.
+    public func monthName(_ date: Date) -> String { format(date, "MMMM") }
+
+    /// "29 Sep 2026 at 21:30".
+    public func timestampLabel(_ date: Date) -> String { format(date, "d MMM yyyy 'at' HH:mm") }
 
     /// "This month, from 1 Oct", or "This cycle, from 15 Sep" on a billing
     /// cycle. Saying where it starts is what tells it apart from the rolling
