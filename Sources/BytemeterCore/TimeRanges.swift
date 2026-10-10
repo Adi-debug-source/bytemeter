@@ -8,7 +8,6 @@ public struct MinuteRange: Equatable {
         self.start = start
         self.end = max(start, end)
     }
-    public var minutes: Int64 { end - start }
 }
 
 /// All the date arithmetic, in local time, with the week starting on Monday.

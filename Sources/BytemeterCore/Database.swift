@@ -326,7 +326,7 @@ public final class Database {
                     + "whose traffic was spread evenly rather than measured minute by minute. "
                     + "\(result.skipped) gap events could not be read and were left unmarked. "
                     + "No byte moved: totals are unchanged, only the timing of those rows is uncertain."
-                // Not addEvent, which forgives a failure: the record of the
+                // Not addEvents, which forgives a failure: the record of the
                 // backfill commits with the backfill or not at all.
                 try run("INSERT INTO events(ts,kind,detail) VALUES(?,?,?);",
                         [.int(Int64(Date().timeIntervalSince1970)), .text("estimated_backfill"), .text(detail)])
@@ -415,8 +415,6 @@ public final class Database {
         return raw == "1" || raw == "true"
     }
 
-    public func setFlag(_ key: String, _ value: Bool) { setState(key, value ? "1" : "0") }
-
     public func number(_ key: String, default fallback: Int64) -> Int64 {
         guard let raw = state(key), let value = Int64(raw) else { return fallback }
         return value
@@ -469,10 +467,6 @@ public final class Database {
     // with nothing to do about it. Inside a transaction even the forgiving
     // form cannot let a commit through without its rows: the failure is
     // remembered and the transaction rolls back.
-
-    public func addEvent(ts: Int64, kind: String, detail: String) {
-        try? writeEvents([LedgerEvent(ts: ts, kind: kind, detail: detail)])
-    }
 
     public func addEvents(_ events: [LedgerEvent]) {
         try? writeEvents(events)

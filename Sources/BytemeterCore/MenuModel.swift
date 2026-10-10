@@ -29,8 +29,6 @@ public struct MenuSnapshot {
     public let perHourToday: Totals
     public let perDayWeek: Totals
     public let perDayMonth: Totals
-    /// Nil when it is too early to project.
-    public let projected: Totals?
     /// Worded once, here, for the menu and the dashboard alike.
     public let projection: ProjectionWording
     public let allTime: AllTimeSummary
@@ -55,7 +53,6 @@ public struct MenuSnapshot {
         perDayMonth = aggregator.averagePerDay(cal.thisCycle(now), now: now)
 
         let forecast = aggregator.projection(now: now)
-        projected = forecast.projected
         projection = ProjectionWording(projected: forecast.projected, now: now, cal: cal)
         allTime = aggregator.allTime(now: now)
         self.cal = cal
