@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### The menu bar
+
+- On the first day of a month or billing cycle, the projection runs the last 24 hours on to the cycle's end, instead of treating a few hours as a whole day, and with under a day counted it says it is too early to project, in the menu and on the dashboard.
+- No figure prints as 1000 of a smaller unit: 999.6 MB reads 1.00 GB, so the menu bar no longer shows 1000 MB as the day crosses 1 GB.
+
+### The dashboard
+
+- The heatmap is an average over the last four whole weeks, so every weekday is counted the same number of times, and it leaves out today and any day before counting began.
+- The seven day average covers only whole days counted, so a new install no longer shows a rising trend that is not there and the line no longer dips at today, and its key shows only when the line is drawn.
+- Hovering over a day in the last 30 days that came before Bytemeter started counting says so, rather than showing it as a day with no traffic.
+- Today is compared with yesterday at the same time of day, so an ordinary morning no longer reads as down on yesterday.
+- Chart axes use two decimals where one would round, so a 2.5 GB axis marks its middle line 1.25 GB.
+
 ## 1.0.0, 6 October 2026
 
 First public release. Bytemeter was built as a personal utility in September 2026; this release packages it so anyone can build and run it.
