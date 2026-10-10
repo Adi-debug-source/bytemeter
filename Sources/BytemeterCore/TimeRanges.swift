@@ -26,6 +26,15 @@ public struct BytemeterCalendar {
     /// 1 means calendar months. Any other day is a custom billing cycle start.
     public var cycleStartDay: Int
 
+    /// The days a billing cycle can start on. Every month has a 28th, so a
+    /// cycle starting on any of these starts on that day every month.
+    public static let cycleStartDays: ClosedRange<Int> = 1...28
+
+    /// Any number, typed or saved, brought into `cycleStartDays`.
+    public static func clampedCycleStartDay(_ day: Int) -> Int {
+        min(max(day, cycleStartDays.lowerBound), cycleStartDays.upperBound)
+    }
+
     public init(timeZone: TimeZone = .current, cycleStartDay: Int = 1) {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = timeZone
@@ -34,7 +43,7 @@ public struct BytemeterCalendar {
         cal.firstWeekday = 2
         cal.minimumDaysInFirstWeek = 4
         self.calendar = cal
-        self.cycleStartDay = min(max(cycleStartDay, 1), 28)
+        self.cycleStartDay = Self.clampedCycleStartDay(cycleStartDay)
     }
 
     public static func minute(from date: Date) -> Int64 {

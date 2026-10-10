@@ -221,7 +221,7 @@ final class PreferencesWindow: NSWindowController {
 
     @objc private func cycleValueChanged() {
         let day = Int(cycleField.stringValue.trimmingCharacters(in: .whitespaces)) ?? 1
-        let clamped = min(max(day, 1), 28)
+        let clamped = BytemeterCalendar.clampedCycleStartDay(day)
         settings.cycleStartDay = clamped
         cycleField.stringValue = String(clamped)
         onChange()
