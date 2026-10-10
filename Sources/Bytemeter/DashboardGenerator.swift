@@ -29,6 +29,7 @@ enum DashboardGenerator {
         let hourValues = data.hourly.enumerated().map { (label: String(format: "%02d", $0.offset), totals: $0.element) }
         let dayValues = data.daily.map { (label: $0.label, totals: $0.totals) }
         let heatPeak = data.heat.map(\.totals.total).max() ?? 0
+        let projectionBasis = data.projection.isTooEarly ? ProjectionWording.tooEarlyBasis : ProjectionWording.basis
 
         var body = ""
 
@@ -56,7 +57,7 @@ enum DashboardGenerator {
             \(statRow(cal.cycleLabel(data.generatedAt), data.thisMonth))
             \(statRow("Last 30 days", data.last30))
             <div class="stat projection">
-              <dt>On track for<span class="since">\(esc(ProjectionWording.basis))</span></dt>
+              <dt>On track for<span class="since">\(esc(projectionBasis))</span></dt>
               <dd>\(esc(data.projection.figure))<span class="qualifier">\(esc(data.projection.deadline))</span></dd>
             </div>
             \(allTimeRow(data))

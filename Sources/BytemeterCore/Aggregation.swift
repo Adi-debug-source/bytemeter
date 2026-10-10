@@ -298,18 +298,47 @@ public struct Aggregator {
         return divide(totals(range), by: days)
     }
 
-    /// Where this cycle lands if the rest of it looks like the days so far,
-    /// counting from the cycle's start or from when counting began, whichever
-    /// is later. The menu and the dashboard both use this one function.
-    public func projection(now: Date) -> (projected: Totals, cycleEnd: Date) {
-        let start = countingStart(from: cal.startOfCycle(now), now: now)
+    /// Where this cycle lands if the rest of it goes on as it has, or nil
+    /// when it is too early to say. The menu and the dashboard both use this
+    /// one function. There are three cases:
+    ///
+    /// 1. A day or more counted this cycle, from the cycle's start or from
+    ///    when counting began, whichever is later: the cycle so far, scaled
+    ///    up by the days in the cycle over the days counted.
+    /// 2. Under a day counted this cycle, but a whole day on record before
+    ///    now, as on the morning of the 1st: the cycle so far, plus the last
+    ///    24 hours' rate run on to the cycle's end. Scaling a few hours up as
+    ///    if they were a whole day read a fraction of the real rate. The
+    ///    trailing day keeps the figure continuous, because at exactly one
+    ///    day counted both rules give the same answer.
+    /// 3. Under a day on record at all, a new install, or nothing: nil. A few
+    ///    hours of one day say too little about a month.
+    ///
+    /// Rows after `now` are ignored, so it can be asked as of an earlier moment.
+    public func projection(now: Date) -> (projected: Totals?, cycleEnd: Date) {
         let end = cal.endOfCycle(now)
-        let elapsedDays = max(1.0, now.timeIntervalSince(start) / 86_400.0)
-        let totalDays = max(elapsedDays, end.timeIntervalSince(start) / 86_400.0)
+        guard let first = earliestMinute(in: MinuteRange(start: 1, end: endMinute(now))) else { return (nil, end) }
+        let start = countingStart(from: cal.startOfCycle(now), now: now)
         let soFar = totals(cal.thisCycle(now))
-        let factor = totalDays / elapsedDays
-        return (Totals(bytesIn: Self.clampedBytes(Double(soFar.bytesIn) * factor),
-                       bytesOut: Self.clampedBytes(Double(soFar.bytesOut) * factor)), end)
+        let elapsed = now.timeIntervalSince(start)
+
+        if elapsed >= 86_400 {
+            let elapsedDays = elapsed / 86_400.0
+            let totalDays = max(elapsedDays, end.timeIntervalSince(start) / 86_400.0)
+            let factor = totalDays / elapsedDays
+            return (Totals(bytesIn: Self.clampedBytes(Double(soFar.bytesIn) * factor),
+                           bytesOut: Self.clampedBytes(Double(soFar.bytesOut) * factor)), end)
+        }
+
+        let current = BytemeterCalendar.minute(from: now)
+        guard first <= current - 1_439 else { return (nil, end) }
+        let lastDay = totals(MinuteRange(start: current - 1_439, end: current + 1))
+        let remaining = Double(max(0, BytemeterCalendar.minute(from: end) - (current + 1)))
+        func run(_ soFar: UInt64, _ lastDay: UInt64) -> UInt64 {
+            Self.clampedBytes(Double(soFar) + Double(lastDay) / 1_440.0 * remaining)
+        }
+        return (Totals(bytesIn: run(soFar.bytesIn, lastDay.bytesIn),
+                       bytesOut: run(soFar.bytesOut, lastDay.bytesOut)), end)
     }
 
     /// Every byte on record from the earliest minute up to and including the

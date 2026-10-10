@@ -1133,7 +1133,7 @@ do {
          "so in the first month it agrees with per day, all time")
     let soFar = Double(month.totals(london.thisCycle(monthNow)).bytesIn)
     let runway = london.endOfCycle(monthNow).timeIntervalSince(began) / monthNow.timeIntervalSince(began)
-    near(month.projection(now: monthNow).projected.bytesIn, soFar * runway,
+    near(month.projection(now: monthNow).projected?.bytesIn ?? 0, soFar * runway,
          "the projection runs the rate since counting began to the end of the month")
 
     // The start of a week: counting began at 09:00 on Wednesday 30 September, asked at 21:00 on Friday 2 October.
@@ -1157,6 +1157,79 @@ do {
     expect(snapshot.perHourToday, month.averagePerHourToday(now: monthNow), "the menu's per hour today")
     expect(snapshot.projection, ProjectionWording(projected: month.projection(now: monthNow).projected, now: monthNow, cal: london),
            "the menu's projection is worded from the same figure the dashboard uses")
+}
+
+// MARK: - The projection on a cycle's first day, and too early to say
+
+/// `down` and `up` bytes in every minute from `from` up to, not including,
+/// `to`, both local times in `cal`, written in one transaction.
+func steadyTraffic(from: String, to: String, down: UInt64, up: UInt64 = 0,
+                   cal: BytemeterCalendar = london) -> Database {
+    let db = makeDatabase()
+    let end = BytemeterCalendar.minute(from: cal.parseLocal(to)!)
+    var rows: [BucketDelta] = []
+    var minute = BytemeterCalendar.minute(from: cal.parseLocal(from)!)
+    while minute < end {
+        rows.append(BucketDelta(minute: minute, iface: "en0", bytesIn: down, bytesOut: up))
+        minute += 1
+    }
+    _ = db.transaction { db.addBuckets(rows, ssid: ssidPlaceholder, idle: false) }
+    return db
+}
+
+do {
+    // 1 MB down in every minute since 1 September, so a right projection is
+    // 1 MB for every minute of the cycle. Scaling the first hours of a month
+    // up as if they were a whole day read a quarter of that at 06:00.
+    let db = steadyTraffic(from: "2026-09-01T00:00", to: "2026-10-16T00:00", down: 1_000_000)
+    func cycleMB(_ cal: BytemeterCalendar, _ now: Date) -> Double {
+        cal.endOfCycle(now).timeIntervalSince(cal.startOfCycle(now)) / 60
+    }
+    func within(_ projected: Totals?, _ expected: Double, _ message: String) {
+        let got = Double(projected?.bytesIn ?? 0) / 1_000_000
+        check(abs(got - expected) <= expected * 0.005, "\(message): expected about \(Int(expected)) MB, got \(got) MB")
+    }
+    expect(cycleMB(london, london.parseLocal("2026-10-01T06:00")!), 44_700,
+           "October 2026 in London is 44,700 minutes long, because the clocks go back on the 25th")
+    let month = Aggregator(db: db, cal: london)
+    for at in ["2026-10-01T06:00", "2026-10-01T23:59", "2026-10-02T00:00"] {
+        let now = london.parseLocal(at)!
+        within(month.projection(now: now).projected, cycleMB(london, now),
+               "at \(at) the projection runs the real rate to the end of the month")
+    }
+    let cycle15 = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
+    let cycleNow = cycle15.parseLocal("2026-10-15T06:00")!
+    within(Aggregator(db: db, cal: cycle15).projection(now: cycleNow).projected, cycleMB(cycle15, cycleNow),
+           "and so it does on the first morning of a billing cycle")
+
+    // A new install with under a day counted has nothing to run on.
+    let fresh = steadyTraffic(from: "2026-10-02T10:00", to: "2026-10-02T16:00", down: 1_000_000)
+    let freshNow = london.parseLocal("2026-10-02T16:00")!
+    let early = Aggregator(db: fresh, cal: london).projection(now: freshNow)
+    check(early.projected == nil, "six hours after counting began, it is too early to project")
+    let wording = ProjectionWording(projected: early.projected, now: freshNow, cal: london)
+    check(wording.isTooEarly, "the wording knows it is too early")
+    expect(wording.figure, "Too early", "the tile's figure says too early")
+    expect(wording.headline, "Too early to project October", "the menu's line names the month in full")
+    expect(wording.deadline, "by the end of October", "the deadline is still named, as the tile's qualifier")
+    expect(ProjectionWording.tooEarlyBasis, "a day of counting is needed first", "the caption says why")
+    expect(ProjectionWording(projected: nil, now: london.parseLocal("2026-09-29T21:30")!, cal: cycle15).headline,
+           "Too early to project the cycle ending 14 Oct", "a billing cycle names its last day")
+    check(!ProjectionWording(projected: Totals(bytesIn: 1), now: freshNow, cal: london).isTooEarly,
+          "a figure, however small, is not too early")
+    let lines = MenuModel.information(MenuSnapshot(aggregator: Aggregator(db: fresh, cal: london), now: freshNow),
+                                      options: MenuModel.Options(liveSpeed: false, rateIn: 0, rateOut: 0,
+                                                                 capEnabled: false, capBytes: 0, perAppSampling: true))
+    if let index = lines.firstIndex(of: .text("Too early to project October")), index + 1 < lines.count {
+        expect(lines[index + 1], .caption(ProjectionWording.tooEarlyBasis), "the menu says why, under the line")
+    } else {
+        check(false, "the menu says it is too early to project")
+    }
+
+    let nothing = Aggregator(db: makeDatabase(), cal: london).projection(now: freshNow)
+    check(nothing.projected == nil, "with nothing counted at all, it is too early")
+    expect(ProjectionWording(projected: nothing.projected, now: freshNow, cal: london).figure, "Too early",
+           "and the figure says so")
 }
 
 // MARK: - Engine fixes: two processes migrating the same file

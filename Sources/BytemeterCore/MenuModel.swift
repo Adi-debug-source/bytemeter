@@ -29,7 +29,8 @@ public struct MenuSnapshot {
     public let perHourToday: Totals
     public let perDayWeek: Totals
     public let perDayMonth: Totals
-    public let projected: Totals
+    /// Nil when it is too early to project.
+    public let projected: Totals?
     /// Worded once, here, for the menu and the dashboard alike.
     public let projection: ProjectionWording
     public let allTime: AllTimeSummary
@@ -143,7 +144,7 @@ public enum MenuModel {
         lines.append(.separator)
         lines.append(.header("Looking ahead"))
         lines.append(.text(data.projection.headline))
-        lines.append(.caption(ProjectionWording.basis))
+        lines.append(.caption(data.projection.isTooEarly ? ProjectionWording.tooEarlyBasis : ProjectionWording.basis))
         lines.append(.text(data.peakHourText))
         lines.append(.text(data.peakDayText))
 
@@ -219,32 +220,49 @@ public extension Aggregator {
 /// appears. And it names the end of the month in words: "by 1 Oct", seen on
 /// 29 September, read as if the month ran into October.
 public struct ProjectionWording: Equatable {
-    /// "100.8 GB", download and upload together.
+    /// "100.8 GB", download and upload together, or "Too early" when there
+    /// is no figure yet.
     public let figure: String
     /// "by the end of September", or "by the end of the cycle, 14 Oct" when a
     /// billing cycle starts on another day.
     public let deadline: String
+    /// The menu's line. The dashboard shows the same parts as a tile.
+    public let headline: String
+    /// True when there is no figure to give: under a day has been counted,
+    /// or nothing at all. The caption beside it then says why.
+    public let isTooEarly: Bool
 
     /// Said beside the figure wherever it appears.
     public static let basis = "down and up combined, as a provider counts it"
+    /// Said in place of `basis` when it is too early to project.
+    public static let tooEarlyBasis = "a day of counting is needed first"
 
-    /// The menu's line. The dashboard shows the same two parts as a tile.
-    public var headline: String { "On track for \(figure) \(deadline)" }
-
-    public init(projected: Totals, now: Date, cal: BytemeterCalendar) {
-        figure = Units.bytes(projected.total)
+    /// `projected` is nil when it is too early to project.
+    public init(projected: Totals?, now: Date, cal: BytemeterCalendar) {
         // The cycle ends at the first moment of the next one, so its last
         // day is the day before that.
         let lastDay = cal.addDays(-1, to: cal.endOfCycle(now))
+        let period: String
         if cal.cycleStartDay == 1 {
             let f = DateFormatter()
             f.calendar = cal.calendar
             f.timeZone = cal.calendar.timeZone
             f.locale = Locale(identifier: "en_GB")
             f.dateFormat = "MMMM"
-            deadline = "by the end of " + f.string(from: lastDay)
+            period = f.string(from: lastDay)
+            deadline = "by the end of " + period
         } else {
+            period = "the cycle ending " + cal.dayLabel(lastDay)
             deadline = "by the end of the cycle, " + cal.dayLabel(lastDay)
+        }
+        if let projected {
+            figure = Units.bytes(projected.total)
+            headline = "On track for \(figure) \(deadline)"
+            isTooEarly = false
+        } else {
+            figure = "Too early"
+            headline = "Too early to project " + period
+            isTooEarly = true
         }
     }
 }

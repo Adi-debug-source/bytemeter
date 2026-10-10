@@ -93,7 +93,7 @@ private func checkProjectionWording() {
     let lines = MenuModel.information(snapshot, options: MenuModel.Options(
         liveSpeed: false, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0, perAppSampling: true))
     let expected = Aggregator(db: db, cal: london).projection(now: now).projected
-    expect(snapshot.projection.figure, Units.bytes(expected.total), "the menu projects the combined total")
+    expect(snapshot.projection.figure, Units.bytes(expected?.total ?? 0), "the menu projects the combined total")
     if let index = lines.firstIndex(of: .text(snapshot.projection.headline)), index > 0, index + 1 < lines.count {
         expect(lines[index - 1], .header("Looking ahead"), "the projection opens Looking ahead")
         expect(lines[index + 1], .caption(ProjectionWording.basis), "with its basis right under it")
