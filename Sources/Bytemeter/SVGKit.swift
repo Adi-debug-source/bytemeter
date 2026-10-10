@@ -15,6 +15,9 @@ enum SVGKit {
     static let ink2 = "#a8b1b8"
     static let muted = "#6d777e"
     static let grid = "#23282c"
+    /// A bar chart's zero line, a step brighter than the gridlines, so the
+    /// two halves read as one chart.
+    static let baselineStroke = "#383f45"
 
     /// Sequential ramp for the heatmap, one hue, lightness climbing. The
     /// near zero step is allowed to sink towards the surface, which is what
@@ -30,6 +33,8 @@ enum SVGKit {
     static let estimatedUpGround = "#10221f"
     static let estimatedUpStripe = "rgba(53,169,159,0.62)"
     static let heatHatch = "rgba(238,241,243,0.5)"
+    /// The lighter fill under the idle share's hatch in the split bar.
+    static let idleGround = "rgba(53,169,159,0.18)"
 
     /// Hatch patterns for a bar chart. Ids are prefixed per chart because
     /// every inline SVG on the page shares one id space.
@@ -189,7 +194,7 @@ enum SVGKit {
         }
         svg += """
         <line x1="\(fmt(leftPad))" y1="\(fmt(baseline))" x2="\(fmt(width - rightPad))" y2="\(fmt(baseline))" \
-        stroke="#383f45" stroke-width="1"/>
+        stroke="\(baselineStroke)" stroke-width="1"/>
         <text x="\(fmt(leftPad - 8))" y="\(fmt(baseline + 3.5))" text-anchor="end" class="axis">0</text>
         """
 
@@ -375,7 +380,7 @@ enum SVGKit {
         return """
         <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" class="chart" preserveAspectRatio="none">
         <defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-        <rect width="8" height="8" fill="rgba(53,169,159,0.18)"/>
+        <rect width="8" height="8" fill="\(idleGround)"/>
         <line x1="0" y1="0" x2="0" y2="8" stroke="\(accent)" stroke-width="2.5" opacity="0.6"/></pattern></defs>
         <g><title>Active, someone at the keyboard: \(escape(Units.bytes(activeBytes)))</title>
         <rect x="0" y="6" width="\(fmt(max(activeWidth - 1, 0)))" height="22" rx="4" fill="\(accent)"/></g>

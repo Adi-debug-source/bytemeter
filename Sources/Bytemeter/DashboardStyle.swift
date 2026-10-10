@@ -11,6 +11,9 @@ extension DashboardGenerator {
     /// tabular figures and this Fraunces does not. Both travel inside the page
     /// as data (`DashboardFonts`), so nothing is fetched, and each stack falls
     /// back to system faces if a font cannot be used.
+    ///
+    /// The colours the charts also draw with come from `SVGKit`'s palette,
+    /// so a key in the stylesheet can never drift from the mark it explains.
     static func page(body: String) -> String {
         """
         <!doctype html>
@@ -28,13 +31,13 @@ extension DashboardGenerator {
           --plane: #0b0d0f;
           --surface: #13171a;
           --surface-2: #171c20;
-          --accent: #35a99f;
-          --accent-soft: rgba(53,169,159,0.45);
-          --ink: #eef1f3;
-          --ink-2: #a8b1b8;
-          --muted: #6d777e;
+          --accent: \(SVGKit.accent);
+          --accent-soft: \(SVGKit.accentSoft);
+          --ink: \(SVGKit.ink);
+          --ink-2: \(SVGKit.ink2);
+          --muted: \(SVGKit.muted);
           --rule: rgba(255,255,255,0.08);
-          --grid: #23282c;
+          --grid: \(SVGKit.grid);
         }
         * { box-sizing: border-box; }
         html { background: var(--plane); }
@@ -136,8 +139,8 @@ extension DashboardGenerator {
         .key .soft { background: var(--accent-soft); }
         .key .dash { background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 9px); height: 2px; }
         /* The same hatch the charts draw, so the key matches the marks. */
-        .key .est { background: repeating-linear-gradient(135deg, var(--accent) 0 2px, #163a37 2px 5px); }
-        .key .heat-est { background: repeating-linear-gradient(135deg, rgba(238,241,243,0.5) 0 1.5px, transparent 1.5px 3.5px), #1e8479; }
+        .key .est { background: repeating-linear-gradient(135deg, var(--accent) 0 2px, \(SVGKit.estimatedDownGround) 2px 5px); }
+        .key .heat-est { background: repeating-linear-gradient(135deg, \(SVGKit.heatHatch) 0 1.5px, transparent 1.5px 3.5px), \(SVGKit.heatRamp[4]); }
         .legend .est-key { margin-left: 14px; }
         .legend.keys .est-key { margin-left: 0; }
 
