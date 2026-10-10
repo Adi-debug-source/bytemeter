@@ -1277,6 +1277,42 @@ do {
     expect(uniform.heatmap(now: now), cells, "nothing from today is in any cell")
 }
 
+// MARK: - The seven day average counts only whole counted days
+
+do {
+    // 1 MB down in every minute for forty days up to Thursday noon: every
+    // whole day is 1,440 MB, and so is every point of a right average.
+    let day = 1_440_000_000.0
+    let now = london.parseLocal("2026-10-08T12:00")!
+    let steadyDB = steadyTraffic(from: "2026-08-29T12:00", to: "2026-10-08T12:00", down: 1_000_000)
+    let steady = Aggregator(db: steadyDB, cal: london)
+    let series = steady.daily(lastDays: 30, now: now)
+    let before = steady.sevenDayAverage(series, now: now)
+    expect(before.count, 30, "a point or a gap for every day of the chart")
+    expect(before.compactMap { $0 }.count, 23, "points from the seventh day to yesterday")
+    check(before.compactMap { $0 }.allSatisfy { $0 == day }, "every point is the steady 1,440 MB, got \(Set(before.compactMap { $0 }))")
+    check(before.last! == nil, "today is not over, so it has no point")
+
+    // Counting began at 22:00 nine days before: eight whole days, so only
+    // the last two whole-week windows have a point.
+    let nineNow = london.parseLocal("2026-10-08T22:00")!
+    let nine = Aggregator(db: steadyTraffic(from: "2026-09-29T22:00", to: "2026-10-08T22:00", down: 1_000_000), cal: london)
+    let nineAverages = nine.sevenDayAverage(nine.daily(lastDays: 30, now: nineNow), now: nineNow)
+    expect(nineAverages.indices.filter { nineAverages[$0] != nil }, [27, 28],
+           "nine days in, only the two windows of whole counted days have a point")
+    check(nineAverages.compactMap { $0 }.allSatisfy { $0 == day }, "and neither counts a day before counting as nothing")
+
+    // 7 GB more on 20 September raises the seven points whose window holds
+    // that day, each by a seventh of it, and no other.
+    steadyDB.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-09-20T12:00")!),
+                                     iface: "en0", bytesIn: 7_000_000_000, bytesOut: 0)], ssid: ssidPlaceholder, idle: false)
+    let after = steady.sevenDayAverage(steady.daily(lastDays: 30, now: now), now: now)
+    let heavy = series.firstIndex { $0.label == "20 Sep" }!
+    let raised = before.indices.filter { before[$0] != after[$0] }
+    expect(raised, Array(heavy...(heavy + 6)), "one heavy day raises exactly the seven points whose window holds it")
+    check(raised.allSatisfy { (after[$0] ?? 0) - (before[$0] ?? 0) == 1_000_000_000 }, "each by a seventh of the extra")
+}
+
 // MARK: - Engine fixes: two processes migrating the same file
 
 final class OpenResults: @unchecked Sendable {

@@ -90,14 +90,17 @@ enum DashboardGenerator {
         <section class="panel">
           <div class="panel-head">
             <h2>Last 30 days</h2>
-            <p class="note">The dashed line is a seven day rolling average of downloads, so one heavy day does not read as a trend.</p>
+            <p class="note">The dashed line averages the seven whole days up to each day, so one heavy day does not read as a trend. It starts once a week has been counted and stops at yesterday, because today is not over yet.</p>
           </div>
           \(SVGKit.mirroredBars(id: "daily", values: dayValues, labelEvery: 3, rollingAverage: data.rollingAverage) { index in
               let entry = data.daily[index]
+              if let since = data.allTime.since, cal.startOfDay(entry.date, offsetBy: 1) <= since {
+                  return "\(cal.fullDayLabel(entry.date)): before Bytemeter started counting."
+              }
               return "\(cal.fullDayLabel(entry.date)), down \(Units.bytes(entry.totals.bytesIn)), "
                    + "up \(Units.bytes(entry.totals.bytesOut))." + estimateNote(entry.totals)
           })
-          \(downUpLegend(includeAverage: true, estimated: SVGKit.barsShowEstimate(dayValues)))
+          \(downUpLegend(averages: data.rollingAverage, estimated: SVGKit.barsShowEstimate(dayValues)))
         </section>
         """
 
@@ -234,12 +237,14 @@ enum DashboardGenerator {
         """
     }
 
-    private static func downUpLegend(includeAverage: Bool = false, estimated: Bool) -> String {
+    /// The key under a bar chart. `averages` is the chart's rolling average,
+    /// keyed only when the line is drawn.
+    private static func downUpLegend(averages: [Double?] = [], estimated: Bool) -> String {
         var items = """
         <span class="key"><i class="swatch solid"></i>Down, above the line</span>
         <span class="key"><i class="swatch soft"></i>Up, below the line, on the same scale</span>
         """
-        if includeAverage {
+        if SVGKit.drawsAverage(averages) {
             items += "<span class=\"key\"><i class=\"swatch dash\"></i>Seven day average</span>"
         }
         // Only on a chart that draws some, so a clean day carries no clutter.

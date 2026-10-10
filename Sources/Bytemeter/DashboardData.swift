@@ -68,14 +68,7 @@ struct DashboardData {
 
         // A seven day rolling mean over the download figures, drawn over the
         // bars so a single heavy day does not read as a trend.
-        var averages: [Double?] = []
-        for index in series.indices {
-            guard index >= 6 else { averages.append(nil); continue }
-            let window = series[(index - 6)...index]
-            let sum = window.reduce(0.0) { $0 + Double($1.totals.bytesIn) }
-            averages.append(sum / 7.0)
-        }
-        rollingAverage = averages
+        rollingAverage = aggregator.sevenDayAverage(series, now: now)
 
         heat = aggregator.heatmap(weeks: 4, now: now)
         monthly = aggregator.monthly(now: now)

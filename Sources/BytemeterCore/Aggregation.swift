@@ -372,6 +372,25 @@ public struct Aggregator {
                        bytesOut: run(soFar.bytesOut, lastDay.bytesOut)), end)
     }
 
+    /// The seven day average of download for each day of a `daily` series,
+    /// or nil where there is none. A point is the mean of seven whole counted
+    /// days ending on its own day: counting had begun by the start of each,
+    /// and each is over, which leaves out the series' last day, today.
+    /// Dividing by seven regardless counted the days before a new install as
+    /// nothing, which drew a rising trend that was not there, and today's
+    /// part day as a whole one, which pulled the end of every line down.
+    public func sevenDayAverage(_ series: [LabelledTotals], now: Date) -> [Double?] {
+        let first = earliestMinute(in: MinuteRange(start: 1, end: endMinute(now)))
+        let whole = series.indices.map { index in
+            guard let first, index < series.count - 1 else { return false }
+            return first <= BytemeterCalendar.minute(from: series[index].date)
+        }
+        return series.indices.map { index in
+            guard index >= 6, whole[(index - 6)...index].allSatisfy({ $0 }) else { return nil }
+            return series[(index - 6)...index].reduce(0.0) { $0 + Double($1.totals.bytesIn) } / 7.0
+        }
+    }
+
     /// Every byte on record from the earliest minute up to and including the
     /// current one, so that, like every other figure, it can be asked as of
     /// an earlier moment.

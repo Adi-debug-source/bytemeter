@@ -100,6 +100,13 @@ enum SVGKit {
 
     // MARK: - Bars
 
+    /// Whether a rolling average draws a line: it needs two points. The
+    /// legend asks the same question, so its key never names a line that is
+    /// not on the chart, as on a new install's first week.
+    static func drawsAverage(_ averages: [Double?]) -> Bool {
+        averages.filter { ($0 ?? 0) > 0 }.count > 1
+    }
+
     /// Height of each half of a bar chart, in viewBox units.
     private static let barHalfHeight = 84.0
     /// Anything thinner than this is not drawn, so a key is not shown for it.
@@ -228,7 +235,7 @@ enum SVGKit {
             """
         }
 
-        if let averages = rollingAverage {
+        if let averages = rollingAverage, drawsAverage(averages) {
             var points: [String] = []
             for (index, value) in averages.enumerated() {
                 guard let value, value > 0 else { continue }
@@ -236,12 +243,10 @@ enum SVGKit {
                 let y = baseline - min(value / scaleMax, 1.0) * halfHeight
                 points.append("\(fmt(x)),\(fmt(y))")
             }
-            if points.count > 1 {
-                svg += """
-                <polyline points="\(points.joined(separator: " "))" fill="none" stroke="\(ink)" \
-                stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>
-                """
-            }
+            svg += """
+            <polyline points="\(points.joined(separator: " "))" fill="none" stroke="\(ink)" \
+            stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>
+            """
         }
 
         for (index, entry) in values.enumerated() where index % labelEvery == 0 {
