@@ -34,8 +34,17 @@ private func checkPeaksAreDownloadOnly() {
     at("2026-09-29T14:15", 200_000_000, 2_000_000_000)     // most in total today
 
     let aggregator = Aggregator(db: db, cal: london)
-    check(aggregator.peakDayThisCycle(now: now)?.label != aggregator.peakDownloadDayThisCycle(now: now)?.label
-          && aggregator.peakHourToday(now: now)?.hour != aggregator.peakDownloadHourToday(now: now)?.hour,
+    // The heaviest day this month and hour today by download plus upload.
+    // Nothing in the app picks by the total, so it is worked out here.
+    func peaksByTotal() -> (day: String?, hour: Int?) {
+        let days = aggregator.daily(lastDays: london.daysBetween(london.startOfCycle(now), now) + 1, now: now)
+        let day = days.max { $0.totals.total < $1.totals.total }
+        let hour = aggregator.hourly(day: now, now: now).enumerated().max { $0.element.total < $1.element.total }
+        return (day?.label, hour?.offset)
+    }
+    let byTotal = peaksByTotal()
+    check(byTotal.day != aggregator.peakDownloadDayThisCycle(now: now)?.label
+          && byTotal.hour != aggregator.peakDownloadHourToday(now: now)?.hour,
           "the peak data really does tell download apart from download plus upload")
     expect(aggregator.peakDownloadHourToday(now: now)?.hour, 10, "the dashboard's busiest hour is picked by download")
     expect(aggregator.peakDownloadDayThisCycle(now: now)?.label, "26 Sep", "the peak day is picked by download")

@@ -426,21 +426,6 @@ public struct Aggregator {
         return best
     }
 
-    public func peakHourToday(now: Date) -> (hour: Int, totals: Totals)? {
-        let buckets = hourly(day: now, now: now)
-        guard let best = buckets.enumerated().max(by: { $0.element.total < $1.element.total }),
-              best.element.total > 0 else { return nil }
-        return (best.offset, best.element)
-    }
-
-    public func peakDayThisCycle(now: Date) -> LabelledTotals? {
-        let days = max(1, cal.daysBetween(cal.startOfCycle(now), now) + 1)
-        let series = daily(lastDays: days, now: now)
-        guard let best = series.max(by: { $0.totals.total < $1.totals.total }),
-              best.totals.total > 0 else { return nil }
-        return best
-    }
-
     // MARK: - Helpers
 
     /// The first minute after `now`: every range in this file ends here at

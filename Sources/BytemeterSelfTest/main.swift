@@ -1145,10 +1145,8 @@ do {
     let peakDB = makeDatabase()
     peakDB.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: santiago.parseLocal("2026-09-06T10:00")!),
                                    iface: "en0", bytesIn: 5_000_000, bytesOut: 0)], ssid: ssidPlaceholder, idle: false)
-    expect(Aggregator(db: peakDB, cal: cycle6).peakDayThisCycle(now: santiago.parseLocal("2026-09-07T00:30")!)?.label, "6 Sep",
-           "the cycle's first day still counts when it began on a skipped midnight")
     expect(Aggregator(db: peakDB, cal: cycle6).peakDownloadDayThisCycle(now: santiago.parseLocal("2026-09-07T00:30")!)?.label,
-           "6 Sep", "and so it does for the download peak the menu and dashboard show")
+           "6 Sep", "the cycle's first day still counts when it began on a skipped midnight")
 }
 
 // MARK: - Engine fixes: hours on a clock change day
@@ -1161,7 +1159,7 @@ do {
         db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: at), iface: "en0", bytesIn: 9_000_000, bytesOut: 0)],
                       ssid: ssidPlaceholder, idle: false)
         let later = at.addingTimeInterval(3 * 3_600)
-        expect(aggregator.peakHourToday(now: later)?.hour, 15, "traffic at 15:20 on \(text.prefix(10)) peaks at 15:00")
+        expect(aggregator.peakDownloadHourToday(now: later)?.hour, 15, "traffic at 15:20 on \(text.prefix(10)) peaks at 15:00")
         expect(aggregator.hourly(day: at, now: later)[15].bytesIn, 9_000_000, "and sits in the 15:00 slot")
         // A row at the day's start, so the heatmap counts the whole day, asked the day after.
         db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.startOfDay(at)), iface: "en0",
@@ -1968,9 +1966,9 @@ do {
     check(a.allTime(now: asOf.addingTimeInterval(3 * 86_400)).totals.bytesIn > allA.totals.bytesIn,
           "and the later rows are really there to be left out")
     expect(a.projection(now: asOf).projected, b.projection(now: asOf).projected, "the projection matches")
-    check(a.peakHourToday(now: asOf).map { [$0.hour] } == b.peakHourToday(now: asOf).map { [$0.hour] }
-          && a.peakHourToday(now: asOf)?.totals == b.peakHourToday(now: asOf)?.totals, "the peak hour matches")
-    check(a.peakDayThisCycle(now: asOf)?.totals == b.peakDayThisCycle(now: asOf)?.totals, "the peak day matches")
+    let peakHourA = a.peakDownloadHourToday(now: asOf), peakHourB = b.peakDownloadHourToday(now: asOf)
+    check(peakHourA?.hour == peakHourB?.hour && peakHourA?.totals == peakHourB?.totals, "the peak hour matches")
+    check(a.peakDownloadDayThisCycle(now: asOf)?.totals == b.peakDownloadDayThisCycle(now: asOf)?.totals, "the peak day matches")
     for (name, range) in [("today", cal.today(asOf)), ("this month", cal.thisCycle(asOf))] {
         let ta = a.topTalkers(range, limit: 10), tb = b.topTalkers(range, limit: 10)
         check(ta.map(\.name) == tb.map(\.name) && ta.map(\.totals) == tb.map(\.totals), "top talkers \(name) match")
