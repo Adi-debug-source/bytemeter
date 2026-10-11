@@ -19,6 +19,7 @@ func runDashboardChecks() {
     checkThirtyDayAxisReadsQuarters(fewDays)
     checkAverageLineOnlyOverAWholeWeek(fewDays: fewDays, fortyDays: fortyDays)
     checkHeatmapCellsAverageWholeWeeks(fortyDays)
+    checkCapPanelSaysWhatIsLeftOrOver()
 }
 
 // MARK: - The fixtures
@@ -27,15 +28,17 @@ func runDashboardChecks() {
 /// local hour of the last 40 days has exactly one row in the uniform fixture.
 private let fixtureMoment = "2026-10-08T12:00"
 
-/// A page and its CSV, made from one database as of one moment.
+/// A page and its CSV, made from one database as of one moment. Calendar
+/// months and no cap unless a check says otherwise.
 private struct BuiltPage {
     let data: DashboardData
     let html: String
     let csv: String
 
-    init(_ db: Database, now: String) {
-        let options = DashboardData.Options(ssidCapture: false, perAppSampling: true, capEnabled: false, capBytes: 0)
-        data = DashboardData(aggregator: Aggregator(db: db, cal: london), options: options, now: london.parseLocal(now)!)
+    init(_ db: Database, now: String, cal: BytemeterCalendar = london, capBytes: UInt64 = 0) {
+        let options = DashboardData.Options(ssidCapture: false, perAppSampling: true,
+                                            capEnabled: capBytes > 0, capBytes: capBytes)
+        data = DashboardData(aggregator: Aggregator(db: db, cal: cal), options: options, now: cal.parseLocal(now)!)
         html = DashboardGenerator.html(data)
         csv = DashboardGenerator.csvExport(data)
     }
@@ -180,4 +183,34 @@ private func checkHeatmapCellsAverageWholeWeeks(_ built: BuiltPage) {
     let figures = Set(tooltips.map { tip in tip.range(of: "on average down").map { String(tip[$0.lowerBound...]) } ?? tip })
     expect(figures, ["on average down 60.0 MB, up 6.0 MB, over 4 weeks."],
            "on 40 uniform days every heatmap cell carries the same average, over four whole weeks")
+}
+
+// MARK: - The cap panel says what is left or over
+
+private func checkCapPanelSaysWhatIsLeftOrOver() {
+    /// The cap panel's note and bar, as the page has them.
+    func capPanel(_ built: BuiltPage) -> (note: String, width: String) {
+        let section = panel(built.html, heading: "Monthly cap")
+        let note = section.components(separatedBy: "<p class=\"note\">").dropFirst().first?
+            .components(separatedBy: "</p>").first ?? ""
+        let width = section.components(separatedBy: "<span style=\"width:").dropFirst().first?
+            .components(separatedBy: "\"").first ?? ""
+        return (note, width)
+    }
+    check(!BuiltPage(fortyUniformDaysDatabase(), now: fixtureMoment).html.contains("Monthly cap"),
+          "with no cap set, the page has no cap panel")
+
+    // 66 MB an hour from 00:00 on 15 September to 12:00 on 8 October is
+    // 37.224 GB, down and up together. The cycle's last day is 14 October.
+    let cycle15 = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
+    let under = capPanel(BuiltPage(fortyUniformDaysDatabase(), now: fixtureMoment, cal: cycle15, capBytes: 40_000_000_000))
+    expect(under.note, "37.2 GB of 40.0 GB used, 93%. 2.78 GB left, 7 days to go.",
+           "the cap panel gives what is used, the percentage, and what is left for how long")
+    expect(under.width, "93%", "and its bar is filled to the percentage")
+
+    // Calendar months: 1 October to 8 October at noon is 11.88 GB.
+    let over = capPanel(BuiltPage(fortyUniformDaysDatabase(), now: fixtureMoment, capBytes: 10_000_000_000))
+    expect(over.note, "11.9 GB of 10.0 GB used, 118%. 1.88 GB over the cap.",
+           "past the cap, the panel gives the real percentage and how far over")
+    expect(over.width, "100%", "while its bar stops at full")
 }

@@ -70,7 +70,7 @@ final class PreferencesWindow: NSWindowController {
 
         stack.addArrangedSubview(divider())
 
-        capBox = checkbox("Warn me against a monthly cap", settings.capEnabled, #selector(toggleCap))
+        capBox = checkbox("Track a monthly cap", settings.capEnabled, #selector(toggleCap))
         stack.addArrangedSubview(capBox)
 
         capField = NSTextField(string: CapInput.text(forBytes: settings.capBytes))

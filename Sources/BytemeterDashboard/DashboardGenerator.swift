@@ -78,17 +78,18 @@ public enum DashboardGenerator {
         """
     }
 
-    /// Only while a cap is set.
+    /// Only while a cap is set. The figures are worded as the menu words
+    /// them; the bar stops at full, and the note says how far past it is.
     private static func capPanel(_ data: DashboardData) -> String {
         guard data.capEnabled, data.capBytes > 0 else { return "" }
         let used = data.thisMonth.total
-        let cap = data.capBytes
-        let fraction = cap == 0 ? 0 : min(1.0, Double(used) / Double(cap))
+        let cap = CapProgress(used: used, cap: data.capBytes, now: data.generatedAt, cal: data.cal)
+        let note = "\(Units.bytes(used)) of \(Units.bytes(data.capBytes)) used, \(cap.percent)%. \(cap.remainingText)."
         return """
         <section class="panel cap">
           <div class="panel-head"><h2>Monthly cap</h2>
-            <p class="note">\(esc(Units.bytes(used))) of \(esc(Units.bytes(cap))) used.</p></div>
-          <div class="capbar"><span style="width:\(String(format: "%.1f", fraction * 100))%"></span></div>
+            <p class="note">\(esc(note))</p></div>
+          <div class="capbar"><span style="width:\(min(100, cap.percent))%"></span></div>
         </section>
         """
     }

@@ -4,7 +4,7 @@ import BytemeterCore
 // Checks for the figures the menu and the dashboard show: the units, top
 // talkers, the menu bar modes, averages, the projection, the heatmap, the
 // seven day average, the comparison with yesterday, month by month, all
-// time, the figures as of a moment, and the headline set.
+// time, the figures as of a moment, the headline set, and the cap.
 
 // MARK: - Units are decimal
 
@@ -523,4 +523,80 @@ func checkHeadlinesAreOneSet() {
     let empty = Headlines.figure(for: .allTime, aggregator: none, now: now)
     check(empty.totals.isEmpty && empty.since == nil && Headlines(aggregator: none, now: now).figure(for: .allTime).since == nil,
           "with nothing counted, all time has no start date")
+}
+
+// MARK: - The cap shows the real percentage, and what is left or over
+
+func checkCapSaysWhatIsLeftOrOver() {
+    let gb: UInt64 = 1_000_000_000
+    let cap = 60 * gb
+    let cycle15 = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
+    func progress(_ used: UInt64, at local: String = "2026-09-29T21:30", cal: BytemeterCalendar = london) -> CapProgress {
+        CapProgress(used: used, cap: cap, now: cal.parseLocal(local)!, cal: cal)
+    }
+    let full = String(repeating: "▰", count: 12)
+
+    // 29 September at 21:30: today and the 30th are left, so 2 days to go.
+    let part = progress(27 * gb)
+    expect(part.percent, 45, "27 GB of 60 GB is 45%")
+    expect(part.menuText, "▰▰▰▰▰▱▱▱▱▱▱▱  45% of 60.0 GB", "the menu shows the bar, then the percentage of the cap")
+    expect(part.remainingText, "33.0 GB left, 2 days to go", "and says what is left and for how long")
+
+    let nearly = progress(59_994_000_000)
+    expect(nearly.percent, 99, "99.99% reads 99%: the cap is not reached until it is")
+    check(nearly.menuText.hasSuffix("  99% of 60.0 GB"), "the menu says 99%, got \(nearly.menuText)")
+    expect(nearly.remainingText, "6.0 MB left, 2 days to go", "and what is left, however little")
+
+    let reached = progress(cap)
+    expect(reached.percent, 100, "exactly the cap is 100%")
+    expect(reached.remainingText, "Cap reached", "exactly the cap says it is reached")
+    expect(reached.barText, full, "and the bar is full")
+
+    let over = progress(90 * gb)
+    expect(over.percent, 150, "90 GB of 60 GB is 150%, not held at 100%")
+    expect(over.fraction, 1.5, "the fraction is not clamped either")
+    expect(over.menuText, full + "  150% of 60.0 GB", "the bar stops at full while the figure goes on")
+    expect(over.remainingText, "30.0 GB over the cap", "and it says how far over")
+
+    expect(CapProgress(used: 29, cap: 100, now: Date(), cal: london).percent, 29,
+           "29 of 100 is 29%, worked out in whole numbers, where floating point gives 28.999...")
+    let absurd = CapProgress(used: .max, cap: 1, now: Date(), cal: london)
+    check(absurd.percent == Int.max && absurd.barText == full, "an absurd figure is held at the largest, with no trap")
+
+    // Days to go run from today to the cycle's last day, both counted.
+    expect(progress(gb, at: "2026-09-30T00:00").remainingText, "59.0 GB left, 1 day to go",
+           "on the month's last day there is 1 day to go")
+    expect(progress(gb, at: "2026-09-30T23:59").remainingText, "59.0 GB left, 1 day to go", "up to its last minute")
+    expect(progress(gb, at: "2026-09-01T00:00").remainingText, "59.0 GB left, 30 days to go",
+           "on the month's first day, the whole month is to go")
+    expect(progress(52 * gb, cal: cycle15).remainingText, "8.00 GB left, 16 days to go",
+           "a cycle from the 15th, seen on 29 September, runs to 14 October: 16 days")
+    expect(progress(gb, at: "2026-10-14T12:00", cal: cycle15).remainingText, "59.0 GB left, 1 day to go",
+           "the cycle's last day is the 14th")
+    expect(progress(gb, at: "2026-10-15T00:00", cal: cycle15).remainingText, "59.0 GB left, 31 days to go",
+           "and the next cycle starts on the 15th, 31 days to 14 November")
+    expect(progress(gb, at: "2026-10-20T12:00").remainingText, "59.0 GB left, 12 days to go",
+           "October's extra hour from the clock change makes no extra day")
+
+    // The menu shows the three lines only with the cap on and above 0, and
+    // counts download and upload together, as a provider does.
+    let db = makeDatabase()
+    db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-09-10T09:00")!), iface: "en0",
+                               bytesIn: 50 * gb, bytesOut: 2 * gb)], ssid: ssidPlaceholder, idle: false)
+    let snapshot = MenuSnapshot(aggregator: Aggregator(db: db, cal: london), now: london.parseLocal("2026-09-29T21:30")!)
+    func menu(capEnabled: Bool, capBytes: UInt64) -> [MenuLine] {
+        MenuModel.information(snapshot, options: MenuModel.Options(liveSpeed: false, rateIn: 0, rateOut: 0,
+                                                                    capEnabled: capEnabled, capBytes: capBytes,
+                                                                    perAppSampling: true))
+    }
+    check(!menu(capEnabled: false, capBytes: cap).contains(.header("Cap")), "with the cap off, the menu has no Cap section")
+    check(!menu(capEnabled: true, capBytes: 0).contains(.header("Cap")), "with no figure set, it has none either")
+    let capped = menu(capEnabled: true, capBytes: cap)
+    if let index = capped.firstIndex(of: .header("Cap")), index > 0, index + 2 < capped.count {
+        expect(Array(capped[(index - 1)...(index + 2)]),
+               [.separator, .header("Cap"), .text("▰▰▰▰▰▰▰▰▰▰▱▱  86% of 60.0 GB"), .caption("8.00 GB left, 2 days to go")],
+               "with a cap set, the menu shows the bar and the percentage of 52 GB, down and up, then what is left")
+    } else {
+        check(false, "with a cap set, the menu has a Cap section")
+    }
 }

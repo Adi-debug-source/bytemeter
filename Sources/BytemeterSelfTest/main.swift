@@ -60,6 +60,7 @@ checkAsOfAMomentMatchesThatMoment()
 checkHeadlinesAreOneSet()
 checkRecentEventsStopAtTheMoment()
 checkReadOnlyOpenChangesNothing()
+checkCapSaysWhatIsLeftOrOver()
 runAppChecks()
 runDashboardChecks()
 

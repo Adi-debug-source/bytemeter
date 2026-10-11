@@ -35,6 +35,8 @@ public struct MenuSnapshot {
     public let projection: ProjectionWording
     public let allTime: AllTimeSummary
     public let cal: BytemeterCalendar
+    /// The moment described, for the figures that count days from it.
+    public let now: Date
     public let cycleLabel: String
     public let peakHourText: String
     public let peakDayText: String
@@ -58,6 +60,7 @@ public struct MenuSnapshot {
         projection = headlines.projection
         allTime = headlines.allTime
         self.cal = cal
+        self.now = now
         cycleLabel = cal.cycleLabel(now)
 
         // The peaks are by download, so they are marked ↓.
@@ -147,9 +150,11 @@ public enum MenuModel {
 
         // Shown only when a cap is set in Preferences; off by default.
         if options.capEnabled, options.capBytes > 0 {
+            let cap = CapProgress(used: data.thisMonth.total, cap: options.capBytes, now: data.now, cal: data.cal)
             lines.append(.separator)
             lines.append(.header("Cap"))
-            lines.append(.text(capBarText(used: data.thisMonth.total, cap: options.capBytes)))
+            lines.append(.text(cap.menuText))
+            lines.append(.caption(cap.remainingText))
         }
 
         lines.append(.separator)
@@ -170,12 +175,5 @@ public enum MenuModel {
             lines.append(.text("Per-app sampling is off"))
         }
         return lines
-    }
-
-    public static func capBarText(used: UInt64, cap: UInt64) -> String {
-        let fraction = cap == 0 ? 0 : min(1.0, Double(used) / Double(cap))
-        let filled = Int((fraction * 12).rounded())
-        let bar = String(repeating: "▰", count: filled) + String(repeating: "▱", count: 12 - filled)
-        return "\(bar)  \(Int(fraction * 100))% of \(Units.bytes(cap))"
     }
 }

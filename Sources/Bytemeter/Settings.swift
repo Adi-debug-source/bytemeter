@@ -63,7 +63,8 @@ final class Settings {
     }
 
     // The monthly cap, off by default and set in Preferences. While it is on,
-    // the menu and the dashboard show how much of it has been used.
+    // the menu and the dashboard show how much of it has been used, and what
+    // is left or how far over it the month is.
     var capEnabled: Bool {
         get { get { _capEnabled } }
         set { set({ _capEnabled = newValue }, persist: StateKey.capEnabled, value: newValue ? "1" : "0") }
