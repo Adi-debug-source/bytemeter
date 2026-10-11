@@ -1,5 +1,6 @@
 import AppKit
 import BytemeterCore
+import BytemeterDashboard
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 

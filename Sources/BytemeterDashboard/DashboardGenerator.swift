@@ -8,14 +8,16 @@ import BytemeterCore
 /// data (`DashboardFonts`), so it makes no network requests at all: the page
 /// opens and renders with the network switched off, which is the only honest
 /// way to build a tool that measures network use.
-enum DashboardGenerator {
+public enum DashboardGenerator {
 
     /// The page and its CSV are written side by side under these names, and
     /// the page's export link points at the CSV by name.
-    static let pageFile = "dashboard.html"
-    static let csvFile = "bytemeter_export.csv"
+    public static let pageFile = "dashboard.html"
+    public static let csvFile = "bytemeter_export.csv"
 
-    static func write(data: DashboardData, folder: URL) throws -> URL {
+    /// Writes the page and the CSV into the folder, making it if need be,
+    /// and returns where the page landed.
+    public static func write(data: DashboardData, folder: URL) throws -> URL {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let page = folder.appendingPathComponent(pageFile)
         let csv = folder.appendingPathComponent(csvFile)
@@ -28,7 +30,7 @@ enum DashboardGenerator {
 
     /// The sections in page order. A section with nothing to show, such as
     /// the cap with no cap set, adds nothing.
-    static func html(_ data: DashboardData) -> String {
+    public static func html(_ data: DashboardData) -> String {
         let sections = [masthead(data), hero(data), capPanel(data), hourlyPanel(data), dailyPanel(data),
                         heatmapPanel(data), splitsRow(data), monthlyPanel(data), footer(data)]
         return page(body: sections.joined())
@@ -371,7 +373,7 @@ enum DashboardGenerator {
 
     /// Long format on purpose: one shape of row, so it drops straight into a
     /// spreadsheet or a script without any unpicking of sections.
-    static func csvExport(_ data: DashboardData) -> String {
+    public static func csvExport(_ data: DashboardData) -> String {
         var lines = ["scope,label,bytes_in,bytes_out,total_gb"]
         // Every label goes through CSVCell: process and network names come
         // from outside and could be written to run as a spreadsheet formula.

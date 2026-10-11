@@ -1,5 +1,6 @@
 import Foundation
 import BytemeterCore
+import BytemeterDashboard
 
 /// `Bytemeter --dashboard` builds the dashboard from whatever is already in the
 /// database and prints where it landed, without starting the menu bar app.

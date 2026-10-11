@@ -3,15 +3,22 @@ import BytemeterCore
 
 /// Everything the dashboard shows, gathered in one pass on the database queue
 /// so the page generator itself is pure string work.
-struct DashboardData {
+public struct DashboardData {
 
     /// The preferences the page reads, as plain values, so the page needs
     /// nothing from the app but the engine and these.
-    struct Options {
+    public struct Options {
         var ssidCapture: Bool
         var perAppSampling: Bool
         var capEnabled: Bool
         var capBytes: UInt64
+
+        public init(ssidCapture: Bool, perAppSampling: Bool, capEnabled: Bool, capBytes: UInt64) {
+            self.ssidCapture = ssidCapture
+            self.perAppSampling = perAppSampling
+            self.capEnabled = capEnabled
+            self.capBytes = capBytes
+        }
     }
 
     let generatedAt: Date
@@ -58,7 +65,7 @@ struct DashboardData {
     /// `networkNames` comes from the running app, which knows what macOS has
     /// said. Without it, as from the command line, Location Services is not
     /// consulted and the note only says whether the box is on.
-    init(aggregator: Aggregator, options: Options, now: Date, networkNames: NetworkNames.Status? = nil) {
+    public init(aggregator: Aggregator, options: Options, now: Date, networkNames: NetworkNames.Status? = nil) {
         generatedAt = now
         cal = aggregator.cal
 

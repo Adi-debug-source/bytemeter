@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write Sources/Bytemeter/DashboardFonts.swift from the fonts in Resources/Fonts.
+"""Write Sources/BytemeterDashboard/DashboardFonts.swift from the fonts in Resources/Fonts.
 
 The dashboard carries its typefaces inside the page as base64 woff2, so it
 renders the same with the network off and fetches nothing. The Swift file is
@@ -16,7 +16,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FONT_DIR = ROOT / "Resources" / "Fonts"
-OUT = ROOT / "Sources" / "Bytemeter" / "DashboardFonts.swift"
+OUT = ROOT / "Sources" / "BytemeterDashboard" / "DashboardFonts.swift"
 
 # Family, file, the weight range the file covers, and its licence. Both are
 # variable fonts; the range is the file's own weight axis.
