@@ -23,14 +23,15 @@ are harmless. They name folders that only exist with full Xcode.
 | Part | Does |
 |---|---|
 | `Sources/BytemeterCore` | the engine: counting, the database, the totals. No AppKit, so another platform could use it untouched |
-| `Sources/Bytemeter` | the macOS app: menu bar, sampling, per-app usage, the dashboard, Preferences |
+| `Sources/BytemeterDashboard` | the dashboard page and its CSV export: the figures, the HTML, the styles, the charts and the embedded fonts. Foundation and the engine only, so the self-test can check the page |
+| `Sources/Bytemeter` | the macOS app: menu bar, sampling, per-app usage, Preferences |
 | `Sources/BytemeterSelfTest` | the checks |
 | `VERSION` | the version and build number, and the only place either lives |
 | `Scripts/Info.plist` | template for the app's `Info.plist` |
 | `Scripts/bytemeter.plist` | template for the LaunchAgent that starts it at login |
 | `Resources/AppIcon.icns` | the icon, committed as a binary |
 | `Resources/Fonts/` | the dashboard's two fonts, their licences, and a README on where they came from |
-| `Scripts/make_fonts.py` | writes `Sources/Bytemeter/DashboardFonts.swift` from those fonts |
+| `Scripts/make_fonts.py` | writes `Sources/BytemeterDashboard/DashboardFonts.swift` from those fonts |
 | `Scripts/snapshot.swift` | renders the dashboard to a PNG for the README images |
 | `install.sh` | builds the app, and installs, updates or removes it |
 
@@ -77,10 +78,11 @@ are SIL Open Font License 1.1. They live in `Resources/Fonts/` with their
 licences, `OFL-Fraunces.txt` and `OFL-InterTight.txt`, and a README saying
 where they came from and how to refresh them.
 
-They reach the page through `Sources/Bytemeter/DashboardFonts.swift`, which
-holds them as base64 inside `@font-face` rules. The page carries them, so it
-still makes no network requests. That file is generated, never edited by
-hand, and committed, so building never needs Python. After changing a font:
+They reach the page through
+`Sources/BytemeterDashboard/DashboardFonts.swift`, which holds them as base64
+inside `@font-face` rules. The page carries them, so it still makes no network
+requests. That file is generated, never edited by hand, and committed, so
+building never needs Python. After changing a font:
 
     python3 Scripts/make_fonts.py
 

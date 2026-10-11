@@ -141,11 +141,12 @@ Bytemeter reads `net.link.generic.ifdata.<index>.general` through `sysctl` inste
 
 ### How it is put together
 
-Three targets, and the split is deliberate:
+Four targets, and the split is deliberate:
 
 1. **BytemeterCore** is the engine: reading the interface counters, working out deltas, spotting resets, bucketing by minute, the SQLite schema and every aggregation query. It imports nothing macOS-only, so an iOS version could use it untouched.
-2. **Bytemeter** is the macOS app: the menu bar item, `nettop` sampling, the dashboard generator, preferences, and sleep and wake handling.
-3. **BytemeterSelfTest** is a plain executable, not an XCTest target, for the reason in the next section.
+2. **BytemeterDashboard** builds the dashboard page and its CSV export from the engine: the figures, the HTML, the inline SVG charts and the embedded fonts. It uses Foundation and the engine alone, so the self-test can check the page itself, and another platform could show the same page.
+3. **Bytemeter** is the macOS app: the menu bar item, `nettop` sampling, preferences, and sleep and wake handling.
+4. **BytemeterSelfTest** is a plain executable, not an XCTest target, for the reason in the next section.
 
 ## Build from source and testing
 

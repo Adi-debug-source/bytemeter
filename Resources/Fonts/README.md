@@ -29,8 +29,8 @@ them.
 ## How they reach the page
 
 `Scripts/make_fonts.py` writes them, base64 encoded, into
-`Sources/Bytemeter/DashboardFonts.swift`. That file is committed, so building
-never needs Python. The app's binary carries the fonts; the bundle's
+`Sources/BytemeterDashboard/DashboardFonts.swift`. That file is committed, so
+building never needs Python. The app's binary carries the fonts; the bundle's
 `Contents/Resources/Fonts/` holds this README, `OFL-Fraunces.txt` and
 `OFL-InterTight.txt`.
 
