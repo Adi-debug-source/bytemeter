@@ -4,7 +4,7 @@
 
 A macOS menu bar app that counts every byte your Mac sends and receives.
 
-Bytemeter is a native Swift menu bar app for macOS 13 and later that counts every byte in and out of your Mac's physical network interfaces and reports it in detail. It shows today, this week, this month and all time in the menu bar, and opens a dashboard with an hourly chart, a 30-day trend, a day-against-hour heatmap, per-app and per-interface breakdowns and a CSV export. It makes no network requests of any kind: a tool that measures data use should not spend data, so everything stays on your machine.
+Bytemeter is a native Swift menu bar app for macOS 13.5 and later that counts every byte in and out of your Mac's physical network interfaces and reports it in detail. It shows today, this week, this month and all time in the menu bar, and opens a dashboard with an hourly chart, a 30-day trend, a day-against-hour heatmap, per-app and per-interface breakdowns and a CSV export. It makes no network requests of any kind: a tool that measures data use should not spend data, so everything stays on your machine.
 
 It began as a way to make sense of a shared connection that could not tell one machine's traffic from another's.
 
@@ -14,8 +14,8 @@ The screenshots on this page use generated demo data (`Scripts/make_demo_db.py`)
 
 ## Requirements
 
-- macOS 13 or later.
-- For building from source: the Xcode Command Line Tools (`xcode-select --install`), not full Xcode.
+- macOS 13.5 or later. That is the first release that runs Swift 5.9, which builds Bytemeter.
+- The Xcode Command Line Tools, version 15 or later (`xcode-select --install`), not full Xcode. Both install routes build on your Mac.
 
 ## Install
 

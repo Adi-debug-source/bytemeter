@@ -267,7 +267,8 @@ sips -s format png -Z 256 Resources/AppIcon.icns --out docs/icon.png
 
 ## Known limits
 
-- **macOS 13 and later.**
+- **macOS 13.5 and later**, because building needs Swift 5.9 (the Command Line
+  Tools 15 or later).
 - **Not notarised.** Ad hoc signed only, so there is no prebuilt download.
   Homebrew and a clone both build on the Mac they run on, which avoids
   Gatekeeper's quarantine check.

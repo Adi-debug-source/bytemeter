@@ -10,8 +10,8 @@
 #   ./install.sh --disable-sandbox   passed to swift build, for building inside
 #                                    another sandbox such as Homebrew's
 #
-# --dry-run works with every other option. Needs macOS 13 or later, and to
-# build, the Xcode command line tools: xcode-select --install
+# --dry-run works with every other option. Needs macOS 13.5 or later, and to
+# build, the Xcode command line tools 15 or later: xcode-select --install
 set -eu
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
