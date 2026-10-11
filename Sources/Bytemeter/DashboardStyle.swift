@@ -147,7 +147,7 @@ extension DashboardGenerator {
         /* Each table keeps its own height. Stretched to match the longer one,
            a short table's rows grew tall and an empty one floated its note
            in the middle of a box. */
-        .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; align-items: start; }
+        .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 34px 28px; align-items: start; }
         table { width: 100%; border-collapse: collapse; }
         caption { text-align: left; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
           color: var(--ink-2); padding-bottom: 8px; }
@@ -160,7 +160,6 @@ extension DashboardGenerator {
         .num { text-align: right; white-space: nowrap; }
         td.quiet { color: var(--muted); }
         td.share { width: 60px; }
-        .tables { column-gap: 28px; }
         td.share span { display: block; height: 5px; border-radius: 3px; background: var(--accent-soft); min-width: 2px; }
         td.empty { color: var(--muted); font-size: 12.5px; }
 
