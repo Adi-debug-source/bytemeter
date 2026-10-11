@@ -2,8 +2,8 @@ import Foundation
 
 // MARK: - Rules the app layer applies to outside text
 //
-// In the engine so the self-test can check it directly. It needs nothing
-// from AppKit, and the macOS app is the only thing that calls it.
+// In the engine so the self-test can check it directly. It needs only
+// Foundation, and the macOS app is the only thing that calls it.
 // CSVCell.swift holds the other such rule, for the cells of the CSV export.
 
 /// The monthly cap as typed into Preferences.
