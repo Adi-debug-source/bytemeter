@@ -68,7 +68,7 @@ The menu holds:
 
 Open dashboard writes one dark, self-contained HTML page and opens it. It is regenerated each time, with hand-rolled inline SVG and native SVG tooltips: zero JavaScript, zero network requests. A CSV export sits beside it as a real file.
 
-Seven sections, and an eighth once there are two months of data:
+Seven sections, and an eighth once a second month begins:
 
 1. Today, by hour.
 2. The last 30 days, with a rolling 7-day average.
@@ -108,7 +108,7 @@ Bytemeter aims to be exact about what it can measure, and plain about what it ca
   3. traffic between quitting Bytemeter and restarting the Mac before you open it again. Quitting on its own loses nothing, because the next launch picks up everything since the last reading, and a crash loses nothing either, because it restarts within seconds and does the same;
   4. traffic from before Bytemeter was first installed, which is not counted by design.
 - **Timing.** Figures are kept per minute. A reading that straddles a minute boundary lands in the later minute, so a minute can be out by at most 5 seconds' worth of traffic, and hourly and daily figures the same way, only at their edges. Sleep periods are the exception: the bytes are exact, but their timing is spread evenly and marked as estimated. And if the Mac's clock is ever set ahead by hand and then corrected, new traffic is filed under the later time until the clock catches up; nothing is lost or counted twice.
-- **Rounding on screen.** The menu and the dashboard round for readability: under 10 GB they show two decimals (3.21 GB, so plus or minus 5 MB), and from 10 GB up one decimal (plus or minus 50 MB). The database and the CSV export keep exact byte counts.
+- **Rounding on screen.** The menu and the dashboard round for readability: under 10 GB they show two decimals (3.21 GB, so plus or minus 5 MB), and from 10 GB up one decimal (plus or minus 50 MB). The menu bar figure is shorter, so its width stays steady: one decimal in GB and whole MB below 1 GB. A figure never shows as 1000 of a smaller unit. The database and the CSV export keep exact byte counts.
 - **Per-app figures are a guide, not an exact split.** They come from `nettop` and only ever under-report. On the development Mac about 80% of interface bytes were attributed to an app; the rest belongs to processes that exited between samples, and to traffic `nettop` does not attribute.
 - **Against a provider's or router's figure, expect small differences, not a match to the byte.** A provider or router counts at its own point in the network and in its own way, and a router counts every device on the connection, while Bytemeter counts only what this Mac's own interfaces moved.
 - **Units are decimal** (1 GB = 1,000,000,000 bytes), as providers count; see Counting below.
@@ -155,11 +155,11 @@ swift build -c release                     # build
 swift run -c release BytemeterSelfTest     # run the self-test, 526 checks
 ```
 
-The self-test is a plain executable rather than an XCTest target because XCTest cannot be resolved with the Command Line Tools alone; `swift test` needs a full Xcode install, and this project does not assume one. CI runs the self-test on every push, builds the app bundle from a clean checkout, and verifies its signature.
+The self-test is a plain executable rather than an XCTest target because XCTest is not part of the Command Line Tools, and this project does not assume full Xcode. Swift Testing does run under the Command Line Tools, but it needs Swift 6, which would raise the minimum macOS. CI runs the self-test on every push, builds the app bundle from a clean clone, builds the demo dashboard and checks it fetches nothing, and verifies the bundle's signature.
 
 ### Working with a database directly
 
-After `swift build -c release`, the binary is at `.build/release/Bytemeter`. Two commands work on a database without running the menu bar app, and a script makes a synthetic one:
+After `swift build -c release`, the binary is at `.build/release/Bytemeter`. Two commands work on a database other than the live one, and a script makes a synthetic one:
 
 ```bash
 .build/release/Bytemeter --dashboard <folder> [--as-of <time>]   # build the dashboard as it was at that moment
