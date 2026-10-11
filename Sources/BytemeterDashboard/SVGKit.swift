@@ -13,7 +13,9 @@ enum SVGKit {
     static let accentSoft = "rgba(53,169,159,0.45)"
     static let ink = "#eef1f3"
     static let ink2 = "#a8b1b8"
-    static let muted = "#6d777e"
+    /// Notes, axis labels and table headings, at 11.5 to 13.5 px. 5.10 to 1
+    /// on the page's #0b0d0f, so small text clears WCAG AA's 4.5 to 1.
+    static let muted = "#7a848b"
     static let grid = "#23282c"
     /// A bar chart's zero line, a step brighter than the gridlines, so the
     /// two halves read as one chart.
@@ -155,10 +157,14 @@ enum SVGKit {
     /// Where part of a bar is estimated, the measured part sits next to the
     /// baseline and the estimated part is stacked beyond it, hatched. Bar
     /// heights are unchanged: estimated bytes are real bytes.
+    ///
+    /// `label` names the chart for a screen reader, which reads a
+    /// `role="img"` as one picture and skips the tooltips inside it.
     static func mirroredBars(id: String,
                              values: [(label: String, totals: Totals)],
                              labelEvery: Int,
                              rollingAverage: [Double?]? = nil,
+                             label: String,
                              tooltip: (Int) -> String) -> String {
         let count = max(values.count, 1)
         let width = 1000.0
@@ -181,7 +187,8 @@ enum SVGKit {
         let barWidth = max(2.0, min(slot - 2.0, min(slot * 0.72, 90.0)))
 
         var svg = """
-        <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" role="img" class="chart" preserveAspectRatio="none">
+        <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" role="img" aria-label="\(escape(label))" class="chart" \
+        preserveAspectRatio="none">
         """
         if values.contains(where: { $0.totals.estimatedTotal > 0 }) { svg += barHatchDefs(id) }
 
@@ -298,7 +305,8 @@ enum SVGKit {
     /// from the bottom of the cell, so a night the Mac slept through reads as
     /// fully hatched rather than as steady overnight use. That share is a
     /// ratio, so it is worked out from the totals: averaging cannot change it.
-    static func heatmap(id: String, cells: [HeatCell], estimateNote: (HeatCell) -> String) -> String {
+    /// `label` names the chart, as for the bars.
+    static func heatmap(id: String, cells: [HeatCell], label: String, estimateNote: (HeatCell) -> String) -> String {
         let cellW = 38.0
         let cellH = heatCellHeight
         let gap = heatGap
@@ -309,7 +317,8 @@ enum SVGKit {
 
         let peak = cells.map(\.average.total).max() ?? 0
         var svg = """
-        <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" role="img" class="chart heat" preserveAspectRatio="xMidYMid meet">
+        <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" role="img" aria-label="\(escape(label))" class="chart heat" \
+        preserveAspectRatio="xMidYMid meet">
         """
         if cells.contains(where: { $0.totals.estimatedTotal > 0 }) { svg += heatHatchDefs(id) }
 
@@ -370,20 +379,25 @@ enum SVGKit {
     }
 
     /// One horizontal bar split two ways. The idle share carries a hatch as well
-    /// as a lighter fill, so the split does not rest on colour alone.
-    static func splitBar(activeBytes: UInt64, idleBytes: UInt64) -> String {
+    /// as a lighter fill, so the split does not rest on colour alone. `label`
+    /// gives a screen reader both figures, since the tooltips are hidden from it.
+    static func splitBar(activeBytes: UInt64, idleBytes: UInt64, label: String) -> String {
         let total = Double(activeBytes &+ idleBytes)
         let width = 1000.0
         let height = 34.0
+        let open = """
+        <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" role="img" aria-label="\(escape(label))" class="chart" \
+        preserveAspectRatio="none">
+        """
         guard total > 0 else {
             return """
-            <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" class="chart" preserveAspectRatio="none">\
+            \(open)\
             <rect x="0" y="6" width="\(fmt(width))" height="22" rx="4" fill="\(grid)"/></svg>
             """
         }
         let activeWidth = Double(activeBytes) / total * width
         return """
-        <svg viewBox="0 0 \(fmt(width)) \(fmt(height))" class="chart" preserveAspectRatio="none">
+        \(open)
         <defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
         <rect width="8" height="8" fill="\(idleGround)"/>
         <line x1="0" y1="0" x2="0" y2="8" stroke="\(accent)" stroke-width="2.5" opacity="0.6"/></pattern></defs>

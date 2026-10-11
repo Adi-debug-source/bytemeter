@@ -102,7 +102,8 @@ public enum DashboardGenerator {
             <h2>Today by hour</h2>
             <p class="note">\(esc(peakHourNote(data)))</p>
           </div>
-          \(SVGKit.mirroredBars(id: "hourly", values: hourValues, labelEvery: 2) { index in
+          \(SVGKit.mirroredBars(id: "hourly", values: hourValues, labelEvery: 2,
+                                label: "Download and upload for each hour of today.") { index in
               let totals = data.hourly[index]
               return "\(SVGKit.hourSpan(index)), down \(Units.bytes(totals.bytesIn)), "
                    + "up \(Units.bytes(totals.bytesOut))." + estimateNote(totals)
@@ -115,13 +116,17 @@ public enum DashboardGenerator {
     private static func dailyPanel(_ data: DashboardData) -> String {
         let cal = data.cal
         let dayValues = data.daily.map { (label: $0.label, totals: $0.totals) }
+        // The average is named only when its line is drawn, as in the key.
+        let label = "Download and upload for each of the last 30 days"
+            + (SVGKit.drawsAverage(data.rollingAverage) ? ", with a seven day average." : ".")
         return """
         <section class="panel">
           <div class="panel-head">
             <h2>Last 30 days</h2>
             <p class="note">The dashed line averages the seven whole days up to each day, so one heavy day does not read as a trend. It starts once a week has been counted and stops at yesterday, because today is not over yet.</p>
           </div>
-          \(SVGKit.mirroredBars(id: "daily", values: dayValues, labelEvery: 3, rollingAverage: data.rollingAverage) { index in
+          \(SVGKit.mirroredBars(id: "daily", values: dayValues, labelEvery: 3, rollingAverage: data.rollingAverage,
+                                label: label) { index in
               let entry = data.daily[index]
               if let since = data.allTime.since, cal.startOfDay(entry.date, offsetBy: 1) <= since {
                   return "\(cal.fullDayLabel(entry.date)): before Bytemeter started counting."
@@ -143,7 +148,7 @@ public enum DashboardGenerator {
             <h2>When the data actually goes</h2>
             <p class="note">Day of the week against hour of the day, as an average over the last four whole weeks. Darker is quieter.</p>
           </div>
-          <div class="heat-wrap">\(SVGKit.heatmap(id: "heat", cells: data.heat) { estimateNote($0.average) })</div>
+          <div class="heat-wrap">\(SVGKit.heatmap(id: "heat", cells: data.heat, label: heatmapLabel) { estimateNote($0.average) })</div>
           \(SVGKit.heatLegend(peak: heatPeak, estimateKey: SVGKit.heatShowsEstimate(data.heat)
               ? "<span class=\"key est-key\"><i class=\"swatch heat-est\"></i>Hatched from the bottom: the estimated "
                 + "share. \(asleepLine)</span>"
@@ -154,7 +159,9 @@ public enum DashboardGenerator {
 
     /// Top talkers beside the smaller splits.
     private static func splitsRow(_ data: DashboardData) -> String {
-        """
+        let splitLabel = "Active \(Units.bytes(data.activeTotals.total)) and idle "
+            + "\(Units.bytes(data.idleTotals.total)), over the last 30 days."
+        return """
         <div class="row">
           <section class="panel">
             <div class="panel-head">
@@ -168,7 +175,7 @@ public enum DashboardGenerator {
             <div class="panel-head"><h2>Idle against active</h2>
               <p class="note">Idle means no keyboard, mouse or trackpad input for five minutes or more, over the last 30 days.</p>
             </div>
-            \(SVGKit.splitBar(activeBytes: data.activeTotals.total, idleBytes: data.idleTotals.total))
+            \(SVGKit.splitBar(activeBytes: data.activeTotals.total, idleBytes: data.idleTotals.total, label: splitLabel))
             <dl class="mini">
               \(miniRow("Active", data.activeTotals.total, of: data.activeTotals.total &+ data.idleTotals.total))
               \(miniRow("Idle", data.idleTotals.total, of: data.activeTotals.total &+ data.idleTotals.total))
@@ -187,12 +194,13 @@ public enum DashboardGenerator {
     private static func monthlyPanel(_ data: DashboardData) -> String {
         guard data.monthly.count > 1 else { return "" }
         let monthValues = data.monthly.map { (label: $0.label, totals: $0.totals) }
-        let note = data.cal.cycleStartDay == 1
-            ? "" : "\n    <p class=\"note\">Each bar is a billing cycle, starting on the day shown.</p>"
+        let onACycle = data.cal.cycleStartDay != 1
+        let note = onACycle ? "\n    <p class=\"note\">Each bar is a billing cycle, starting on the day shown.</p>" : ""
+        let label = "Download and upload for each \(onACycle ? "billing cycle" : "month")."
         return """
         <section class="panel">
           <div class="panel-head"><h2>Month by month</h2>\(note)</div>
-          \(SVGKit.mirroredBars(id: "monthly", values: monthValues, labelEvery: 1) { index in
+          \(SVGKit.mirroredBars(id: "monthly", values: monthValues, labelEvery: 1, label: label) { index in
               let entry = data.monthly[index]
               return "\(entry.label), down \(Units.bytes(entry.totals.bytesIn)), "
                    + "up \(Units.bytes(entry.totals.bytesOut))." + estimateNote(entry.totals)
@@ -259,6 +267,10 @@ public enum DashboardGenerator {
         """
     }
 
+    /// What a screen reader is told the heatmap shows.
+    private static let heatmapLabel = "Average download and upload by day of the week and hour of the day, "
+        + "over the last four whole weeks."
+
     /// The one plain-language line that explains every hatched mark.
     private static let asleepLine = "The Mac was asleep or Bytemeter was not running, "
         + "so the traffic across that gap is spread evenly over it."
@@ -302,11 +314,12 @@ public enum DashboardGenerator {
                 return "<tr><td colspan=\"4\" class=\"empty\">Nothing recorded yet.</td></tr>"
             }
             let peak = talkers.map(\.totals.total).max() ?? 1
+            // The stylesheet cuts a long name short, so its title holds all of it.
             return talkers.map { talker in
                 let share = peak == 0 ? 0 : Double(talker.totals.total) / Double(peak) * 100
                 return """
                 <tr>
-                  <td class="name">\(esc(talker.name))</td>
+                  <td class="name" title="\(esc(talker.name))">\(esc(talker.name))</td>
                   <td class="num">\(esc(Units.bytes(talker.totals.bytesIn)))</td>
                   <td class="num quiet">\(esc(Units.bytes(talker.totals.bytesOut)))</td>
                   <td class="share"><span style="width:\(String(format: "%.1f", share))%"></span></td>

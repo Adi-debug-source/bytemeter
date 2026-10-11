@@ -22,6 +22,8 @@ func runDashboardChecks() {
     checkHeatmapCellsAverageWholeWeeks(fortyDays)
     checkCapPanelSaysWhatIsLeftOrOver()
     checkLabelsNameTheirPeriod(months: fortyDays, cycles: fortyDaysOnACycle)
+    checkChartsAndNamesCanBeRead(fewDays: fewDays, fortyDays: fortyDays, cycles: fortyDaysOnACycle)
+    checkMutedTextMeetsAA(fewDays)
 }
 
 // MARK: - The fixtures
@@ -248,4 +250,76 @@ private func checkLabelsNameTheirPeriod(months: BuiltPage, cycles: BuiltPage) {
         check(built.html.contains("Idle means no keyboard, mouse or trackpad input for five minutes or more, over the last 30 days."),
               "on \(name), the idle note names every kind of input that counts")
     }
+}
+
+// MARK: - A screen reader can tell what each chart shows, and a cut-short name can be read whole
+
+private func checkChartsAndNamesCanBeRead(fewDays: BuiltPage, fortyDays: BuiltPage, cycles: BuiltPage) {
+    /// The aria-label of each chart, in page order, or "" for one without.
+    func chartLabels(_ html: String) -> [String] {
+        html.components(separatedBy: "role=\"img\"").dropFirst().map { rest in
+            let tag = rest.components(separatedBy: ">").first ?? ""
+            guard tag.hasPrefix(" aria-label=\"") else { return "" }
+            return tag.dropFirst(" aria-label=\"".count).components(separatedBy: "\"").first ?? ""
+        }
+    }
+    func count(_ text: String, in html: String) -> Int { html.components(separatedBy: text).count - 1 }
+
+    // Hourly, daily, the heatmap and the idle split, and Month by month once
+    // a second month has begun.
+    for (name, built, charts) in [("few days", fewDays, 4), ("40 days", fortyDays, 5), ("billing cycle", cycles, 5)] {
+        let labels = chartLabels(built.html)
+        expect(labels.count, charts, "the \(name) page draws \(charts) charts, each a role=\"img\"")
+        check(!labels.contains(""), "every chart on the \(name) page has an aria-label")
+        expect(count("aria-label=", in: built.html), count("<svg ", in: built.html),
+               "the \(name) page has one aria-label for each chart drawn, and none elsewhere")
+        let names = count("<td class=\"name\"", in: built.html)
+        check(names > 0 || name != "few days", "the few days page lists processes")
+        expect(count("<td class=\"name\" title=\"", in: built.html), names,
+               "every process name on the \(name) page carries its whole name as a title")
+    }
+    check(fewDays.html.contains("<td class=\"name\" title=\"&lt;b&gt;bold&lt;/b&gt;\">"), "and the title is escaped")
+
+    // 66 MB an hour, all active, from 00:00 on 9 September to noon on 8 October: 46.728 GB.
+    let heatmap = "Average download and upload by day of the week and hour of the day, over the last four whole weeks."
+    expect(chartLabels(fortyDays.html), [
+        "Download and upload for each hour of today.",
+        "Download and upload for each of the last 30 days, with a seven day average.",
+        heatmap,
+        "Active 46.7 GB and idle 0 B, over the last 30 days.",
+        "Download and upload for each month.",
+    ], "on 40 days each chart says what it shows, and the idle split gives both figures")
+    expect(chartLabels(cycles.html).last, "Download and upload for each billing cycle.",
+           "on a billing cycle Month by month says each bar is a cycle")
+    expect(chartLabels(fewDays.html).dropFirst().first, "Download and upload for each of the last 30 days.",
+           "with no seven day average drawn, the 30 day chart does not name one")
+    expect(chartLabels(fewDays.html).last, "Active 3.18 GB and idle 528 MB, over the last 30 days.",
+           "the idle split names both its figures, the sleep's spread traffic as idle")
+}
+
+// MARK: - Muted text is readable on the page
+
+/// The WCAG 2 contrast ratio of two #rrggbb colours.
+private func contrast(_ first: String, _ second: String) -> Double {
+    func luminance(_ hex: String) -> Double {
+        let value = Int(hex.dropFirst(), radix: 16) ?? 0
+        let channels = [value >> 16, value >> 8 & 0xff, value & 0xff].map { channel -> Double in
+            let c = Double(channel) / 255
+            return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+    }
+    let (a, b) = (luminance(first), luminance(second))
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+}
+
+private func checkMutedTextMeetsAA(_ built: BuiltPage) {
+    /// A colour the stylesheet sets in :root, such as --muted.
+    func colour(_ name: String) -> String {
+        String(built.html.components(separatedBy: "\(name): ").dropFirst().first?.prefix(7) ?? "")
+    }
+    let muted = colour("--muted"), plane = colour("--plane")
+    check(contrast(muted, plane) >= 4.5,
+          "notes, axis labels and table headings in \(muted) on \(plane) clear WCAG AA's 4.5 to 1, at \(contrast(muted, plane))")
+    check(contrast("#6d777e", "#0b0d0f") < 4.5, "where the earlier grey, at 4.26 to 1, did not")
 }
