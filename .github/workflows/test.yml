@@ -20,6 +20,16 @@ jobs:
         run: swift build -c release
       - name: Self-test
         run: swift run -c release BytemeterSelfTest
+      - name: The demo database builds a dashboard that fetches nothing
+        # The pipeline the README images come from, end to end: the synthetic
+        # database, then --dashboard on it, then the promise that the page it
+        # writes has no script and names no web address.
+        run: |
+          python3 Scripts/make_demo_db.py "$RUNNER_TEMP/demo" --now 2026-09-29T21:30
+          .build/release/Bytemeter --dashboard "$RUNNER_TEMP/demo" --as-of 2026-09-29T21:30
+          test -s "$RUNNER_TEMP/demo/dashboard.html"
+          test -s "$RUNNER_TEMP/demo/bytemeter_export.csv"
+          if grep -Eiq '<script|https?:' "$RUNNER_TEMP/demo/dashboard.html"; then exit 1; fi
       - name: Install script parses
         run: bash -n install.sh
       - name: Homebrew formula parses
