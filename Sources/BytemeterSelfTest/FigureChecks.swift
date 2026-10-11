@@ -118,6 +118,25 @@ func checkMonthByMonthKeepsTheNewestMonths() {
           "a longer history keeps the newest \(Aggregator.maxMonths) months, got \(longRows.count) from \(longRows.first?.label ?? "") to \(longRows.last?.label ?? "")")
 }
 
+// MARK: - Month by month names a billing cycle by its first day
+
+func checkMonthByMonthNamesItsPeriods() {
+    let db = makeDatabase()
+    for (local, bytes) in [("2026-08-20T10:00", 1_000), ("2026-09-10T10:00", 2_000),
+                           ("2026-09-20T10:00", 30_000), ("2026-10-02T10:00", 400_000)] as [(String, UInt64)] {
+        db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal(local)!), iface: "en0",
+                                   bytesIn: bytes, bytesOut: 0)], ssid: ssidPlaceholder, idle: false)
+    }
+    let now = london.parseLocal("2026-10-08T12:00")!
+    let months = Aggregator(db: db, cal: london).monthly(now: now)
+    expect(months.map(\.label), ["Aug 2026", "Sep 2026", "Oct 2026"], "calendar months are named by month")
+    expect(months.map(\.totals.bytesIn), [1_000, 32_000, 400_000], "and hold their own months")
+    let cycle15 = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
+    let cycles = Aggregator(db: db, cal: cycle15).monthly(now: now)
+    expect(cycles.map(\.label), ["15 Aug 2026", "15 Sep 2026"], "a billing cycle from the 15th is named by its first day")
+    expect(cycles.map(\.totals.bytesIn), [3_000, 430_000], "and holds the 15th to the 14th")
+}
+
 // MARK: - Averages and the projection count from when counting began
 
 func checkAveragesCountFromWhenCountingBegan() {

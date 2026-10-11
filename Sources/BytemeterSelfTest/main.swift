@@ -61,6 +61,7 @@ checkHeadlinesAreOneSet()
 checkRecentEventsStopAtTheMoment()
 checkReadOnlyOpenChangesNothing()
 checkCapSaysWhatIsLeftOrOver()
+checkMonthByMonthNamesItsPeriods()
 runAppChecks()
 runDashboardChecks()
 

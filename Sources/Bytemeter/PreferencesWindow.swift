@@ -87,7 +87,7 @@ final class PreferencesWindow: NSWindowController {
         cycleField.translatesAutoresizingMaskIntoConstraints = false
         cycleField.widthAnchor.constraint(equalToConstant: 140).isActive = true
         stack.addArrangedSubview(labelled("Cycle starts on day", cycleField))
-        stack.addArrangedSubview(caption("1 means calendar months, the usual case. Change it only if your provider bills from a different day of the month."))
+        stack.addArrangedSubview(caption("From 1 to 28. 1 means calendar months, the usual case. Change it only if your provider bills from a different day of the month."))
 
         guard let content = window?.contentView else { return }
         content.addSubview(stack)

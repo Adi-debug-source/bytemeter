@@ -229,6 +229,10 @@ public struct Aggregator {
     /// more than `maxMonths`, and the newest are the ones kept: a stray row
     /// years in the past, from a clock that was wrong for a moment, must not
     /// push the current month off the end.
+    ///
+    /// A calendar month is labelled "Aug 2026". A billing cycle is labelled
+    /// by its first day, "15 Aug 2026", because it is not a month: most of a
+    /// cycle from the 15th of August falls in September.
     public func monthly(now: Date) -> [LabelledTotals] {
         let current = cal.startOfCycle(now)
         let oldestNoon = cal.noon(of: current)
@@ -244,7 +248,8 @@ public struct Aggregator {
             let next = cal.endOfCycle(cursor)
             let month = cal.range(from: cursor, to: next)
             let totals = totals(MinuteRange(start: month.start, end: min(month.end, end)))
-            out.append(LabelledTotals(label: cal.monthLabel(cursor), date: cursor, totals: totals))
+            let label = cal.cycleStartDay == 1 ? cal.monthLabel(cursor) : cal.dateLabel(cursor)
+            out.append(LabelledTotals(label: label, date: cursor, totals: totals))
             cursor = next
         }
         return out
@@ -263,8 +268,9 @@ public struct Aggregator {
         return out
     }
 
-    /// Idle against active. Idle means no keyboard or mouse input for five
-    /// minutes when the bucket was written.
+    /// Idle against active. Idle means no keyboard, mouse or trackpad input
+    /// for five minutes or more when the bucket was written; the dashboard
+    /// asks for it over the last 30 days.
     public func idleSplit(_ range: MinuteRange) -> (idle: Totals, active: Totals) {
         var idle = Totals()
         var active = Totals()

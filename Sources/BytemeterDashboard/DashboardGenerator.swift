@@ -161,33 +161,37 @@ public enum DashboardGenerator {
               <h2>Top talkers</h2>
               <p class="note">\(esc(topTalkerNote(data)))</p>
             </div>
-            \(talkerTable(today: data.topTalkersToday, month: data.topTalkersMonth))
+            \(talkerTable(today: data.topTalkersToday, month: data.topTalkersMonth,
+                          monthCaption: data.cal.cycleStartDay == 1 ? "This month" : "This cycle"))
           </section>
           <section class="panel side">
             <div class="panel-head"><h2>Idle against active</h2>
-              <p class="note">Idle means no keyboard or trackpad input for five minutes or more, over the last 30 days.</p>
+              <p class="note">Idle means no keyboard, mouse or trackpad input for five minutes or more, over the last 30 days.</p>
             </div>
             \(SVGKit.splitBar(activeBytes: data.activeTotals.total, idleBytes: data.idleTotals.total))
             <dl class="mini">
               \(miniRow("Active", data.activeTotals.total, of: data.activeTotals.total &+ data.idleTotals.total))
               \(miniRow("Idle", data.idleTotals.total, of: data.activeTotals.total &+ data.idleTotals.total))
             </dl>
-            <div class="panel-head tight"><h2>Per interface</h2></div>
+            <div class="panel-head tight"><h2>Per interface, last 30 days</h2></div>
             \(breakdownList(data.byInterface))
-            <div class="panel-head tight"><h2>Per network</h2></div>
+            <div class="panel-head tight"><h2>Per network, last 30 days</h2></div>
             \(networkSection(data))
           </section>
         </div>
         """
     }
 
-    /// Only once a second month has begun.
+    /// Only once a second month has begun. On a billing cycle each bar is
+    /// labelled by the day its cycle starts, and the note says so.
     private static func monthlyPanel(_ data: DashboardData) -> String {
         guard data.monthly.count > 1 else { return "" }
         let monthValues = data.monthly.map { (label: $0.label, totals: $0.totals) }
+        let note = data.cal.cycleStartDay == 1
+            ? "" : "\n    <p class=\"note\">Each bar is a billing cycle, starting on the day shown.</p>"
         return """
         <section class="panel">
-          <div class="panel-head"><h2>Month by month</h2></div>
+          <div class="panel-head"><h2>Month by month</h2>\(note)</div>
           \(SVGKit.mirroredBars(id: "monthly", values: monthValues, labelEvery: 1) { index in
               let entry = data.monthly[index]
               return "\(entry.label), down \(Units.bytes(entry.totals.bytesIn)), "
@@ -290,7 +294,9 @@ public enum DashboardGenerator {
         return "<div class=\"legend keys\">\(items)</div>"
     }
 
-    private static func talkerTable(today: [TopTalker], month: [TopTalker]) -> String {
+    /// `monthCaption` names the second table's period: this month, or this
+    /// cycle when a billing cycle starts on another day.
+    private static func talkerTable(today: [TopTalker], month: [TopTalker], monthCaption: String) -> String {
         func rows(_ talkers: [TopTalker]) -> String {
             guard !talkers.isEmpty else {
                 return "<tr><td colspan=\"4\" class=\"empty\">Nothing recorded yet.</td></tr>"
@@ -319,7 +325,7 @@ public enum DashboardGenerator {
         return """
         <div class="tables">
         \(table("Today", today))
-        \(table("This month", month))
+        \(table(monthCaption, month))
         </div>
         """
     }

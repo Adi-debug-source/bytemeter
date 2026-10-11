@@ -12,6 +12,7 @@ import BytemeterDashboard
 func runDashboardChecks() {
     let fewDays = BuiltPage(fewDaysDatabase(), now: fixtureMoment)
     let fortyDays = BuiltPage(fortyUniformDaysDatabase(), now: fixtureMoment)
+    let fortyDaysOnACycle = BuiltPage(fortyUniformDaysDatabase(), now: fixtureMoment, cal: cycleFrom15th)
     checkPageFetchesNothing(["few days": fewDays, "40 days": fortyDays])
     checkOutsideNamesAreEscaped(fewDays)
     checkCSVLinesHaveFiveFields(["few days": fewDays, "40 days": fortyDays])
@@ -20,6 +21,7 @@ func runDashboardChecks() {
     checkAverageLineOnlyOverAWholeWeek(fewDays: fewDays, fortyDays: fortyDays)
     checkHeatmapCellsAverageWholeWeeks(fortyDays)
     checkCapPanelSaysWhatIsLeftOrOver()
+    checkLabelsNameTheirPeriod(months: fortyDays, cycles: fortyDaysOnACycle)
 }
 
 // MARK: - The fixtures
@@ -27,6 +29,10 @@ func runDashboardChecks() {
 /// A Thursday at noon in London, well clear of a clock change, so every
 /// local hour of the last 40 days has exactly one row in the uniform fixture.
 private let fixtureMoment = "2026-10-08T12:00"
+
+/// A billing cycle from the 15th, in London. As of the fixture moment, the
+/// 40 uniform days span the cycles from 15 August and 15 September.
+private let cycleFrom15th = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
 
 /// A page and its CSV, made from one database as of one moment. Calendar
 /// months and no cap unless a check says otherwise.
@@ -202,8 +208,8 @@ private func checkCapPanelSaysWhatIsLeftOrOver() {
 
     // 66 MB an hour from 00:00 on 15 September to 12:00 on 8 October is
     // 37.224 GB, down and up together. The cycle's last day is 14 October.
-    let cycle15 = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
-    let under = capPanel(BuiltPage(fortyUniformDaysDatabase(), now: fixtureMoment, cal: cycle15, capBytes: 40_000_000_000))
+    let under = capPanel(BuiltPage(fortyUniformDaysDatabase(), now: fixtureMoment, cal: cycleFrom15th,
+                                   capBytes: 40_000_000_000))
     expect(under.note, "37.2 GB of 40.0 GB used, 93%. 2.78 GB left, 7 days to go.",
            "the cap panel gives what is used, the percentage, and what is left for how long")
     expect(under.width, "93%", "and its bar is filled to the percentage")
@@ -213,4 +219,33 @@ private func checkCapPanelSaysWhatIsLeftOrOver() {
     expect(over.note, "11.9 GB of 10.0 GB used, 118%. 1.88 GB over the cap.",
            "past the cap, the panel gives the real percentage and how far over")
     expect(over.width, "100%", "while its bar stops at full")
+}
+
+// MARK: - Labels say which period they cover
+
+private func checkLabelsNameTheirPeriod(months: BuiltPage, cycles: BuiltPage) {
+    func monthRows(_ built: BuiltPage) -> [String] {
+        built.csvRows.filter { $0.first == "month" }.map { $0.count > 1 ? $0[1] : "" }
+    }
+    let note = "Each bar is a billing cycle, starting on the day shown."
+
+    check(months.html.contains("<caption>This month</caption>") && !months.html.contains("<caption>This cycle"),
+          "on calendar months, the second Top talkers table is this month")
+    check(!months.html.contains(note), "and Month by month has no billing cycle note")
+    expect(monthRows(months), ["Aug 2026", "Sep 2026", "Oct 2026"], "and the CSV's month rows are named by month")
+
+    check(cycles.html.contains("<caption>This cycle</caption>") && !cycles.html.contains("<caption>This month"),
+          "on a billing cycle from the 15th, the second Top talkers table is this cycle")
+    check(panel(cycles.html, heading: "Month by month").contains("<p class=\"note\">\(note)</p>"),
+          "and Month by month says each bar is a billing cycle")
+    expect(monthRows(cycles), ["15 Aug 2026", "15 Sep 2026"],
+           "and the CSV's month rows are named by the day each cycle starts, under the same scope")
+    check(cycles.html.contains(">15 Sep 2026</text>"), "as are the bars")
+
+    for (name, built) in [("calendar months", months), ("a billing cycle", cycles)] {
+        check(built.html.contains("<h2>Per interface, last 30 days</h2>") && built.html.contains("<h2>Per network, last 30 days</h2>"),
+              "on \(name), the interface and network headings say they cover the last 30 days")
+        check(built.html.contains("Idle means no keyboard, mouse or trackpad input for five minutes or more, over the last 30 days."),
+              "on \(name), the idle note names every kind of input that counts")
+    }
 }
