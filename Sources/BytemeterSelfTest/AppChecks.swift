@@ -113,24 +113,6 @@ private func checkProjectionWording() {
 
 // MARK: - CSV cells cannot run as formulas
 
-/// A small RFC 4180 reader for one line, so the checks read cells back the
-/// way a spreadsheet would rather than comparing strings by eye.
-private func readCSVLine(_ line: String) -> [String] {
-    var cells: [String] = [], cell = "", quoted = false
-    var chars = Array(line.unicodeScalars)[...]
-    while let c = chars.popFirst() {
-        if quoted {
-            if c == "\"" {
-                if chars.first == "\"" { cell.unicodeScalars.append("\""); chars.removeFirst() } else { quoted = false }
-            } else { cell.unicodeScalars.append(c) }
-        } else if c == "\"" { quoted = true
-        } else if c == "," { cells.append(cell); cell = ""
-        } else { cell.unicodeScalars.append(c) }
-    }
-    cells.append(cell)
-    return cells
-}
-
 private func checkCSVCells() {
     for start in ["=", "+", "-", "@", "\t", "\r"] {
         let hostile = start + "HYPERLINK(\"http://example.invalid\")"

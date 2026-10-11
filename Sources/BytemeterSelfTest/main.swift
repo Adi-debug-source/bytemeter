@@ -61,6 +61,7 @@ checkHeadlinesAreOneSet()
 checkRecentEventsStopAtTheMoment()
 checkReadOnlyOpenChangesNothing()
 runAppChecks()
+runDashboardChecks()
 
 // MARK: - Result
 

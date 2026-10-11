@@ -4,8 +4,8 @@ import BytemeterCore
 
 // What every check file shares: the counters and the two ways to record a
 // check, the scratch folder every database goes in, and the helpers more than
-// one subject uses to build a database or read one back. main.swift runs the
-// checks in order and prints the result.
+// one subject uses to build a database or read one back, or to read a line of
+// the CSV export. main.swift runs the checks in order and prints the result.
 
 var checksRun = 0
 var failures: [String] = []
@@ -113,6 +113,26 @@ func localHourTotals(_ db: Database, _ cal: BytemeterCalendar) -> [String: UInt6
         out["\(c.year!)-\(c.month!)-\(c.day!) \(c.hour!)", default: 0] += row.uint(1)
     }
     return out
+}
+
+// MARK: - Reading the CSV export back
+
+/// A small RFC 4180 reader for one line, so the checks read cells back the
+/// way a spreadsheet would rather than comparing strings by eye.
+func readCSVLine(_ line: String) -> [String] {
+    var cells: [String] = [], cell = "", quoted = false
+    var chars = Array(line.unicodeScalars)[...]
+    while let c = chars.popFirst() {
+        if quoted {
+            if c == "\"" {
+                if chars.first == "\"" { cell.unicodeScalars.append("\""); chars.removeFirst() } else { quoted = false }
+            } else { cell.unicodeScalars.append(c) }
+        } else if c == "\"" { quoted = true
+        } else if c == "," { cells.append(cell); cell = ""
+        } else { cell.unicodeScalars.append(c) }
+    }
+    cells.append(cell)
+    return cells
 }
 
 // MARK: - Writing as the sampler does
