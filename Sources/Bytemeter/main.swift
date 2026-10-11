@@ -9,7 +9,7 @@ switch LaunchOptions.parse(CommandLine.arguments) {
 case .success(let parsed):
     options = parsed
 case .failure(let error):
-    FileHandle.standardError.write(Data("Bytemeter: \(error.message)\n\n\(LaunchOptions.usage)\n".utf8))
+    logError("Bytemeter: \(error.message)\n\n\(LaunchOptions.usage)")
     exit(2)
 }
 

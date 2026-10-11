@@ -37,17 +37,17 @@ final class DemoDelegate: NSObject, NSApplicationDelegate {
     /// Opens the demo database, or says on standard error why it will not.
     static func make(folder: String, asOf: Date?) -> DemoDelegate? {
         let url = URL(fileURLWithPath: folder, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
-        let real = AppDelegate.supportFolder.standardizedFileURL.resolvingSymlinksInPath()
+        let real = DataFolder.url.standardizedFileURL.resolvingSymlinksInPath()
         guard url.path != real.path else {
-            complain("--demo will not open Bytemeter's own data folder. It is for a demo database, such as "
+            logError("--demo will not open Bytemeter's own data folder. It is for a demo database, such as "
                      + "one made by Scripts/make_demo_db.py.")
             return nil
         }
         do {
-            let db = try Database(readOnlyPath: url.appendingPathComponent("bytemeter.db").path)
+            let db = try Database(readOnlyPath: DataFolder.database(in: url).path)
             return DemoDelegate(db: db, asOf: asOf)
         } catch {
-            complain("--demo could not open the demo database: \(error).")
+            logError("--demo could not open the demo database: \(error).")
             return nil
         }
     }
@@ -62,16 +62,12 @@ final class DemoDelegate: NSObject, NSApplicationDelegate {
                                               autosaveName: "BytemeterDemo") { body in
             body(Aggregator(db: database, cal: BytemeterCalendar(cycleStartDay: settings.cycleStartDay)))
         }
-        controller.onOpenDashboard = { Self.complain("Open dashboard does nothing in demo mode.") }
-        controller.onOpenPreferences = { Self.complain("Preferences do nothing in demo mode.") }
+        controller.onOpenDashboard = { logError("Open dashboard does nothing in demo mode.") }
+        controller.onOpenPreferences = { logError("Preferences do nothing in demo mode.") }
         statusController = controller
 
         let moment = asOf.map { "as of " + BytemeterCalendar().timestampLabel($0) } ?? "as of now"
-        Self.complain("Bytemeter demo: showing \(database.path), \(moment). Read only. "
-                      + "Choose Quit from its menu to end it.")
-    }
-
-    private static func complain(_ message: String) {
-        FileHandle.standardError.write(Data((message + "\n").utf8))
+        logError("Bytemeter demo: showing \(database.path), \(moment). Read only. "
+                 + "Choose Quit from its menu to end it.")
     }
 }

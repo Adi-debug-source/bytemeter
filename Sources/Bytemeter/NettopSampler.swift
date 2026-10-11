@@ -55,7 +55,7 @@ final class NettopSampler {
         process.standardInput = FileHandle.nullDevice
 
         do { try process.run() } catch {
-            FileHandle.standardError.write(Data("Bytemeter: could not run nettop: \(error)\n".utf8))
+            logError("Bytemeter: could not run nettop: \(error)")
             return nil
         }
 
@@ -77,7 +77,7 @@ final class NettopSampler {
         watchdog.cancel()
 
         guard !timedOut.get(), process.terminationStatus == 0 else {
-            FileHandle.standardError.write(Data("Bytemeter: nettop sample discarded, incomplete output.\n".utf8))
+            logError("Bytemeter: nettop sample discarded, incomplete output.")
             return nil
         }
         return String(data: data, encoding: .utf8)

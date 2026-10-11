@@ -217,7 +217,7 @@ final class Sampler {
         do {
             try Maintenance.runIfDue(db: db, now: Date())
         } catch {
-            FileHandle.standardError.write(Data("Bytemeter: the tidy up failed and was rolled back: \(error)\n".utf8))
+            logError("Bytemeter: the tidy up failed and was rolled back: \(error)")
         }
     }
 

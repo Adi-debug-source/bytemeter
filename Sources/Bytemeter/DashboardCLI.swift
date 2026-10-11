@@ -17,8 +17,8 @@ enum DashboardCLI {
     /// reproduced at any hour; it is passed through as `now`, never faked.
     static func run(folderArgument: String?, asOf: Date?) -> Int32 {
         let folder = folderArgument.map { URL(fileURLWithPath: $0, isDirectory: true) }
-            ?? AppDelegate.supportFolder
-        let path = folder.appendingPathComponent("bytemeter.db").path
+            ?? DataFolder.url
+        let path = DataFolder.database(in: folder).path
         guard FileManager.default.fileExists(atPath: path) else {
             print("No database yet at \(path). Let Bytemeter run for a minute first.")
             return 1

@@ -13,27 +13,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let dbQueue = DispatchQueue(label: "io.github.adi-debug-source.bytemeter.db", qos: .utility)
 
-    static var supportFolder: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Bytemeter", isDirectory: true)
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let folder = Self.supportFolder
-
         // A second copy would double every figure. Step aside quietly.
-        guard SingleInstance.claim(at: folder.appendingPathComponent("bytemeter.lock")) else {
-            FileHandle.standardError.write(Data("Bytemeter: another copy is already running, quitting.\n".utf8))
+        guard SingleInstance.claim(at: DataFolder.lock) else {
+            logError("Bytemeter: another copy is already running, quitting.")
             NSApp.terminate(nil)
             return
         }
 
-        let path = folder.appendingPathComponent("bytemeter.db").path
+        let path = DataFolder.database.path
 
         do {
             db = try Database(path: path)
         } catch {
-            FileHandle.standardError.write(Data("Bytemeter: \(error)\n".utf8))
+            logError("Bytemeter: \(error)")
             let alert = NSAlert()
             alert.messageText = "Bytemeter could not open its database"
             alert.informativeText = "\(error)\n\nThe file is at \(path)."
@@ -104,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Actions
 
     private func openDashboard() {
-        let folder = Self.supportFolder
+        let folder = DataFolder.url
         let cal = BytemeterCalendar(cycleStartDay: settings.cycleStartDay)
         let networkStatus = networkNames.status
         let options = DashboardData.Options(ssidCapture: settings.ssidCapture,
@@ -120,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let url = try DashboardGenerator.write(data: data, folder: folder)
                 DispatchQueue.main.async { NSWorkspace.shared.open(url) }
             } catch {
-                FileHandle.standardError.write(Data("Bytemeter: dashboard failed: \(error)\n".utf8))
+                logError("Bytemeter: dashboard failed: \(error)")
             }
         }
     }
