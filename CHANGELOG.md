@@ -35,7 +35,7 @@ First public release. Bytemeter was built as a personal utility in September 202
 ### The dashboard
 
 - One dark, self-contained HTML page, regenerated on each open, with hand-rolled inline SVG and native tooltips. Zero JavaScript, zero network requests.
-- Set in Fraunces and Inter Tight, the same pair as Tokenmeter. Both fonts travel inside the page under the SIL Open Font Licence, so it still fetches nothing.
+- Set in Fraunces and Inter Tight, the same pair as Tokenmeter. Both fonts travel inside the page under the SIL Open Font License, so it still fetches nothing.
 - Seven sections: today by hour, the last 30 days with a rolling 7-day average, a day-against-hour heatmap, top talkers, idle against active, per interface and per network, and month by month once a second month begins. A CSV export sits beside it.
 
 ### Counting and accuracy
@@ -54,6 +54,6 @@ First public release. Bytemeter was built as a personal utility in September 202
 
 ### Project
 
-- Install with Homebrew (`brew install adi-debug-source/bytemeter/bytemeter`, then `bytemeter-setup`) or from a clone (`./install.sh`). Both build on your own Mac, so the app is not quarantined and opens without a warning. `--uninstall` keeps your data.
+- Install with Homebrew (`brew tap adi-debug-source/bytemeter https://github.com/Adi-debug-source/bytemeter`, then `brew install adi-debug-source/bytemeter/bytemeter`, then `bytemeter-setup`) or from a clone (`./install.sh`). Both build on your own Mac, so the app is not quarantined and opens without a warning. `--uninstall` keeps your data.
 - A self-test executable, 526 checks and no XCTest, runs in CI on every push, which also builds the app bundle from a clean checkout and verifies its signature.
 - MIT licence.
