@@ -4,11 +4,14 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: The embedded fonts match their files
         # DashboardFonts.swift is generated from Resources/Fonts and committed,
         # so the build never needs Python. This fails if the two disagree.
