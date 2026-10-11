@@ -15,8 +15,9 @@ plain executable rather than an XCTest target because XCTest cannot be resolved
 with the command line tools alone. It prints how many checks ran and exits
 non-zero if any failed. Run it after any change.
 
-Two `ld: warning: search path ... not found` lines under the command line tools
-are harmless. They name folders that only exist with full Xcode.
+A few `ld: warning: search path ... not found` lines under the command line
+tools are harmless: they name two folders that only exist with full Xcode, once
+for each product linked.
 
 ## How it fits together
 
@@ -32,8 +33,13 @@ are harmless. They name folders that only exist with full Xcode.
 | `Resources/AppIcon.icns` | the icon, committed as a binary |
 | `Resources/Fonts/` | the dashboard's two fonts, their licences, and a README on where they came from |
 | `Scripts/make_fonts.py` | writes `Sources/BytemeterDashboard/DashboardFonts.swift` from those fonts |
+| `Scripts/make_demo_db.py` | makes the synthetic database the README images come from |
 | `Scripts/snapshot.swift` | renders the dashboard to a PNG for the README images |
+| `docs/` | the README images (see Screenshots) |
 | `install.sh` | builds the app, and installs, updates or removes it |
+| `Formula/bytemeter.rb` | the Homebrew formula, pointed at the latest tag (see Homebrew) |
+| `.github/workflows/test.yml` | CI: the fonts check, the build, the self-test, the demo dashboard, the script and formula parse, and the bundle from a clean clone |
+| `CHANGELOG.md` | what each release changed |
 
 `./install.sh --help` lists its options. `--dry-run` works with all of them and
 says exactly what would happen, with full paths, without changing anything.
@@ -42,12 +48,13 @@ says exactly what would happen, with full paths, without changing anything.
 
 `VERSION` holds both numbers:
 
-    VERSION=1.0.0
-    BUILD=1
+    VERSION=1.2.0
+    BUILD=2
 
 `install.sh` writes them into `CFBundleShortVersionString` and
-`CFBundleVersion` when it builds the app. Nothing else in the repository
-carries a version, so there is nothing else to keep in step.
+`CFBundleVersion` when it builds the app. Nothing the build reads carries a
+version anywhere else. The formula's url and the CHANGELOG heading name a
+release, and both are updated as part of it, below.
 
 To bump it:
 
@@ -134,8 +141,8 @@ to the Bin. It never touches the data or the log.
 
 1. The self-test passes, and `python3 Scripts/make_fonts.py --check` says the
    fonts match.
-2. `bash -n install.sh` is clean, and so is `shellcheck install.sh` if you have
-   it.
+2. `bash -n install.sh` and `ruby -c Formula/bytemeter.rb` are clean, and so is
+   `shellcheck install.sh` if you have it.
 3. `./install.sh --dry-run` prints the paths you expect.
 4. A fresh clone builds the app from cold. This is the step that proves a
    stranger gets an app and not a bare binary:
@@ -161,7 +168,8 @@ to the Bin. It never touches the data or the log.
 
    A copy opened by hand is not launchd's, so it is not restarted after a
    crash until the next login. That is why the crash check comes first.
-6. CI is green for the commit you are about to tag.
+6. `CHANGELOG.md` has a section for the new version, in place of Unreleased.
+7. CI is green for the commit you are about to tag.
 
 ## Cutting a release
 
@@ -263,7 +271,7 @@ sips -s format png -Z 256 Resources/AppIcon.icns --out docs/icon.png
 1. `Scripts/snapshot.swift` renders the page in WebKit, the engine Safari uses, 1400 CSS pixels wide and twice that in pixels. It needs no browser and fetches nothing. It takes the screen's scale, so it needs a Retina screen, and it stops with an error rather than write a blurry image.
 2. It prints where each part of the page sits in `page.png`, in pixels, and the crops follow those boxes. The first runs the width of the page body, from 32 pixels down to the bottom of Today by hour less the 2 pixel rule under it. Last 30 days runs from its top to its bottom less its rule. The heatmap takes its panel's own, wider box. If the dashboard's layout changes, run it and take the numbers again.
 3. `sips` swaps the PNG's sRGB mark for gAMA, cHRM and EXIF chunks while it crops. `--strip` takes them out and puts the sRGB mark back, and leaves the pixels alone.
-4. The menu image comes from the real menu running read-only against the same database: `.build/release/Bytemeter --demo /tmp/bytemeter-demo --as-of 2026-09-29T21:30`. Open the menu, capture it (Cmd+Shift+4, then Space, then click the menu), save it as `docs/menu.png`, and choose Quit from that menu to end it. The demo never writes and leaves a running Bytemeter alone.
+4. The menu image comes from the real menu running read-only against the same database: `.build/release/Bytemeter --demo /tmp/bytemeter-demo --as-of 2026-09-29T21:30`. Open the menu, capture it (Cmd+Shift+4, then drag a box just inside the menu's edge, so there is no shadow), save it as `docs/menu.png`, and choose Quit from that menu to end it. The demo never writes and leaves a running Bytemeter alone.
 
 ## Known limits
 
