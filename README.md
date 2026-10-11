@@ -60,9 +60,19 @@ The menu holds:
 
 - **Totals:** today, yesterday, this week (from Monday), the last 7 days, this month (from the 1st), the last 30 days, and all time since counting began. The four totals the menu bar can cycle through (today, this week, this month and all time) are drawn at full contrast; the rest are grey. All time shows its start date and day count beneath it, for example "since 1 Jan 2026 · 90.0 days counted".
 - **Averages:** per hour today, per day this week, per day this month, and per day across all time.
-- A **month-end projection** (download and upload combined, as a provider counts them), the **peak hour** and the **peak day**. Every other headline figure is download; the projection is the one that adds the two together, and the screens say so.
+- A **month-end projection** (download and upload combined, as a provider counts them), the **peak hour** and the **peak day**, and the **cap** when one is set. Every other headline figure is download; the projection and the cap are the figures that add the two together, and the projection says so beside its figure.
 - **Top talkers** today, per app.
 - **Open dashboard** (⌘D), **Preferences** and **Quit**.
+
+## Preferences
+
+Preferences, from the menu, has five settings:
+
+1. **Live speed in the menu bar**, beside the total and never in its place. It can be switched from the menu too.
+2. **Per-app sampling with `nettop`**, on by default. While it is off, nothing new is recorded per app, the menu says so where Top talkers would be, and the dashboard's Top talkers says so too.
+3. **The Wi-Fi network name**, off by default. It needs Location Services, for the reasons under [What it collects, and where it stays](#what-it-collects-and-where-it-stays). While it is on and macOS allows it, the dashboard splits traffic by network.
+4. **A monthly cap in GB**, off by default. The menu shows a bar with the percentage used, and the dashboard a Monthly cap panel, and both say what is left and how many days are to go, or how far over the cap the month is. It counts download and upload together, as a provider does, over the month or the billing cycle below. It is a figure to watch, and sends no alert.
+5. **The day the billing cycle starts**, from 1 to 28. 1, the default, means calendar months. On any other day, this month becomes this cycle in the menu and on the dashboard, including the averages, the projection, the peak day and Month by month.
 
 ## The dashboard
 
