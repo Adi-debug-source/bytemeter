@@ -44,7 +44,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             button.target = self
             button.action = #selector(statusItemClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .regular)
+            button.font = MenuRows.figureFont
         }
         refresh()
     }
@@ -104,8 +104,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if settings.liveSpeed {
             text += " · " + Units.rate(rateIn)
         }
-        let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .regular)
-        button.attributedTitle = NSAttributedString(string: text, attributes: [.font: font])
+        button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.figureFont])
         // The tooltip has room for the start date that the menu bar text
         // deliberately leaves out.
         var mode = settings.statusMode.label

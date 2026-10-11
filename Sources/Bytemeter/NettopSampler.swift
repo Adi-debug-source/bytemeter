@@ -63,7 +63,7 @@ final class NettopSampler {
         // If it fires, the output is half a list, and a half list is worse than
         // none: the processes missing from it would look brand new next time.
         // So a terminated run is discarded rather than parsed.
-        let timedOut = Atomic(false)
+        let timedOut = LockedFlag(false)
         let watchdog = DispatchWorkItem {
             if process.isRunning {
                 timedOut.set(true)
@@ -84,9 +84,8 @@ final class NettopSampler {
     }
 }
 
-
 /// A tiny lock around one flag, shared between the watchdog and the reader.
-final class Atomic {
+final class LockedFlag {
     private var value: Bool
     private let lock = NSLock()
     init(_ value: Bool) { self.value = value }

@@ -35,6 +35,7 @@ enum MenuRows {
     /// same rhythm as the actions below it.
     static let rowHeight: CGFloat = 24
 
+    /// The menu bar figure is drawn in this too, so it matches the rows.
     static let figureFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .regular)
     static let textFont = NSFont.systemFont(ofSize: NSFont.systemFontSize - 1)
     static let captionFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
@@ -63,10 +64,9 @@ enum MenuRows {
 
     /// A sentence. Wrapping ones grow to fit within the figure columns rather
     /// than widening the whole menu.
-    static func text(_ text: String, inset: CGFloat, tone: Tone = .quiet, wraps: Bool = false,
-                     toolTip: String? = nil) -> NSMenuItem {
+    static func text(_ text: String, inset: CGFloat, wraps: Bool = false, toolTip: String? = nil) -> NSMenuItem {
         let height = wraps ? wrappedHeight(text, font: textFont) : rowHeight
-        let view = MenuRowView(content: .text(text, font: textFont, tone: tone, wraps: wraps),
+        let view = MenuRowView(content: .text(text, font: textFont, tone: .quiet, wraps: wraps),
                                inset: inset, height: height)
         view.setAccessibilityLabel(text)
         view.toolTip = toolTip
