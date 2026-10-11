@@ -53,11 +53,14 @@ OUT=""
 FROM=""
 DRY=0
 SANDBOX=""
+# Only --bundle-only and --uninstall are modes. --app is not one: it combines
+# with --uninstall and --dry-run, because bytemeter-setup always passes it first.
+ONE_MODE="choose one of --bundle-only and --uninstall"
 while [ $# -gt 0 ]; do
     case "$1" in
         --bundle-only)
             needs_value "$1" "${2:-}" dist
-            [ "$MODE" = install ] || { echo "choose one of --bundle-only and --uninstall"; exit 2; }
+            [ "$MODE" = install ] || { echo "$ONE_MODE"; exit 2; }
             MODE=bundle
             OUT="$2"
             shift ;;
@@ -66,11 +69,13 @@ while [ $# -gt 0 ]; do
             FROM="$2"
             shift ;;
         --uninstall)
-            [ "$MODE" = install ] || { echo "choose one of --bundle-only and --uninstall"; exit 2; }
+            [ "$MODE" = install ] || { echo "$ONE_MODE"; exit 2; }
             MODE=uninstall ;;
         --dry-run) DRY=1 ;;
         --disable-sandbox) SANDBOX="--disable-sandbox" ;;
-        -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        # The comment block at the top of this file, from line 2 to the first
+        # line that is not a comment, without its leading '# '.
+        -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
         *) echo "unknown option $1 (try --help)"; exit 2 ;;
     esac
     shift

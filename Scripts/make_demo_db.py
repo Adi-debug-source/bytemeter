@@ -133,19 +133,19 @@ PRAGMA user_version=1;
 
 # MARK: - Time
 
-def epoch_minute(day: date, minutes: float) -> int:
-    """The epoch minute that is `minutes` after local midnight on `day`.
+def epoch_second(day: date, minutes: float) -> int:
+    """The epoch second that is `minutes` after local midnight on `day`.
 
     Wall clock arithmetic, then converted, so a clock change mid-window lands
     on the right local hour, which is what the dashboard groups by.
     """
     wall = datetime(day.year, day.month, day.day) + timedelta(minutes=minutes)
-    return int(wall.timestamp()) // 60
-
-
-def epoch_second(day: date, minutes: float) -> int:
-    wall = datetime(day.year, day.month, day.day) + timedelta(minutes=minutes)
     return int(wall.timestamp())
+
+
+def epoch_minute(day: date, minutes: float) -> int:
+    """The same moment as an epoch minute."""
+    return epoch_second(day, minutes) // 60
 
 
 def clamp_gauss(rng: random.Random, mean: float, sd: float, lo: float, hi: float) -> float:
@@ -177,7 +177,7 @@ class Traffic:
 
     def add(self, minute: int, down: float, up: float, proc: str = "",
             seen: float = 0.0, touch: bool = False) -> None:
-        i = minute - self.start
+        i = self.index(minute)
         if i < 0 or i >= self.n or not self.awake[i]:
             return
         self.down[i] += down
@@ -195,7 +195,7 @@ class Traffic:
     def sleep(self, first_minute: int, last_minute: int) -> None:
         """Mark whole minutes when the machine was asleep or rebooting."""
         for minute in range(first_minute, last_minute + 1):
-            i = minute - self.start
+            i = self.index(minute)
             if 0 <= i < self.n:
                 self.awake[i] = False
 
