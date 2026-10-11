@@ -3,5 +3,5 @@
 *.xcodeproj
 .DS_Store
 
-# Built by install.sh --bundle-only for a release
+# A folder for install.sh --bundle-only, if you build one by hand
 dist/

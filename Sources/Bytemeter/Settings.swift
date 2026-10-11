@@ -62,8 +62,8 @@ final class Settings {
         set { set({ _perAppSampling = newValue }, persist: StateKey.perAppSampling, value: newValue ? "1" : "0") }
     }
 
-    // Cap machinery. Wired through the schema, the preferences and the progress
-    // bars, and switched off. It can be turned on later without a rebuild.
+    // The monthly cap, off by default and set in Preferences. While it is on,
+    // the menu and the dashboard show how much of it has been used.
     var capEnabled: Bool {
         get { get { _capEnabled } }
         set { set({ _capEnabled = newValue }, persist: StateKey.capEnabled, value: newValue ? "1" : "0") }

@@ -145,8 +145,7 @@ public enum MenuModel {
         lines.append(.text(data.peakHourText))
         lines.append(.text(data.peakDayText))
 
-        // Cap machinery: present and wired, switched off. When a cap is turned
-        // on, this is the progress bar that appears, with no rebuild needed.
+        // Shown only when a cap is set in Preferences; off by default.
         if options.capEnabled, options.capBytes > 0 {
             lines.append(.separator)
             lines.append(.header("Cap"))

@@ -15,7 +15,7 @@ ends at that minute instead of at the real clock, and nothing is written after
 it. Give the dashboard the same moment with --as-of and the page is drawn as
 if it were then, which is how the README's screenshots are made at a fixed,
 believable hour whatever the time of day they are regenerated. These are
-the README's own commands:
+the commands MAINTENANCE.md uses for the screenshots:
 
     python3 Scripts/make_demo_db.py /tmp/bytemeter-demo --now 2026-09-29T21:30 --force
     .build/release/Bytemeter --dashboard /tmp/bytemeter-demo --as-of 2026-09-29T21:30

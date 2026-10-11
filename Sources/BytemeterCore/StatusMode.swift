@@ -1,7 +1,8 @@
 import Foundation
 
-/// Which total the menu bar shows. Clicking the status item cycles through
-/// these in order, and the choice is remembered across restarts.
+/// Which total the menu bar shows. A click on the status item opens the menu;
+/// a right-click, a two-finger click or a Control-click cycles through these
+/// in order, and the choice is remembered across restarts.
 ///
 /// It lives in the shared engine rather than the macOS app because an iOS
 /// sibling wants the same four, in the same order and with the same labels.

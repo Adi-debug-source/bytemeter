@@ -2,8 +2,8 @@ import Foundation
 
 /// Every key used in the `state` table, in one place so nothing is typed twice.
 public enum StateKey {
-    /// Last raw counter per interface, as "bytesIn,bytesOut,unixSeconds", with
-    /// ",bootSession" after it once the boot session id is known.
+    /// Last raw counter per interface, in the form `RawCounter.encoded` writes
+    /// and `RawCounter(encoded:)` reads back.
     /// Persisting this after every sample is what lets the app recover the
     /// traffic that happened while it was not running.
     public static func rawCounter(_ iface: String) -> String { "raw:\(iface)" }
@@ -17,8 +17,8 @@ public enum StateKey {
     public static let lastMaintenance = "last_maintenance"  // unix seconds
     public static let counterSource = "counter_source"
 
-    // Cap machinery. Built and wired, switched off. It can be turned on later
-    // without a rebuild.
+    // The monthly cap, off by default and set in Preferences, and the day the
+    // month or billing cycle starts on.
     public static let capEnabled = "cap_enabled"
     public static let capBytes = "cap_bytes"
     public static let cycleStartDay = "cycle_start_day"     // 1 means calendar months

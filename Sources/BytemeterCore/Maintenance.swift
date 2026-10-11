@@ -1,8 +1,8 @@
 import Foundation
 
-/// The daily tidy up. One minute buckets are roughly 500,000 rows a year, about
-/// 25 MB, which is fine to keep; but past 90 days nobody needs minute detail, so
-/// they are collapsed to hourly and the file stops growing linearly.
+/// The daily tidy up. Minute rows, for the interfaces and for each app nettop
+/// saw, are fine to keep for a while, but past 90 days nobody needs minute
+/// detail, so they are collapsed to hourly and the file stops growing linearly.
 public enum Maintenance {
 
     public static let retainMinuteDays: Int64 = 90
