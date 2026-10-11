@@ -25,10 +25,15 @@ jobs:
       - name: Homebrew formula parses
         run: ruby -c Formula/bytemeter.rb
       - name: The app builds from a clean clone
-        # The command a release and the Homebrew formula both build with, so
-        # this proves on every push that the repository can produce the app,
+        # The command a release and the Homebrew formula both build with, run
+        # in a fresh clone of the commit under test, so no untracked file and
+        # none of the build output from the steps above can help it. This
+        # proves on every push that the repository alone can produce the app,
         # not only the binary.
-        run: ./install.sh --bundle-only "$RUNNER_TEMP/bundle"
+        run: |
+          git clone --quiet --no-checkout . "$RUNNER_TEMP/clone"
+          git -C "$RUNNER_TEMP/clone" checkout --quiet "$(git rev-parse HEAD)"
+          "$RUNNER_TEMP/clone/install.sh" --bundle-only "$RUNNER_TEMP/bundle"
       - name: The app is signed and well formed
         run: |
           app="$RUNNER_TEMP/bundle/Bytemeter.app"
