@@ -265,8 +265,8 @@ python3 Scripts/make_demo_db.py /tmp/bytemeter-demo --now 2026-09-29T21:30 --for
 .build/release/Bytemeter --dashboard /tmp/bytemeter-demo --as-of 2026-09-29T21:30
 swift Scripts/snapshot.swift /tmp/bytemeter-demo/dashboard.html /tmp/bytemeter-demo/page.png
 sips -c 2069 2360 --cropOffset 32 220   /tmp/bytemeter-demo/page.png --out docs/dashboard.png
-sips -c 878 2360  --cropOffset 2103 220 /tmp/bytemeter-demo/page.png --out docs/thirty-days.png
-sips -c 896 2336  --cropOffset 2983 232 /tmp/bytemeter-demo/page.png --out docs/heatmap.png
+sips -c 920 2360  --cropOffset 2103 220 /tmp/bytemeter-demo/page.png --out docs/thirty-days.png
+sips -c 896 2336  --cropOffset 3025 232 /tmp/bytemeter-demo/page.png --out docs/heatmap.png
 swift Scripts/snapshot.swift --strip docs/dashboard.png docs/thirty-days.png docs/heatmap.png
 sips -s format png -Z 256 Resources/AppIcon.icns --out docs/icon.png
 ```
