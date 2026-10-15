@@ -19,7 +19,7 @@ This version corrects several figures, fixes how per-app traffic and sleep are r
 
 - Today is compared with yesterday at the same time of day, so an ordinary morning no longer reads as down on yesterday.
 - The heatmap is an average over the last four whole weeks, so every weekday is counted the same number of times, and it leaves out today and any day before counting began.
-- The seven-day average covers only whole days counted, so a new install no longer shows a rising trend that is not there and the line no longer dips at today, and its key shows only when the line is drawn.
+- The seven-day average covers only whole days counted, so a new install no longer shows a rising trend that is not there and the line no longer dips at today, and its key shows only when the line is drawn. Each point averages the week up to its day, reaching back before the chart's first day where needed, so once five whole weeks have been counted the line starts on the chart's first day rather than its seventh.
 - Hovering over a day in the last 30 days that came before Bytemeter started counting says so, rather than showing it as a day with no traffic.
 - Chart axes use two decimals where one would round, so a 2.5 GB axis marks its middle line 1.25 GB.
 - A chart with nothing on it yet, such as today's just after midnight or every chart on a new install, draws its baseline alone rather than an axis from 0 B to 1 B, and the heatmap's key names no top figure until there is one.
