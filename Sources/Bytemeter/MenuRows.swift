@@ -75,6 +75,12 @@ enum MenuRows {
         return row
     }
 
+    /// Whether a sentence is wider than the figure columns, so that it has to
+    /// wrap rather than be cut short at the column's edge.
+    static func overflows(_ text: String) -> Bool {
+        (text as NSString).size(withAttributes: [.font: textFont]).width > upColumn
+    }
+
     /// A small grey line under the row above it, such as where all time starts.
     static func caption(_ text: String, inset: CGFloat) -> NSMenuItem {
         let view = MenuRowView(content: .text(text, font: captionFont, tone: .quiet, wraps: false),

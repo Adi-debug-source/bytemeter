@@ -174,7 +174,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         case let .figure(label, down, up, strong):
             return MenuRows.figure(label, down: down, up: up, tone: strong ? .strong : .quiet, inset: inset)
         case let .text(text, toolTip):
-            return MenuRows.text(text, inset: inset, toolTip: toolTip)
+            // Most sentences fit on one line. One that does not, such as the
+            // line that says recording has stopped, wraps rather than losing
+            // its end.
+            return MenuRows.text(text, inset: inset, wraps: MenuRows.overflows(text), toolTip: toolTip)
         case let .caption(text):
             return MenuRows.caption(text, inset: inset)
         case .separator:
