@@ -1,41 +1,47 @@
 # Changelog
 
-## Unreleased
+## 1.2.0, not yet released
+
+This version corrects several figures, fixes how per-app traffic and sleep are recorded, and makes the cap and the dashboard say exactly what they show. It moves the database to schema version 3 the first time it opens it, as the first item under Counting and accuracy explains.
 
 ### The menu bar
 
-- On the first day of a month or billing cycle, the projection runs the last 24 hours on to the cycle's end, instead of treating a few hours as a whole day, and with under a day counted it says it is too early to project, in the menu and on the dashboard.
+- On the first day of a month or billing cycle, the projection runs the last 24 hours on to the cycle's end instead of treating a few hours as a whole day, and with under a day counted it says it is too early to project, in the menu and on the dashboard.
 - No figure prints as 1000 of a smaller unit: 999.6 MB reads 1.00 GB, so the menu bar no longer shows 1000 MB as the day crosses 1 GB.
-- The cap shows the real percentage, past 100% once the cap is passed, and says what is left and how many days are to go, or how far over the cap the month is. Preferences now says it tracks the cap, because nothing ever warned.
+- The live speed updates every second without a pause, where it used to stall for about five seconds every half minute while `nettop` ran.
+- The cap, in the menu and in the dashboard's Monthly cap panel, shows the real percentage, past 100% once the cap is passed, and says what is left and how many days are to go, or how far over the cap the month is, with only the bar stopping at full.
+- Preferences offers to track a monthly cap, where it used to offer a warning that never came.
 - Preferences says the billing cycle can start on any day from 1 to 28.
 - If the database cannot be written, for example on a full disk, a line at the top of the menu says recording has stopped and since when, until a write succeeds again, where before the figures simply stopped moving.
 - Before the first byte is counted, a line at the top of the menu says counting has started, so a new install's menu of 0 B explains itself.
 
 ### The dashboard
 
-- The heatmap is an average over the last four whole weeks, so every weekday is counted the same number of times, and it leaves out today and any day before counting began.
-- The seven day average covers only whole days counted, so a new install no longer shows a rising trend that is not there and the line no longer dips at today, and its key shows only when the line is drawn.
-- Hovering over a day in the last 30 days that came before Bytemeter started counting says so, rather than showing it as a day with no traffic.
 - Today is compared with yesterday at the same time of day, so an ordinary morning no longer reads as down on yesterday.
+- The heatmap is an average over the last four whole weeks, so every weekday is counted the same number of times, and it leaves out today and any day before counting began.
+- The seven-day average covers only whole days counted, so a new install no longer shows a rising trend that is not there and the line no longer dips at today, and its key shows only when the line is drawn.
+- Hovering over a day in the last 30 days that came before Bytemeter started counting says so, rather than showing it as a day with no traffic.
 - Chart axes use two decimals where one would round, so a 2.5 GB axis marks its middle line 1.25 GB.
-- The Monthly cap panel gives the real percentage and what is left or how far over, and only its bar stops at full.
+- A chart with nothing on it yet, such as today's just after midnight or every chart on a new install, draws its baseline alone rather than an axis from 0 B to 1 B, and the heatmap's key names no top figure until there is one.
 - On a billing cycle, the second Top talkers table is this cycle, and Month by month and the CSV export name each cycle by the day it starts, such as 15 Aug 2026, not by the month it starts in.
 - Once Month by month has more bars than its labels fit under, it labels every second bar, or fewer, so more than a year of billing cycles, or a long history of months, never runs its dates together.
 - Per interface and Per network say they cover the last 30 days, and the idle note says that mouse input counts too.
 - Every chart has a name a screen reader announces, with both figures for the idle split, and a process name cut short shows in full on hover.
 - Muted text is a lighter grey, which meets the WCAG AA contrast for small text on the page.
-- A chart with nothing on it yet, such as today's just after midnight or every chart on a new install, draws its baseline alone rather than an axis from 0 B to 1 B, and the heatmap's key names no top figure until there is one.
 - Recent events read in plain words: each has a label such as Asleep, Restart or New interface, and a gap says how long it lasted and how much traffic was spread across it, in place of the raw event names and byte counts.
 
 ### Counting and accuracy
 
-- Per-app figures leave out loopback traffic, which never leaves the Mac, so a local development server, a database or a VPN client's local proxy can no longer top Top talkers.
+- The database moves to schema version 3 the first time this version opens it, adding each row's estimated bytes and filling them in from the rows already marked estimated, so every existing figure reads exactly as before; an older build can still open the file afterwards, but traffic it then spreads across a gap, and hours its tidy up collapses, read as measured once this version is back, and its `--demo` refuses the file.
+- Estimated traffic is kept as an exact byte count, so an hour collapsed after 90 days no longer counts all its traffic as estimated because one minute in it was spread, which made Month by month overstate the estimated share, and the bytes measured in the minute a Mac wakes no longer count as estimated either.
+- Per-app figures leave out loopback traffic, which never leaves the Mac, so a local development server, a database or a VPN client's local proxy can no longer top Top talkers, and a `nettop` run takes hundredths of a second rather than about five.
 - Per-app sampling switched off and on again starts afresh, instead of booking everything the apps did while it was off into one minute, and with the clock set back it files its rows no earlier than the last reading, as the interface counts already did.
 - Traffic spread across a sleep is recorded as idle, because nobody can use a sleeping Mac, rather than taking the flag of the moment it woke; the minute it woke in still counts as active if someone was there.
-- Estimated traffic is kept as an exact byte count, so an hour collapsed after 90 days no longer counts all its traffic as estimated because one minute in it was spread, which made Month by month overstate the estimated share, and the bytes measured in the minute a Mac wakes no longer count as estimated either.
 
 ### Project
 
+- The dashboard page and its CSV export are a library of their own, `BytemeterDashboard`, built from Foundation and the engine alone, so the self-test can check the page and another platform could show it.
+- The self-test runs 869 checks, up from 526, in one file per subject, and builds a dashboard and reads the page and the CSV, so the promise that the page fetches nothing is checked on every run.
 - CI checks out with `actions/checkout` v7 and holds read-only access to the repository, which is all it needs.
 - CI builds the app bundle in a fresh clone of the commit under test, so nothing untracked and no build output from its earlier steps can help it.
 - CI builds the demo dashboard from the synthetic database on every push, and fails if the page has a script or names a web address.

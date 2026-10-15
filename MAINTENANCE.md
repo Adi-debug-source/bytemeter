@@ -168,7 +168,10 @@ to the Bin. It never touches the data or the log.
 
    A copy opened by hand is not launchd's, so it is not restarted after a
    crash until the next login. That is why the crash check comes first.
-6. `CHANGELOG.md` has a section for the new version, in place of Unreleased.
+6. `CHANGELOG.md` has a section for the new version, headed with the version
+   and the day it is tagged, as in `## 1.0.0, 6 October 2026`. Until the tag
+   exists the heading says `not yet released` in place of the day, and changes
+   not yet given a version sit under `## Unreleased`.
 7. CI is green for the commit you are about to tag.
 
 ## Cutting a release
