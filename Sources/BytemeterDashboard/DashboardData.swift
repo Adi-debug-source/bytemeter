@@ -45,6 +45,7 @@ public struct DashboardData {
     let idleTotals: Totals
     let activeTotals: Totals
     let byInterface: [(String, Totals)]
+    /// Each network under the name the page shows, as `NetworkNames.displayed` gives it.
     let bySSID: [(String, Totals)]
 
     /// Download and upload together, worded as the menu words it.
@@ -99,7 +100,7 @@ public struct DashboardData {
         activeTotals = split.active
 
         byInterface = aggregator.byInterface(cal.rollingDays(30, now: now))
-        bySSID = aggregator.bySSID(cal.rollingDays(30, now: now))
+        bySSID = NetworkNames.displayed(aggregator.bySSID(cal.rollingDays(30, now: now)))
 
         projection = headlines.projection
         peakHour = headlines.peakHour

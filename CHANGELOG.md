@@ -36,6 +36,7 @@ This version corrects several figures, fixes how per-app traffic and sleep are r
 - Estimated traffic is kept as an exact byte count, so an hour collapsed after 90 days no longer counts all its traffic as estimated because one minute in it was spread, which made Month by month overstate the estimated share, and the bytes measured in the minute a Mac wakes no longer count as estimated either.
 - Per-app figures leave out loopback traffic, which never leaves the Mac, so a local development server, a database or a VPN client's local proxy can no longer top Top talkers, and a `nettop` run takes hundredths of a second rather than about five.
 - Per-app sampling switched off and on again starts afresh, instead of booking everything the apps did while it was off into one minute, and with the clock set back it files its rows no earlier than the last reading, as the interface counts already did.
+- A stand-in that macOS can give in place of a Wi-Fi network's name, such as Loading..., is recorded as Unknown network rather than as a network of its own, and minutes already recorded under one read as Unknown network on the dashboard and in the CSV export.
 - Traffic spread across a sleep is recorded as idle, because nobody can use a sleeping Mac, rather than taking the flag of the moment it woke; the minute it woke in still counts as active if someone was there.
 
 ### Project

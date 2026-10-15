@@ -29,8 +29,45 @@ public enum NetworkNames {
     /// with Wi-Fi switched off.
     public static let unknown = "Unknown network"
 
+    /// Stand-ins macOS has been seen to give in place of a network's name,
+    /// such as "Loading...". They name no network, so a minute that reads
+    /// one is recorded as `unknown`, and one recorded before this rule
+    /// existed is shown as `unknown` too.
+    static let standIns: Set<String> = ["Loading...", "Loading\u{2026}"]
+
+    /// What to record for the name macOS gave: the name exactly as given, or
+    /// `unknown` when there was none, it was blank, or it was a stand-in.
+    public static func recordedName(_ given: String?) -> String {
+        guard let given else { return unknown }
+        let trimmed = given.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || standIns.contains(trimmed) ? unknown : given
+    }
+
+    /// How a stored name is shown on the dashboard and in the export.
     public static func displayName(_ stored: String) -> String {
-        stored == ssidPlaceholder ? notRecorded : stored
+        stored == ssidPlaceholder ? notRecorded : recordedName(stored)
+    }
+
+    /// The traffic per network as the dashboard and the export list it: each
+    /// stored name as `displayName` shows it, with names that show alike
+    /// added together, the most first. Without this, minutes stored under a
+    /// stand-in would be a second "Unknown network" line.
+    public static func displayed(_ stored: [(String, Totals)]) -> [(String, Totals)] {
+        var merged: [(String, Totals)] = []
+        for (name, totals) in stored {
+            let shown = displayName(name)
+            if let index = merged.firstIndex(where: { $0.0 == shown }) {
+                merged[index].1 = merged[index].1 + totals
+            } else {
+                merged.append((shown, totals))
+            }
+        }
+        // Equal totals keep the order they came in, so the list is the same on every run.
+        return merged.enumerated().sorted { first, second in
+            first.element.1.total != second.element.1.total
+                ? first.element.1.total > second.element.1.total
+                : first.offset < second.offset
+        }.map(\.element)
     }
 
     public enum Status: Equatable {

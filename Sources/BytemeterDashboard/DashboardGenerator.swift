@@ -352,12 +352,11 @@ public enum DashboardGenerator {
     }
 
     /// The note always says what was really recorded; the list follows only
-    /// while the box is on, with the placeholder shown in words.
+    /// while the box is on, with the placeholders shown in words.
     private static func networkSection(_ data: DashboardData) -> String {
         let note = "<p class=\"note\">\(esc(NetworkNames.dashboardNote(data.networkNames)))</p>"
         guard data.ssidCapture else { return note }
-        let named = data.bySSID.map { (NetworkNames.displayName($0.0), $0.1) }
-        return note + breakdownList(named)
+        return note + breakdownList(data.bySSID)
     }
 
     /// Each event in plain words, its label in the badge. The stored kind
@@ -415,7 +414,7 @@ public enum DashboardGenerator {
         for talker in data.topTalkersToday { add("process_today", talker.name, talker.totals) }
         for talker in data.topTalkersMonth { add("process_month", talker.name, talker.totals) }
         for entry in data.byInterface { add("interface_30d", entry.0, entry.1) }
-        for entry in data.bySSID { add("network_30d", NetworkNames.displayName(entry.0), entry.1) }
+        for entry in data.bySSID { add("network_30d", entry.0, entry.1) }
         add("idle_30d", "Idle", data.idleTotals)
         add("idle_30d", "Active", data.activeTotals)
         return lines.joined(separator: "\n") + "\n"

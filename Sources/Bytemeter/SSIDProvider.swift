@@ -24,7 +24,6 @@ enum SSIDProvider {
     /// be checked without CoreWLAN or Location Services.
     static func currentSSID(enabled: Bool, permission: NetworkNamePermission?, read: () -> String?) -> String {
         guard NetworkNames.shouldRead(boxTicked: enabled, permission: permission) else { return ssidPlaceholder }
-        guard let name = read(), !name.isEmpty else { return NetworkNames.unknown }
-        return name
+        return NetworkNames.recordedName(read())
     }
 }

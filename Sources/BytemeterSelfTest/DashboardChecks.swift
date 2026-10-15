@@ -27,6 +27,7 @@ func runDashboardChecks() {
     checkMutedTextMeetsAA(fewDays)
     checkEmptyChartsDrawNoScale(fewDays)
     checkEventsReadInPlainWordsOnThePage(fewDays)
+    checkStandInNetworkNamesReadAsUnknown()
 }
 
 // MARK: - The fixtures
@@ -40,14 +41,14 @@ private let fixtureMoment = "2026-10-08T12:00"
 private let cycleFrom15th = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
 
 /// A page and its CSV, made from one database as of one moment. Calendar
-/// months and no cap unless a check says otherwise.
+/// months, no cap and no network names unless a check says otherwise.
 private struct BuiltPage {
     let data: DashboardData
     let html: String
     let csv: String
 
-    init(_ db: Database, now: String, cal: BytemeterCalendar = london, capBytes: UInt64 = 0) {
-        let options = DashboardData.Options(ssidCapture: false, perAppSampling: true,
+    init(_ db: Database, now: String, cal: BytemeterCalendar = london, capBytes: UInt64 = 0, ssidCapture: Bool = false) {
+        let options = DashboardData.Options(ssidCapture: ssidCapture, perAppSampling: true,
                                             capEnabled: capBytes > 0, capBytes: capBytes)
         data = DashboardData(aggregator: Aggregator(db: db, cal: cal), options: options, now: cal.parseLocal(now)!)
         html = DashboardGenerator.html(data)
@@ -397,3 +398,24 @@ private func checkEventsReadInPlainWordsOnThePage(_ built: BuiltPage) {
           "the night's sleep is labelled Asleep, beside a plain sentence")
 }
 
+// MARK: - A stand-in for a network name is no network
+
+private func checkStandInNetworkNamesReadAsUnknown() {
+    // Minutes stored under a stand-in, as an earlier build recorded them,
+    // beside minutes with no name and a made-up network.
+    let db = makeDatabase()
+    let minute = BytemeterCalendar.minute(from: london.parseLocal("2026-10-07T09:00")!)
+    for (offset, ssid, bytesIn) in [(0, "Harbour Cafe", 900_000_000), (1, "Loading...", 300_000_000),
+                                    (2, NetworkNames.unknown, 200_000_000)] as [(Int64, String, UInt64)] {
+        db.addBuckets([BucketDelta(minute: minute + offset, iface: "en0", bytesIn: bytesIn, bytesOut: 0)],
+                      ssid: ssid, idle: false)
+    }
+    let built = BuiltPage(db, now: fixtureMoment, ssidCapture: true)
+    let section = panel(built.html, heading: "Per network, last 30 days")
+    check(!built.html.contains("Loading"), "a stand-in name never reaches the page")
+    expect(section.components(separatedBy: NetworkNames.unknown).count - 1, 2,
+           "Unknown network is listed once, and named once in the note above the list")
+    let rows = built.csvRows.filter { $0.first == "network_30d" }.map { Array($0.prefix(3)) }
+    expect(rows, [["network_30d", "Harbour Cafe", "900000000"], ["network_30d", NetworkNames.unknown, "500000000"]],
+           "and the export has one Unknown network row, carrying the stand-in's traffic too")
+}

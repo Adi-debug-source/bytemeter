@@ -245,4 +245,29 @@ private func checkNetworkNameRules() {
     expect(NetworkNames.displayName("Home"), "Home", "a real name is shown as it is")
     expect(CSVCell.text(NetworkNames.displayName(ssidPlaceholder)), "\"Not recorded\"",
            "so the placeholder reaches the export as words, not as a bare minus sign")
+
+    // What macOS gives is recorded as it is, unless it names no network.
+    let unknown = NetworkNames.unknown
+    let given: [(String?, String)] = [
+        (nil, unknown), ("", unknown), ("  \n", unknown), ("Loading...", unknown), ("Loading\u{2026}", unknown),
+        (" Loading... ", unknown), ("Harbour Cafe", "Harbour Cafe"), (" Harbour Cafe ", " Harbour Cafe "),
+        ("Loading", "Loading"), ("Loading Bay", "Loading Bay"), ("Loading... Bay", "Loading... Bay"),
+        ("loading...", "loading..."),
+    ]
+    for (name, recorded) in given {
+        expect(NetworkNames.recordedName(name), recorded, "macOS giving \(String(describing: name)) records \(recorded)")
+    }
+    expect(NetworkNames.displayName("Loading..."), unknown, "a stand-in recorded before the rule is shown as no network")
+    expect(NetworkNames.displayName("Loading Bay"), "Loading Bay", "while a real name that starts the same way is kept")
+
+    // Names that show alike are one line, the most first.
+    let gb: UInt64 = 1_000_000_000
+    let listed = NetworkNames.displayed([("Harbour Cafe", Totals(bytesIn: 9 * gb)), (ssidPlaceholder, Totals(bytesIn: 4 * gb)),
+                                         (unknown, Totals(bytesIn: 3 * gb, bytesOut: gb)),
+                                         ("Loading...", Totals(bytesIn: 2 * gb)), ("Loading Bay", Totals(bytesIn: gb))])
+    expect(listed.map(\.0), ["Harbour Cafe", unknown, "Not recorded", "Loading Bay"],
+           "a stand-in's traffic joins Unknown network, which then lists above Not recorded")
+    expect(listed.first { $0.0 == unknown }?.1, Totals(bytesIn: 5 * gb, bytesOut: gb), "with both its figures added together")
+    expect(NetworkNames.displayed([("Harbour Cafe", Totals(bytesIn: gb)), ("Quay", Totals(bytesIn: gb))]).map(\.0),
+           ["Harbour Cafe", "Quay"], "equal totals keep the order they came in")
 }
