@@ -122,7 +122,7 @@ extension DashboardGenerator {
         .chart { width: 100%; height: auto; display: block; }
         .chart.heat { width: 100%; max-width: 980px; }
         .heat-wrap { overflow-x: auto; }
-        text.axis { fill: var(--muted); font-family: var(--text); font-size: 11.5px; font-weight: 550; }
+        text.axis { fill: var(--muted); font-family: var(--text); font-size: \(SVGKit.axisFontSize)px; font-weight: 550; }
         .bar rect, .cell rect { transition: opacity 120ms ease; }
         .bar:hover rect, .cell:hover rect { opacity: 0.72; }
 

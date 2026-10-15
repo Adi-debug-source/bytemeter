@@ -128,6 +128,20 @@ enum SVGKit {
     /// Anything thinner than this is not drawn, so a key is not shown for it.
     private static let minimumBarHeight = 0.4
     private static let minimumBandHeight = 1.0
+    /// The size of a chart's axis labels, in viewBox units. The stylesheet
+    /// sets text.axis from it, and the bar labels are spaced by it.
+    static let axisFontSize = 11.5
+
+    /// How many bars apart the labels along the bottom must be so that no two
+    /// run into each other. A label is taken as 0.6 em a character, a little
+    /// wider than the axis face's own figures and letters, so what is left
+    /// over is the gap between neighbours. Up to twelve billing cycles named
+    /// "15 Aug 2026", or sixteen months named "Aug 2026", fit a label under
+    /// every bar; past that, every second bar is labelled, then every third.
+    private static func labelSpacing(_ labels: [String], slot: Double) -> Int {
+        let widest = Double(labels.map(\.count).max() ?? 0) * 0.6 * axisFontSize
+        return max(1, Int((widest / slot).rounded(.up)))
+    }
 
     /// The axis maximum for a set of bars, shared by the drawing and by
     /// `barsShowEstimate`, so the two can never disagree.
@@ -270,7 +284,11 @@ enum SVGKit {
             """
         }
 
-        for (index, entry) in values.enumerated() where index % labelEvery == 0 {
+        // `labelEvery` is the most often a bar is labelled. Labels too long
+        // for that, or too many, are spaced further apart rather than drawn
+        // over each other; every bar keeps its own tooltip.
+        let spacing = max(labelEvery, labelSpacing(values.map(\.label), slot: slot))
+        for (index, entry) in values.enumerated() where index % spacing == 0 {
             let x = leftPad + slot * Double(index) + slot / 2
             svg += """
             <text x="\(fmt(x))" y="\(fmt(height - 6))" text-anchor="middle" class="axis">\

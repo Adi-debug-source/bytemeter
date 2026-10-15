@@ -18,6 +18,7 @@
 - Chart axes use two decimals where one would round, so a 2.5 GB axis marks its middle line 1.25 GB.
 - The Monthly cap panel gives the real percentage and what is left or how far over, and only its bar stops at full.
 - On a billing cycle, the second Top talkers table is this cycle, and Month by month and the CSV export name each cycle by the day it starts, such as 15 Aug 2026, not by the month it starts in.
+- Once Month by month has more bars than its labels fit under, it labels every second bar, or fewer, so more than a year of billing cycles, or a long history of months, never runs its dates together.
 - Per interface and Per network say they cover the last 30 days, and the idle note says that mouse input counts too.
 - Every chart has a name a screen reader announces, with both figures for the idle split, and a process name cut short shows in full on hover.
 - Muted text is a lighter grey, which meets the WCAG AA contrast for small text on the page.

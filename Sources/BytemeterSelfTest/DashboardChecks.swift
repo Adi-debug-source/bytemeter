@@ -22,6 +22,7 @@ func runDashboardChecks() {
     checkHeatmapCellsAverageWholeWeeks(fortyDays)
     checkCapPanelSaysWhatIsLeftOrOver()
     checkLabelsNameTheirPeriod(months: fortyDays, cycles: fortyDaysOnACycle)
+    checkLongHistoriesKeepTheirLabelsApart()
     checkChartsAndNamesCanBeRead(fewDays: fewDays, fortyDays: fortyDays, cycles: fortyDaysOnACycle)
     checkMutedTextMeetsAA(fewDays)
 }
@@ -250,6 +251,34 @@ private func checkLabelsNameTheirPeriod(months: BuiltPage, cycles: BuiltPage) {
         check(built.html.contains("Idle means no keyboard, mouse or trackpad input for five minutes or more, over the last 30 days."),
               "on \(name), the idle note names every kind of input that counts")
     }
+}
+
+// MARK: - A long Month by month keeps its labels apart
+
+private func checkLongHistoriesKeepTheirLabelsApart() {
+    /// Month by month's bars, and the labels drawn under them, in order.
+    func monthly(since local: String, cal: BytemeterCalendar) -> (bars: Int, labels: [String]) {
+        let db = makeDatabase()
+        db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal(local)!), iface: "en0",
+                                   bytesIn: 1_000_000, bytesOut: 100_000)], ssid: ssidPlaceholder, idle: false)
+        let section = panel(BuiltPage(db, now: fixtureMoment, cal: cal).html, heading: "Month by month")
+        let labels = section.components(separatedBy: "text-anchor=\"middle\" class=\"axis\">").dropFirst()
+            .map { $0.components(separatedBy: "<").first ?? "" }
+        return (section.components(separatedBy: "<g class=\"bar\">").count - 1, labels)
+    }
+
+    let year = monthly(since: "2025-10-20T10:00", cal: cycleFrom15th)
+    expect(year.bars, 12, "twelve billing cycles from 15 October 2025 draw twelve bars")
+    expect(year.labels.count, 12, "and each has its label, since twelve fit")
+
+    let longer = monthly(since: "2025-08-20T10:00", cal: cycleFrom15th)
+    expect(longer.bars, 14, "fourteen billing cycles draw fourteen bars")
+    expect(longer.labels, ["15 Aug 2025", "15 Oct 2025", "15 Dec 2025", "15 Feb 2026", "15 Apr 2026", "15 Jun 2026", "15 Aug 2026"],
+           "and label every second one, oldest first, rather than run fourteen dates into each other")
+
+    let months = monthly(since: "2025-08-20T10:00", cal: london)
+    expect(months.bars, 15, "the same history in calendar months draws fifteen bars")
+    expect(months.labels.count, 15, "and labels every one, since the month names are shorter")
 }
 
 // MARK: - A screen reader can tell what each chart shows, and a cut-short name can be read whole
