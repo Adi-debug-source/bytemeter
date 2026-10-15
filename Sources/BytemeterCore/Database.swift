@@ -80,6 +80,13 @@ public final class Database {
     /// Transactions rolled back in a row. The first one is logged, the rest
     /// only counted, so a full disk says so once rather than every 5 seconds.
     public private(set) var failedTransactionsInARow = 0
+    /// When the current run of failed transactions began, or nil while they
+    /// commit. With a full disk the figures stop moving and nothing else
+    /// looks wrong, so the menu says so from this.
+    public private(set) var failingSince: Date?
+    /// The moment a run of failures is stamped with. The clock by default;
+    /// replaceable so the self-test can fix the moment the menu names.
+    public var clock: () -> Date = { Date() }
 
     public init(path: String) throws {
         self.path = path
@@ -228,7 +235,8 @@ public final class Database {
 
     /// The same, for callers with nothing to do about a failure but carry
     /// on: true if it committed. A failure is logged the first time only,
-    /// and the end of a run of failures is logged once too.
+    /// and the end of a run of failures is logged once too. `failingSince`
+    /// is set at the first failure of a run and cleared by the next commit.
     @discardableResult
     public func transaction(_ body: () throws -> Void) -> Bool {
         do {
@@ -237,9 +245,11 @@ public final class Database {
                 log("Bytemeter: writing again after \(failedTransactionsInARow) failed attempts.")
                 failedTransactionsInARow = 0
             }
+            failingSince = nil
             return true
         } catch {
             if failedTransactionsInARow == 0 {
+                failingSince = clock()
                 let oneLine = "\(error)".split(whereSeparator: \.isWhitespace).joined(separator: " ")
                 log("Bytemeter: a write failed and was rolled back, so nothing was half written: \(oneLine). "
                     + "Further failures are counted but not logged until a write succeeds.")

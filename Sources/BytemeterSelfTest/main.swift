@@ -62,6 +62,7 @@ checkRecentEventsStopAtTheMoment()
 checkReadOnlyOpenChangesNothing()
 checkCapSaysWhatIsLeftOrOver()
 checkMonthByMonthNamesItsPeriods()
+checkMenuSaysWhenRecordingStops()
 runAppChecks()
 runDashboardChecks()
 

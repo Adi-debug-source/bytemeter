@@ -3,8 +3,8 @@ import BytemeterCore
 
 // Checks for how the database writes and reads: rows that add up on
 // conflict, baselines, the estimated mark and bytes, transactions that fail
-// or are ended by SQLite, a full disk, recent events, and the read only open
-// the demo uses.
+// or are ended by SQLite, a full disk and the menu's line while it lasts,
+// recent events, and the read only open the demo uses.
 
 // MARK: - Buckets add up on conflict, and any activity makes a minute active
 
@@ -154,28 +154,39 @@ func checkFailedWriteMovesNothing() {
     check(!endedCommitted, "a transaction SQLite has already ended counts as failed")
     expect(ended.baselines()["en0"]?.bytesIn, 1_000, "and nothing written after the end commits on its own")
 
-    // A real full disk, through SQLite's page limit, then room again. The filler rows sit in the
-    // minutes the failing sample will write, an hour's gap spread minute by minute, so it needs new pages.
+    // A real full disk, through SQLite's page limit, then room again.
     let full = makeDatabase()
     full.log = { _ in }
     check(writeSample(full, raw: 1_000, at: 1_790_000_000, counterSource: nil)
           && writeSample(full, raw: 2_000, at: 1_790_000_005, counterSource: nil),
           "two samples before the disk fills")
-    try! full.exec("PRAGMA wal_checkpoint(TRUNCATE);")
-    var pages: Int64 = 0
-    try! full.query("PRAGMA page_count;") { pages = $0.int(0) }
-    try! full.exec("PRAGMA max_page_count=\(pages + 3);")
-    let gapStart = Ledger.floorDiv(1_790_000_005, 60) + 1
-    var filler: Int64 = 0
-    while (try? full.run("INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated) VALUES(?,?,?,1,1,0,0);",
-                         [.int(gapStart + filler / 50), .text("en9:\(filler % 50)"), .text(ssidPlaceholder)])) != nil,
-          filler < 100_000 { filler += 1 }
-    check(filler < 100_000, "the page limit fills the file")
+    check(fillToThePageLimit(full, from: Ledger.floorDiv(1_790_000_005, 60) + 1), "the page limit fills the file")
     check(!writeSample(full, raw: 51_000, at: 1_790_003_605, counterSource: nil), "a sample on a full disk fails")
     expect(full.baselines()["en0"]?.bytesIn, 2_000, "and its baseline stays put")
-    try! full.exec("PRAGMA max_page_count=1073741823;")
+    makeRoom(full)
     check(writeSample(full, raw: 52_000, at: 1_790_003_610, counterSource: nil), "with room again the next sample commits")
     expect(sumIn(full), 51_000, "samples since the first baseline still equal the raw counter minus it, through a full disk")
+}
+
+/// Fill a database to SQLite's page limit, as a full disk leaves it, and say
+/// whether the limit was reached. The filler rows sit in the minutes from
+/// `minute` on, where a sample after an hour's gap will spread its bytes
+/// minute by minute, so that sample needs new pages and fails.
+private func fillToThePageLimit(_ db: Database, from minute: Int64) -> Bool {
+    try! db.exec("PRAGMA wal_checkpoint(TRUNCATE);")
+    var pages: Int64 = 0
+    try! db.query("PRAGMA page_count;") { pages = $0.int(0) }
+    try! db.exec("PRAGMA max_page_count=\(pages + 3);")
+    var filler: Int64 = 0
+    while (try? db.run("INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated) VALUES(?,?,?,1,1,0,0);",
+                       [.int(minute + filler / 50), .text("en9:\(filler % 50)"), .text(ssidPlaceholder)])) != nil,
+          filler < 100_000 { filler += 1 }
+    return filler < 100_000
+}
+
+/// Room on the disk again: the page limit lifted.
+private func makeRoom(_ db: Database) {
+    try! db.exec("PRAGMA max_page_count=1073741823;")
 }
 
 // MARK: - Recent events stop at the moment asked for
@@ -249,3 +260,67 @@ func checkReadOnlyOpenChangesNothing() {
     check(missingRefused, "a missing database is refused rather than created")
     check(!FileManager.default.fileExists(atPath: folder + "/nothing.db"), "and nothing is created in its place")
 }
+
+// MARK: - The menu says when recording has stopped
+
+func checkMenuSaysWhenRecordingStops() {
+    let db = makeDatabase()
+    db.log = { _ in }
+    let stopped = london.parseLocal("2026-10-08T14:05")!
+    db.clock = { stopped }
+    let start = Int64(london.parseLocal("2026-10-08T13:00")!.timeIntervalSince1970)
+    let options = MenuModel.Options(liveSpeed: true, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0,
+                                    perAppSampling: true)
+    func menu(_ database: Database) -> [MenuLine] {
+        MenuModel.information(MenuSnapshot(aggregator: Aggregator(db: database, cal: london),
+                                           now: london.parseLocal("2026-10-08T15:00")!), options: options)
+    }
+    func saysNotRecording(_ lines: [MenuLine]) -> Bool {
+        lines.contains { if case let .text(text, _) = $0 { return text.hasPrefix("Not recording") } else { return false } }
+    }
+
+    check(writeSample(db, raw: 1_000, at: start, counterSource: nil)
+          && writeSample(db, raw: 2_000, at: start + 5, counterSource: nil), "two samples before the disk fills")
+    check(db.failingSince == nil && !saysNotRecording(menu(db)), "while writes go through, the menu says nothing of it")
+    check(fillToThePageLimit(db, from: Ledger.floorDiv(start + 5, 60) + 1), "the page limit fills the file")
+    check(!writeSample(db, raw: 51_000, at: start + 3_605, counterSource: nil), "a sample on a full disk fails")
+    expect(db.failingSince, stopped, "the first failed write records when recording stopped")
+    db.clock = { stopped.addingTimeInterval(60) }
+    check(!writeSample(db, raw: 52_000, at: start + 3_610, counterSource: nil), "and so does the next")
+    expect(db.failingSince, stopped, "which keeps the time the run of failures began")
+
+    let failing = menu(db)
+    expect(Array(failing.prefix(3)),
+           [.text("Not recording since 8 Oct 2026 at 14:05: the database cannot be written",
+                  toolTip: "Bytemeter tries again every 5 seconds. Traffic in the meantime is counted once a write "
+                      + "succeeds, unless the Mac restarts first. The reason is in "
+                      + "~/Library/Logs/Bytemeter/bytemeter.err."),
+            .separator, .header("Live")],
+           "the menu says first that recording has stopped, and since when, above everything else")
+
+    makeRoom(db)
+    check(writeSample(db, raw: 53_000, at: start + 3_615, counterSource: nil), "with room again the next sample commits")
+    check(db.failingSince == nil, "and the commit clears when recording stopped")
+    let recovered = menu(db)
+    check(!saysNotRecording(recovered), "so the line is gone")
+    expect(recovered.first, .header("Live"), "and the menu starts as it always does")
+
+    // The demo's database is opened read only and writes nothing, so it can
+    // never be failing to write.
+    let folder = scratchFolder + "demo_failing_\(UUID().uuidString)"
+    let path = folder + "/bytemeter.db"
+    do {
+        let source = try! Database(path: path)
+        source.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: stopped), iface: "en0",
+                                       bytesIn: 4_000, bytesOut: 400)], ssid: ssidPlaceholder, idle: false)
+    }
+    if let demo = try? Database(readOnlyPath: path) {
+        check(demo.failingSince == nil && MenuSnapshot(aggregator: Aggregator(db: demo, cal: london),
+                                                       now: stopped).notRecordingSince == nil,
+              "a read only demo database is never failing")
+        check(!saysNotRecording(menu(demo)), "so its menu never says recording has stopped")
+    } else {
+        check(false, "the demo database opens read only")
+    }
+}
+

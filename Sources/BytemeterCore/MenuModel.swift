@@ -41,6 +41,9 @@ public struct MenuSnapshot {
     public let peakHourText: String
     public let peakDayText: String
     public let topTalkers: [TopTalker]
+    /// When writes to the database began failing, or nil while they go
+    /// through. Read from the same database, on its queue, with the figures.
+    public let notRecordingSince: Date?
 
     /// `now` is the moment the menu describes: the clock for the real app, or
     /// a fixed moment for a demo or a test.
@@ -76,6 +79,7 @@ public struct MenuSnapshot {
             peakDayText = "Peak day \(period): nothing yet"
         }
         topTalkers = aggregator.topTalkers(cal.today(now), limit: 5)
+        notRecordingSince = aggregator.db.failingSince
     }
 }
 
@@ -109,6 +113,18 @@ public enum MenuModel {
         var lines: [MenuLine] = []
         func figure(_ label: String, _ totals: Totals, strong: Bool = false) -> MenuLine {
             .figure(label: label, down: Units.bytes(totals.bytesIn), up: Units.bytes(totals.bytesOut), strong: strong)
+        }
+
+        // With a full disk the figures below stop moving and nothing else
+        // looks wrong, so the first line says so. The baselines stay put
+        // while writes fail, so the next write that succeeds books the
+        // traffic in between, as long as the counters have not restarted.
+        if let since = data.notRecordingSince {
+            lines.append(.text("Not recording since \(data.cal.timestampLabel(since)): the database cannot be written",
+                               toolTip: "Bytemeter tries again every 5 seconds. Traffic in the meantime is counted "
+                                   + "once a write succeeds, unless the Mac restarts first. The reason is in "
+                                   + "~/Library/Logs/Bytemeter/bytemeter.err."))
+            lines.append(.separator)
         }
 
         if options.liveSpeed {
