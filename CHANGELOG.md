@@ -42,7 +42,7 @@ This version corrects several figures, fixes how per-app traffic and sleep are r
 ### Project
 
 - The dashboard page and its CSV export are a library of their own, `BytemeterDashboard`, built from Foundation and the engine alone, so the self-test can check the page and another platform could show it.
-- The self-test runs 869 checks, up from 526, in one file per subject, and builds a dashboard and reads the page and the CSV, so the promise that the page fetches nothing is checked on every run.
+- The self-test runs 910 checks, up from 526, in one file per subject, and builds a dashboard and reads the page and the CSV, so the promise that the page fetches nothing is checked on every run.
 - CI checks out with `actions/checkout` v7 and holds read-only access to the repository, which is all it needs.
 - CI builds the app bundle in a fresh clone of the commit under test, so nothing untracked and no build output from its earlier steps can help it.
 - CI builds the demo dashboard from the synthetic database on every push, and fails if the page has a script or names a web address.

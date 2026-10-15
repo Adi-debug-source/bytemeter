@@ -169,7 +169,7 @@ Four targets, and the split is deliberate:
 
 ```bash
 swift build -c release                     # build
-swift run -c release BytemeterSelfTest     # run the self-test, 869 checks
+swift run -c release BytemeterSelfTest     # run the self-test, 910 checks
 ```
 
 The self-test is a plain executable rather than an XCTest target because XCTest is not part of the Command Line Tools, and this project does not assume full Xcode. Swift Testing does run under the Command Line Tools, but it needs Swift 6, which would raise the minimum macOS. CI runs the self-test on every push, builds the app bundle from a clean clone, builds the demo dashboard and checks it fetches nothing, and verifies the bundle's signature.
