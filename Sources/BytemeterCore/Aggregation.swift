@@ -387,23 +387,35 @@ public struct Aggregator {
                        bytesOut: run(soFar.bytesOut, lastDay.bytesOut)), end)
     }
 
-    /// The seven day average of download for each day of a `daily` series,
+    /// The seven-day average of download for each day of a `daily` series,
     /// or nil where there is none. A point is the mean of seven whole counted
     /// days ending on its own day: counting had begun by the start of each,
-    /// and each is over, which leaves out the series' last day, today.
-    /// Dividing by seven regardless counted the days before a new install as
-    /// nothing, which drew a rising trend that was not there, and today's
-    /// part day as a whole one, which pulled the end of every line down.
+    /// and each was over by `now`, which leaves out today. Dividing by seven
+    /// regardless counted the days before a new install as nothing, which
+    /// drew a rising trend that was not there, and today's part day as a
+    /// whole one, which pulled the end of every line down. The first six
+    /// days of a series have no week inside it, so they never have a point;
+    /// `dailyWithAverage` asks for six more days than it returns.
     public func sevenDayAverage(_ series: [LabelledTotals], now: Date) -> [Double?] {
         let first = earliestMinute(upTo: now)
-        let whole = series.indices.map { index in
-            guard let first, index < series.count - 1 else { return false }
-            return first <= BytemeterCalendar.minute(from: series[index].date)
+        let whole = series.map { day in
+            guard let first else { return false }
+            return first <= BytemeterCalendar.minute(from: day.date) && cal.startOfDay(day.date, offsetBy: 1) <= now
         }
         return series.indices.map { index in
             guard index >= 6, whole[(index - 6)...index].allSatisfy({ $0 }) else { return nil }
             return series[(index - 6)...index].reduce(0.0) { $0 + Double($1.totals.bytesIn) } / 7.0
         }
+    }
+
+    /// The last `count` days, as `daily` gives them, each with its
+    /// seven-day average. The averages are worked out over six more days
+    /// than are returned, so the first day shown has a point once a whole
+    /// week ending on it has been counted, as every later day does.
+    public func dailyWithAverage(lastDays count: Int, now: Date) -> (days: [LabelledTotals], averages: [Double?]) {
+        guard count > 0 else { return ([], []) }
+        let longer = daily(lastDays: count + 6, now: now)
+        return (Array(longer.suffix(count)), Array(sevenDayAverage(longer, now: now).suffix(count)))
     }
 
     /// Every byte on record from the earliest minute up to and including the

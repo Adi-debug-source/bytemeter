@@ -180,10 +180,10 @@ private func checkAverageLineOnlyOverAWholeWeek(fewDays: BuiltPage, fortyDays: B
     check(!fewDays.html.contains("<polyline"), "and the chart draws no line")
     check(fortyDays.html.contains("Seven day average"), "with 40 days counted, the key names the seven day average")
     check(fortyDays.html.contains("<polyline"), "and the chart draws it")
-    // 30 days a chart, a point once seven whole days are in, none for today.
+    // 30 days a chart, each with a whole week counted behind it, none for today.
     let points = fortyDays.html.components(separatedBy: "<polyline points=\"").dropFirst().first?
         .components(separatedBy: "\"").first?.split(separator: " ") ?? []
-    expect(points.count, 23, "the line starts on the seventh day and stops at yesterday")
+    expect(points.count, 29, "on 40 days counted the line starts on the chart's first day and stops at yesterday")
     expect(Set(points.map { $0.split(separator: ",").last ?? "" }).count, 1, "and on steady traffic it is flat")
 }
 

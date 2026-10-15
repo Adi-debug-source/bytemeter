@@ -318,6 +318,21 @@ func checkSevenDayAverageCountsWholeDays() {
     check(before.compactMap { $0 }.allSatisfy { $0 == day }, "every point is the steady 1,440 MB, got \(Set(before.compactMap { $0 }))")
     check(before.last! == nil, "today is not over, so it has no point")
 
+    // Asked for the 30 days a chart draws, the averages run over six more,
+    // so every whole day in the window has a point, from the first on.
+    let charted = steady.dailyWithAverage(lastDays: 30, now: now)
+    expect(charted.days.map(\.label), series.map(\.label), "the days are the 30 the chart draws")
+    expect(charted.days.map(\.totals), series.map(\.totals), "with the same figures")
+    expect(charted.averages.indices.filter { charted.averages[$0] != nil }, Array(0..<29),
+           "forty days in, every whole day of the 30 has a point, the first included, and today none")
+    check(charted.averages.compactMap { $0 }.allSatisfy { $0 == day }, "and each is the steady 1,440 MB")
+    expect(steady.dailyWithAverage(lastDays: 0, now: now).days.count, 0, "no days asked for, none given")
+
+    // Today is left out by the clock, not by its place in the series.
+    let toYesterday = Array(steady.daily(lastDays: 31, now: now).dropLast())
+    expect(steady.sevenDayAverage(toYesterday, now: now).last, day,
+           "a series that ends yesterday, asked today, has a point on its last day")
+
     // Counting began at 22:00 nine days before: eight whole days, so only
     // the last two whole-week windows have a point.
     let nineNow = london.parseLocal("2026-10-08T22:00")!
@@ -325,6 +340,8 @@ func checkSevenDayAverageCountsWholeDays() {
     let nineAverages = nine.sevenDayAverage(nine.daily(lastDays: 30, now: nineNow), now: nineNow)
     expect(nineAverages.indices.filter { nineAverages[$0] != nil }, [27, 28],
            "nine days in, only the two windows of whole counted days have a point")
+    let nineCharted = nine.dailyWithAverage(lastDays: 30, now: nineNow).averages
+    expect(nineCharted.indices.filter { nineCharted[$0] != nil }, [27, 28], "and the six days more add none before them")
     check(nineAverages.compactMap { $0 }.allSatisfy { $0 == day }, "and neither counts a day before counting as nothing")
 
     // 7 GB more on 20 September raises the seven points whose window holds

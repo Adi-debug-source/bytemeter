@@ -82,12 +82,9 @@ public struct DashboardData {
         allTime = headlines.allTime
 
         hourly = aggregator.hourly(day: now, now: now)
-        let series = aggregator.daily(lastDays: 30, now: now)
-        daily = series
-
-        // A seven day rolling mean over the download figures, drawn over the
+        // A seven-day rolling mean over the download figures, drawn over the
         // bars so a single heavy day does not read as a trend.
-        rollingAverage = aggregator.sevenDayAverage(series, now: now)
+        (daily, rollingAverage) = aggregator.dailyWithAverage(lastDays: 30, now: now)
 
         heat = aggregator.heatmap(weeks: 4, now: now)
         monthly = aggregator.monthly(now: now)
