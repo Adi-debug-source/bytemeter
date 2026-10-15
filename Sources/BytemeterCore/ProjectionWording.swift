@@ -5,10 +5,11 @@ import Foundation
 /// What the month is on track for, in the same words on the menu and on the
 /// dashboard.
 ///
-/// It is the one figure that adds download and upload together, because a
-/// provider's allowance counts both directions, so it says so wherever it
-/// appears. And it names the end of the month in words: "by 1 Oct", seen on
-/// 29 September, read as if the month ran into October.
+/// Like the cap, it adds download and upload together, because a provider's
+/// allowance counts both directions. Every other headline figure is download
+/// alone, so it says so wherever it appears. And it names the end of the
+/// month in words: "by 1 Oct", seen on 29 September, read as if the month ran
+/// into October.
 public struct ProjectionWording: Equatable {
     /// "100.8 GB", download and upload together, or "Too early" when there
     /// is no figure yet.
