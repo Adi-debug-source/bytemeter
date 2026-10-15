@@ -28,6 +28,7 @@ func runDashboardChecks() {
     checkEmptyChartsDrawNoScale(fewDays)
     checkEventsReadInPlainWordsOnThePage(fewDays)
     checkStandInNetworkNamesReadAsUnknown()
+    checkProjectionTileReadsAsASentence(fortyDays)
 }
 
 // MARK: - The fixtures
@@ -418,4 +419,32 @@ private func checkStandInNetworkNamesReadAsUnknown() {
     let rows = built.csvRows.filter { $0.first == "network_30d" }.map { Array($0.prefix(3)) }
     expect(rows, [["network_30d", "Harbour Cafe", "900000000"], ["network_30d", NetworkNames.unknown, "500000000"]],
            "and the export has one Unknown network row, carrying the stand-in's traffic too")
+}
+
+// MARK: - The projection tile reads as a sentence, early or not
+
+private func checkProjectionTileReadsAsASentence(_ fortyDays: BuiltPage) {
+    /// The projection tile's heading and figure, tags and all.
+    func tile(_ built: BuiltPage) -> String {
+        built.html.components(separatedBy: "<div class=\"stat projection\">").dropFirst().first?
+            .components(separatedBy: "</div>").first ?? ""
+    }
+    // Six hours counted on a new install: too early to project.
+    let db = makeDatabase()
+    let start = BytemeterCalendar.minute(from: london.parseLocal("2026-10-08T06:00")!)
+    db.addBuckets(stride(from: start, to: start + 360, by: 60).map {
+        BucketDelta(minute: $0, iface: "en0", bytesIn: 50_000_000, bytesOut: 5_000_000)
+    }, ssid: ssidPlaceholder, idle: false)
+    let early = tile(BuiltPage(db, now: fixtureMoment))
+    check(early.contains("<dt>Projection<span class=\"since\">a day of counting is needed first</span></dt>"),
+          "on a new install the tile is headed Projection and says why there is no figure, got \(early)")
+    check(early.contains("<dd>Too early<span class=\"qualifier\">to project October</span></dd>"),
+          "and reads Too early to project October, as the menu does")
+    check(!early.contains("by the end of"), "with no deadline under a figure it does not have")
+
+    let projected = tile(fortyDays)
+    check(projected.contains("<dt>On track for<span class=\"since\">down and up combined, as a provider counts it</span></dt>"),
+          "with a figure the tile is headed On track for, got \(projected)")
+    check(projected.contains("<span class=\"qualifier\">by the end of October</span></dd>"),
+          "and gives the deadline under it")
 }

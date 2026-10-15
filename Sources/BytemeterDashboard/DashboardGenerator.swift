@@ -69,8 +69,8 @@ public enum DashboardGenerator {
             \(statRow(cal.cycleLabel(data.generatedAt), data.thisMonth))
             \(statRow("Last 30 days", data.last30))
             <div class="stat projection">
-              <dt>On track for<span class="since">\(esc(projectionBasis))</span></dt>
-              <dd>\(esc(data.projection.figure))<span class="qualifier">\(esc(data.projection.deadline))</span></dd>
+              <dt>\(esc(data.projection.title))<span class="since">\(esc(projectionBasis))</span></dt>
+              <dd>\(esc(data.projection.figure))<span class="qualifier">\(esc(data.projection.qualifier))</span></dd>
             </div>
             \(allTimeRow(data))
           </dl>

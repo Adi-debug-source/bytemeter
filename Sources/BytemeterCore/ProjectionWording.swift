@@ -19,6 +19,12 @@ public struct ProjectionWording: Equatable {
     public let deadline: String
     /// The menu's line. The dashboard shows the same parts as a tile.
     public let headline: String
+    /// The tile's heading: "On track for", or "Projection" when it is too
+    /// early, since "On track for" over "Too early" is not a sentence.
+    public let title: String
+    /// Under the tile's figure: the deadline, or "to project October" when
+    /// it is too early, so the tile reads as the menu's line does.
+    public let qualifier: String
     /// True when there is no figure to give: under a day has been counted,
     /// or nothing at all. The caption beside it then says why.
     public let isTooEarly: Bool
@@ -44,10 +50,14 @@ public struct ProjectionWording: Equatable {
         if let projected {
             figure = Units.bytes(projected.total)
             headline = "On track for \(figure) \(deadline)"
+            title = "On track for"
+            qualifier = deadline
             isTooEarly = false
         } else {
             figure = "Too early"
             headline = "Too early to project " + period
+            title = "Projection"
+            qualifier = "to project " + period
             isTooEarly = true
         }
     }

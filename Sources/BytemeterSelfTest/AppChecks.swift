@@ -82,6 +82,7 @@ private func checkProjectionWording() {
     expect(late.deadline, "by the end of September", "seen on 29 September, it is the end of September, not 1 Oct")
     expect(late.figure, Units.bytes(100_800_000_000), "the projection is download and upload together")
     expect(late.headline, "On track for \(Units.bytes(100_800_000_000)) by the end of September", "the menu's line")
+    expect([late.title, late.qualifier], ["On track for", "by the end of September"], "and the tile's heading and qualifier")
     expect(wording("2026-10-01T00:00").deadline, "by the end of October", "the first minute of a month")
     expect(wording("2027-02-10T12:00").deadline, "by the end of February", "a short month")
     expect(wording("2026-12-31T23:59").deadline, "by the end of December", "the last minute of a year")

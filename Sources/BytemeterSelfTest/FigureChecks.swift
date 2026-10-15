@@ -246,7 +246,9 @@ func checkProjectionOnACyclesFirstDay() {
     check(wording.isTooEarly, "the wording knows it is too early")
     expect(wording.figure, "Too early", "the tile's figure says too early")
     expect(wording.headline, "Too early to project October", "the menu's line names the month in full")
-    expect(wording.deadline, "by the end of October", "the deadline is still named, as the tile's qualifier")
+    expect(wording.deadline, "by the end of October", "the deadline is still worked out")
+    expect(wording.title, "Projection", "the tile is headed Projection, not On track for")
+    expect(wording.qualifier, "to project October", "and its figure reads on as the menu's line does")
     expect(ProjectionWording.tooEarlyBasis, "a day of counting is needed first", "the caption says why")
     expect(ProjectionWording(projected: nil, now: london.parseLocal("2026-09-29T21:30")!, cal: cycle15).headline,
            "Too early to project the cycle ending 14 Oct", "a billing cycle names its last day")
