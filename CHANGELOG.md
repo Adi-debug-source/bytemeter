@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0, not yet released
+## 1.2.0, 15 October 2026
 
 This version corrects several figures, fixes how per-app traffic and sleep are recorded, and makes the cap and the dashboard say exactly what they show. It moves the database to schema version 3 the first time it opens it, as the first item under Counting and accuracy explains.
 
