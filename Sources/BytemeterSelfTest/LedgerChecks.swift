@@ -524,6 +524,7 @@ func checkEventsReadInPlainWords() {
         (ingest(["en0": RawCounter(bytesIn: 9_000, bytesOut: 900, at: at, bootSession: "A")],
                 reading("en0", 100, 10), now: at + 537, bootTime: nil, bootSession: "B"), "Restart"),
         (ingest(plain, reading("en0", 9_071, 22_190), now: at + 537), "Interface reset"),
+        (ingest(plain, reading("en0", 9_071, 22_190), now: at + 537, bootTime: nil), "Counter reset"),
         (ingest(["en0": RawCounter(bytesIn: 4_294_967_296 - 1_000, bytesOut: 10, at: at)], reading32("en0", 500, 20),
                 now: at + 5), "Counter wrapped"),
         (ingest(["en0": RawCounter(bytesIn: 10_000_000_000, bytesOut: 50, at: at, source: .mib64)],
@@ -539,11 +540,16 @@ func checkEventsReadInPlainWords() {
         expect(worded(event).label, label, "\(event?.kind ?? "no event") reads as \(label)")
         expect(worded(event).text, event?.detail ?? "", "and \(label) keeps its stored text")
     }
+    check(fromLedger[4].0?.detail.contains("could not be read to tell which") == true,
+          "the reset labelled neither way is the one whose text says it could not tell a restart from a reset")
+    expect(EventWording.describe(kind: "counter_reset", detail: "en0 counter fell. Baseline moved.").label, "Counter reset",
+           "and so is a reset in words this build does not know")
 
-    // The kinds written elsewhere, and one this build does not know.
+    // The kinds written elsewhere, and ones this build does not know.
     for (kind, label) in [("seed", "Counting began"), ("prune", "Tidy up"), ("estimated_backfill", "Upgrade"),
-                          ("data_correction", "Correction"), ("gap_sleep", "Asleep"), ("gap_relaunch", "Not running"),
-                          ("gap_normal", "Gap"), ("something_new", "something_new")] {
+                          ("gap_sleep", "Asleep"), ("gap_relaunch", "Not running"), ("gap_normal", "Gap"),
+                          ("something_new", "Something new"), ("a_kind_from_later", "A kind from later"),
+                          ("plain", "Plain"), ("", "")] {
         expect(EventWording.describe(kind: kind, detail: "As stored.").label, label, "\(kind) reads as \(label)")
     }
 

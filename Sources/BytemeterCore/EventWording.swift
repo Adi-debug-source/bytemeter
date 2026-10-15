@@ -10,7 +10,8 @@ import Foundation
 /// rows they spread. A gap's text is reworded only when it reads back exactly
 /// as `Ledger.spreadDetail` writes it, through the same reader the migration
 /// uses; any other text is shown as it was stored, and a kind this build does
-/// not know is shown under its own name.
+/// not know is shown under its own name in words, `some_new_kind` as
+/// "Some new kind".
 public enum EventWording {
 
     public static func describe(kind: String, detail: String) -> (label: String, text: String) {
@@ -21,8 +22,7 @@ public enum EventWording {
         switch kind {
         case "baseline": return "New interface"
         case "seed": return "Counting began"
-        // Both ways the ledger books a restart say so in these words.
-        case "counter_reset": return detail.contains("The Mac restarted") ? "Restart" : "Interface reset"
+        case "counter_reset": return resetLabel(detail)
         case "counter_wrap": return "Counter wrapped"
         case "counter_source": return "Counter changed"
         case "clock_backwards": return "Clock went back"
@@ -33,9 +33,25 @@ public enum EventWording {
         case "gap_too_long": return "Long gap"
         case "prune": return "Tidy up"
         case "estimated_backfill": return "Upgrade"
-        case "data_correction": return "Correction"
-        default: return kind
+        default: return inWords(kind)
         }
+    }
+
+    /// A reset is labelled by what the ledger could tell. Both ways it books
+    /// a restart say "The Mac restarted", and a reset without one says the
+    /// interface itself was reset. When the boot time could not be read to
+    /// tell which, or the text is in words this build does not know, the
+    /// label claims neither.
+    private static func resetLabel(_ detail: String) -> String {
+        if detail.contains("The Mac restarted") { return "Restart" }
+        if detail.contains("the interface itself was reset") { return "Interface reset" }
+        return "Counter reset"
+    }
+
+    /// An unknown kind in words: underscores as spaces, the first letter a capital.
+    private static func inWords(_ kind: String) -> String {
+        let spaced = kind.replacingOccurrences(of: "_", with: " ")
+        return spaced.prefix(1).uppercased() + spaced.dropFirst()
     }
 
     /// A spread gap as a sentence, for example "en0: 7 h 16 min asleep.
