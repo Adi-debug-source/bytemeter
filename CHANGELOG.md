@@ -8,6 +8,8 @@
 - No figure prints as 1000 of a smaller unit: 999.6 MB reads 1.00 GB, so the menu bar no longer shows 1000 MB as the day crosses 1 GB.
 - The cap shows the real percentage, past 100% once the cap is passed, and says what is left and how many days are to go, or how far over the cap the month is. Preferences now says it tracks the cap, because nothing ever warned.
 - Preferences says the billing cycle can start on any day from 1 to 28.
+- If the database cannot be written, for example on a full disk, a line at the top of the menu says recording has stopped and since when, until a write succeeds again, where before the figures simply stopped moving.
+- Before the first byte is counted, a line at the top of the menu says counting has started, so a new install's menu of 0 B explains itself.
 
 ### The dashboard
 
@@ -22,6 +24,8 @@
 - Per interface and Per network say they cover the last 30 days, and the idle note says that mouse input counts too.
 - Every chart has a name a screen reader announces, with both figures for the idle split, and a process name cut short shows in full on hover.
 - Muted text is a lighter grey, which meets the WCAG AA contrast for small text on the page.
+- A chart with nothing on it yet, such as today's just after midnight or every chart on a new install, draws its baseline alone rather than an axis from 0 B to 1 B, and the heatmap's key names no top figure until there is one.
+- Recent events read in plain words: each has a label such as Asleep, Restart or New interface, and a gap says how long it lasted and how much traffic was spread across it, in place of the raw event names and byte counts.
 
 ### Counting and accuracy
 

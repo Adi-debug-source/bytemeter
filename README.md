@@ -64,6 +64,8 @@ The menu holds:
 - **Top talkers** today, per app.
 - **Open dashboard** (⌘D), **Preferences** and **Quit**.
 
+If recording stops because the database cannot be written, for example on a full disk, a line at the top of the menu says so and since when, and on a new install, until the first figures arrive, it says counting has started.
+
 ## Preferences
 
 Preferences, from the menu, has five settings:
