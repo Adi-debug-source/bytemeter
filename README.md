@@ -60,7 +60,7 @@ The menu holds:
 
 - **Totals:** today, yesterday, this week (from Monday), the last 7 days, this month (from the 1st), the last 30 days, and all time since counting began. The four totals the menu bar can cycle through (today, this week, this month and all time) are drawn at full contrast; the rest are grey. All time shows its start date and day count beneath it, for example "since 1 Jan 2026 · 90.0 days counted".
 - **Averages:** per hour today, per day this week, per day this month, and per day across all time.
-- A **month-end projection** (download and upload combined, as a provider counts them), the **peak hour** and the **peak day**, and the **cap** when one is set. Every other headline figure is download; the projection and the cap are the figures that add the two together, and the projection says so beside its figure.
+- A **month-end projection** (download and upload combined, as a provider counts them), the **peak hour** and the **peak day**, and the **cap** when one is set. Every other headline figure is download; the projection and the cap are the figures that add the two together, and the projection says so beside its figure. The projection carries the month's rate so far on to its end. On the first day of a month it runs the last 24 hours on instead, and with under a day counted at all it says it is too early to project.
 - **Top talkers** today, per app.
 - **Open dashboard** (⌘D), **Preferences** and **Quit**.
 
@@ -80,18 +80,22 @@ Preferences, from the menu, has five settings:
 
 Open dashboard writes one dark, self-contained HTML page and opens it. It is regenerated each time, with hand-rolled inline SVG and native SVG tooltips: zero JavaScript, zero network requests. A CSV export sits beside it as a real file.
 
+The top of the page gives today's download, compared with yesterday at the same time of day, beside this week, the last 7 days, this month, the last 30 days, the projection and all time, then a Monthly cap panel when a cap is set.
+
 Seven sections, and an eighth once a second month begins:
 
 1. Today, by hour.
-2. The last 30 days, with a rolling 7-day average.
-3. A day-of-week against hour-of-day heatmap.
+2. The last 30 days, with a seven-day average of whole days counted, which stops at yesterday because today is not over.
+3. A day-of-week against hour-of-day heatmap, an average over the last four whole weeks, so every weekday counts the same.
 4. Top talkers, per app.
 5. Idle against active.
 6. Per interface.
 7. Per network.
 8. Month by month, once a second month begins.
 
-![The last 30 days, with a rolling 7-day average](docs/thirty-days.png)
+The footer says how the figures are made and lists recent events in plain words, such as a sleep with how long it lasted and how much traffic was spread across it.
+
+![The last 30 days, with a seven-day average](docs/thirty-days.png)
 
 ![The day-against-hour heatmap](docs/heatmap.png)
 
@@ -121,7 +125,8 @@ Bytemeter aims to be exact about what it can measure, and plain about what it ca
   4. traffic from before Bytemeter was first installed, which is not counted by design.
 - **Timing.** Figures are kept per minute. A reading that straddles a minute boundary lands in the later minute, so a minute can be out by at most 5 seconds' worth of traffic, and hourly and daily figures the same way, only at their edges. Sleep periods are the exception: the bytes are exact, but their timing is spread evenly and marked as estimated. And if the Mac's clock is ever set ahead by hand and then corrected, new traffic is filed under the later time until the clock catches up; nothing is lost or counted twice.
 - **Rounding on screen.** The menu and the dashboard round for readability: under 10 GB they show two decimals (3.21 GB, so plus or minus 5 MB), and from 10 GB up one decimal (plus or minus 50 MB). The menu bar figure is shorter, so its width stays steady: one decimal in GB and whole MB below 1 GB. A figure never shows as 1000 of a smaller unit. The database and the CSV export keep exact byte counts.
-- **Per-app figures are a guide, not an exact split.** They come from `nettop` and only ever under-report. On the development Mac about 80% of interface bytes were attributed to an app; the rest belongs to processes that exited between samples, and to traffic `nettop` does not attribute.
+- **Per-app figures are a guide, not an exact split.** They come from `nettop`, leave out loopback traffic, which never leaves the Mac, and only ever under-report. On the development Mac about 80% of interface bytes were attributed to an app; the rest belongs to processes that exited between samples, and to traffic `nettop` does not attribute.
+- **Traffic inside your own network counts too.** The interface counters cannot tell internet traffic from traffic to another device at home, so Time Machine to a network disk, a NAS, AirPlay, screen sharing and copies between Macs all count, though none of it reaches your provider.
 - **Against a provider's or router's figure, expect small differences, not a match to the byte.** A provider or router counts at its own point in the network and in its own way, and a router counts every device on the connection, while Bytemeter counts only what this Mac's own interfaces moved.
 - **Units are decimal** (1 GB = 1,000,000,000 bytes), as providers count; see Counting below.
 
@@ -155,16 +160,16 @@ Bytemeter reads `net.link.generic.ifdata.<index>.general` through `sysctl` inste
 
 Four targets, and the split is deliberate:
 
-1. **BytemeterCore** is the engine: reading the interface counters, working out deltas, spotting resets, bucketing by minute, the SQLite schema and every aggregation query. It imports nothing macOS-only, so an iOS version could use it untouched.
+1. **BytemeterCore** is the engine: reading the interface counters, working out deltas, spotting resets, bucketing by minute, the SQLite schema, every aggregation query and the menu's wording. It imports nothing macOS-only, so an iOS version could use it untouched.
 2. **BytemeterDashboard** builds the dashboard page and its CSV export from the engine: the figures, the HTML, the inline SVG charts and the embedded fonts. It uses Foundation and the engine alone, so the self-test can check the page itself, and another platform could show the same page.
-3. **Bytemeter** is the macOS app: the menu bar item, `nettop` sampling, preferences, and sleep and wake handling.
-4. **BytemeterSelfTest** is a plain executable, not an XCTest target, for the reason in the next section.
+3. **Bytemeter** is the macOS app: the menu bar item, `nettop` sampling, the Wi-Fi network name, preferences, and sleep and wake handling.
+4. **BytemeterSelfTest** holds the checks, one file per subject. It is a plain executable, not an XCTest target, for the reason in the next section.
 
 ## Build from source and testing
 
 ```bash
 swift build -c release                     # build
-swift run -c release BytemeterSelfTest     # run the self-test, 526 checks
+swift run -c release BytemeterSelfTest     # run the self-test, 869 checks
 ```
 
 The self-test is a plain executable rather than an XCTest target because XCTest is not part of the Command Line Tools, and this project does not assume full Xcode. Swift Testing does run under the Command Line Tools, but it needs Swift 6, which would raise the minimum macOS. CI runs the self-test on every push, builds the app bundle from a clean clone, builds the demo dashboard and checks it fetches nothing, and verifies the bundle's signature.

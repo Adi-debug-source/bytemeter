@@ -23,10 +23,10 @@ for each product linked.
 
 | Part | Does |
 |---|---|
-| `Sources/BytemeterCore` | the engine: counting, the database, the totals. No AppKit, so another platform could use it untouched |
+| `Sources/BytemeterCore` | the engine: counting, the database, the totals and the menu's wording. No AppKit, so another platform could use it untouched |
 | `Sources/BytemeterDashboard` | the dashboard page and its CSV export: the figures, the HTML, the styles, the charts and the embedded fonts. Foundation and the engine only, so the self-test can check the page |
 | `Sources/Bytemeter` | the macOS app: menu bar, sampling, per-app usage, Preferences |
-| `Sources/BytemeterSelfTest` | the checks |
+| `Sources/BytemeterSelfTest` | the checks, one file per subject, with the shared helpers and fixtures in `Harness.swift` |
 | `VERSION` | the version and build number, and the only place either lives |
 | `Scripts/Info.plist` | template for the app's `Info.plist` |
 | `Scripts/bytemeter.plist` | template for the LaunchAgent that starts it at login |
