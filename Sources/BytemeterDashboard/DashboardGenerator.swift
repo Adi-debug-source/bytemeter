@@ -118,7 +118,7 @@ public enum DashboardGenerator {
         let dayValues = data.daily.map { (label: $0.label, totals: $0.totals) }
         // The average is named only when its line is drawn, as in the key.
         let label = "Download and upload for each of the last 30 days"
-            + (SVGKit.drawsAverage(data.rollingAverage) ? ", with a seven day average." : ".")
+            + (SVGKit.drawsAverage(data.rollingAverage) ? ", with a seven-day average." : ".")
         return """
         <section class="panel">
           <div class="panel-head">
@@ -298,7 +298,7 @@ public enum DashboardGenerator {
         <span class="key"><i class="swatch soft"></i>Up, below the line, on the same scale</span>
         """
         if SVGKit.drawsAverage(averages) {
-            items += "<span class=\"key\"><i class=\"swatch dash\"></i>Seven day average</span>"
+            items += "<span class=\"key\"><i class=\"swatch dash\"></i>Seven-day average</span>"
         }
         // Only on a chart that draws some, so a clean day carries no clutter.
         if estimated {

@@ -3,7 +3,7 @@ import BytemeterCore
 
 // Checks for the figures the menu and the dashboard show: the units, top
 // talkers, the menu bar modes, averages, the projection, the heatmap, the
-// seven day average, the comparison with yesterday, month by month, all
+// seven-day average, the comparison with yesterday, month by month, all
 // time, the figures as of a moment, the headline set, the cap, and the
 // menu's line while counting has only just started.
 
@@ -302,7 +302,7 @@ func checkHeatmapAveragesWholeWeeks() {
     expect(uniform.heatmap(now: now), cells, "nothing from today is in any cell")
 }
 
-// MARK: - The seven day average counts only whole counted days
+// MARK: - The seven-day average counts only whole counted days
 
 func checkSevenDayAverageCountsWholeDays() {
     // 1 MB down in every minute for forty days up to Thursday noon: every

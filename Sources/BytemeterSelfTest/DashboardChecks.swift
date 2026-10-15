@@ -63,7 +63,7 @@ private struct BuiltPage {
 }
 
 /// Four days of traffic before the fixture moment, which is under seven whole
-/// counted days. The heaviest is 2.2 GB down, so the 30 day chart's axis tops
+/// counted days. The heaviest is 2.2 GB down, so the 30-day chart's axis tops
 /// out at 2.5 GB. A night's sleep is spread across the gap, which writes a
 /// gap event, and two processes have names a page or a spreadsheet could take
 /// for markup or a formula.
@@ -165,20 +165,20 @@ private func checkWriteMakesBothFiles(_ built: BuiltPage) {
     check(built.html.contains("href=\"\(DashboardGenerator.csvFile)\""), "the page's export link names the CSV beside it")
 }
 
-// MARK: - The 30 day chart's axis
+// MARK: - The 30-day chart's axis
 
 private func checkThirtyDayAxisReadsQuarters(_ built: BuiltPage) {
     let chart = panel(built.html, heading: "Last 30 days")
-    check(chart.contains("class=\"axis\">2.5 GB<"), "a 2.2 GB day puts the 30 day chart's top line at 2.5 GB")
+    check(chart.contains("class=\"axis\">2.5 GB<"), "a 2.2 GB day puts the 30-day chart's top line at 2.5 GB")
     check(chart.contains("class=\"axis\">1.25 GB<"), "and its middle line reads 1.25 GB, where one decimal said 1.3 GB")
 }
 
-// MARK: - The seven day average needs a whole week
+// MARK: - The seven-day average needs a whole week
 
 private func checkAverageLineOnlyOverAWholeWeek(fewDays: BuiltPage, fortyDays: BuiltPage) {
-    check(!fewDays.html.contains("Seven day average"), "under seven whole counted days, the key has no seven day average")
+    check(!fewDays.html.contains("Seven-day average"), "under seven whole counted days, the key has no seven-day average")
     check(!fewDays.html.contains("<polyline"), "and the chart draws no line")
-    check(fortyDays.html.contains("Seven day average"), "with 40 days counted, the key names the seven day average")
+    check(fortyDays.html.contains("Seven-day average"), "with 40 days counted, the key names the seven-day average")
     check(fortyDays.html.contains("<polyline"), "and the chart draws it")
     // 30 days a chart, each with a whole week counted behind it, none for today.
     let points = fortyDays.html.components(separatedBy: "<polyline points=\"").dropFirst().first?
@@ -318,7 +318,7 @@ private func checkChartsAndNamesCanBeRead(fewDays: BuiltPage, fortyDays: BuiltPa
     let heatmap = "Average download and upload by day of the week and hour of the day, over the last four whole weeks."
     expect(chartLabels(fortyDays.html), [
         "Download and upload for each hour of today.",
-        "Download and upload for each of the last 30 days, with a seven day average.",
+        "Download and upload for each of the last 30 days, with a seven-day average.",
         heatmap,
         "Active 46.7 GB and idle 0 B, over the last 30 days.",
         "Download and upload for each month.",
@@ -326,7 +326,7 @@ private func checkChartsAndNamesCanBeRead(fewDays: BuiltPage, fortyDays: BuiltPa
     expect(chartLabels(cycles.html).last, "Download and upload for each billing cycle.",
            "on a billing cycle Month by month says each bar is a cycle")
     expect(chartLabels(fewDays.html).dropFirst().first, "Download and upload for each of the last 30 days.",
-           "with no seven day average drawn, the 30 day chart does not name one")
+           "with no seven-day average drawn, the 30-day chart does not name one")
     expect(chartLabels(fewDays.html).last, "Active 3.18 GB and idle 528 MB, over the last 30 days.",
            "the idle split names both its figures, the sleep's spread traffic as idle")
 }
@@ -384,7 +384,7 @@ private func checkEmptyChartsDrawNoScale(_ fewDays: BuiltPage) {
     check(axisFigures(panel(midnight.html, heading: "Today by hour")).allSatisfy { !$0.hasSuffix("B") && $0 != "0" },
           "just after midnight, today's empty chart draws no scale")
     check(panel(midnight.html, heading: "Last 30 days").contains("class=\"axis\">2.5 GB<"),
-          "while the 30 day chart beside it keeps its own")
+          "while the 30-day chart beside it keeps its own")
     let hourly = panel(fewDays.html, heading: "Today by hour")
     check(axisFigures(hourly).filter { $0.hasSuffix("B") }.count == 4 && hourly.contains("class=\"axis\">0<"),
           "a chart with traffic keeps the figures on its gridlines, and its 0")

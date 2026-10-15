@@ -345,7 +345,7 @@ public final class Database {
 
         if version < 3 {
             // Version 3 keeps how many of a row's bytes are estimated, not
-            // only a mark. The 90 day tidy up gave a collapsed hour the mark
+            // only a mark. The 90-day tidy up gave a collapsed hour the mark
             // of any minute in it, so the measured bytes around a wake or a
             // restart came to count as estimated too. A row marked before
             // this step was counted as estimated in full, so that is what it
