@@ -19,6 +19,7 @@ func runDashboardChecks() {
     checkWriteMakesBothFiles(fewDays)
     checkThirtyDayAxisReadsQuarters(fewDays)
     checkAverageLineOnlyOverAWholeWeek(fewDays: fewDays, fortyDays: fortyDays)
+    checkAverageSharesTheChartsScale()
     checkHeatmapCellsAverageWholeWeeks(fortyDays)
     checkCapPanelSaysWhatIsLeftOrOver()
     checkLabelsNameTheirPeriod(months: fortyDays, cycles: fortyDaysOnACycle)
@@ -104,6 +105,19 @@ private func fortyUniformDaysDatabase() -> Database {
     return db
 }
 
+/// Every axis figure in a piece of the page, in order.
+private func axisFigures(_ html: String) -> [String] {
+    html.components(separatedBy: "class=\"axis\">").dropFirst().map { $0.components(separatedBy: "<")[0] }
+}
+
+/// The height of each point on the first dashed line in a piece of the
+/// page, as its y in the chart's viewBox.
+private func averageLine(_ html: String) -> [String] {
+    let points = html.components(separatedBy: "<polyline points=\"").dropFirst().first?
+        .components(separatedBy: "\"").first?.split(separator: " ") ?? []
+    return points.map { String($0.split(separator: ",").last ?? "") }
+}
+
 /// The part of a page from a panel's heading to the end of its section, so a
 /// check on one chart cannot pass on a figure another chart printed.
 private func panel(_ page: String, heading: String) -> String {
@@ -181,10 +195,56 @@ private func checkAverageLineOnlyOverAWholeWeek(fewDays: BuiltPage, fortyDays: B
     check(fortyDays.html.contains("Seven-day average"), "with 40 days counted, the key names the seven-day average")
     check(fortyDays.html.contains("<polyline"), "and the chart draws it")
     // 30 days a chart, each with a whole week counted behind it, none for today.
-    let points = fortyDays.html.components(separatedBy: "<polyline points=\"").dropFirst().first?
-        .components(separatedBy: "\"").first?.split(separator: " ") ?? []
+    let points = averageLine(fortyDays.html)
     expect(points.count, 29, "on 40 days counted the line starts on the chart's first day and stops at yesterday")
-    expect(Set(points.map { $0.split(separator: ",").last ?? "" }).count, 1, "and on steady traffic it is flat")
+    expect(Set(points).count, 1, "and on steady traffic it is flat")
+}
+
+// MARK: - The seven-day average is drawn on the chart's own scale
+
+private func checkAverageSharesTheChartsScale() {
+    let end = BytemeterCalendar.minute(from: london.parseLocal(fixtureMoment)!)
+    /// 125 MB down at the start of every hour from `start` up to `end`,
+    /// which is 3 GB a whole day.
+    func steady(_ db: Database, from start: Int64, to end: Int64) {
+        let rows = stride(from: start, to: end, by: 60).map {
+            BucketDelta(minute: $0, iface: "en0", bytesIn: 125_000_000, bytesOut: 12_500_000)
+        }
+        _ = db.transaction { db.addBuckets(rows, ssid: ssidPlaceholder, idle: false) }
+    }
+
+    // 3 GB a day for 40 days, and 30 GB on 5 September, 33 days back. That
+    // day is before the chart's first, 9 September, but inside the week
+    // each of its first three points averages: (30 + 6 x 3) / 7 = 6.86 GB.
+    // The axis was set by the bars alone, so it topped out at 5 GB and those
+    // three points were pinned to its top line.
+    let heavy = makeDatabase()
+    steady(heavy, from: end - 40 * 1_440, to: end)
+    heavy.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-09-05T09:30")!),
+                                  iface: "en0", bytesIn: 27_000_000_000, bytesOut: 0)],
+                     ssid: ssidPlaceholder, idle: false)
+    let heavyChart = panel(BuiltPage(heavy, now: fixtureMoment).html, heading: "Last 30 days")
+    expect(axisFigures(heavyChart).prefix(4), ["5 GB", "5 GB", "10 GB", "10 GB"],
+           "a 30 GB day just before the 30-day chart lifts its top line to 10 GB, above the 6.86 GB average it brings")
+    // The baseline is at 98 and each half is 84 high: 6.86 GB of 10 GB
+    // sits at 40.40, and 3 GB at 72.80.
+    expect(averageLine(heavyChart), Array(repeating: "40.40", count: 3) + Array(repeating: "72.80", count: 26),
+           "each point sits at its own figure on that scale, and none is pinned to the top line")
+
+    // 3 GB a day from 24 August to 7 September, 45 to 31 days back, then
+    // nothing for the 30 days shown. Every bar is empty, but the first five
+    // points average days that had traffic, so the line is drawn, and a
+    // line needs a scale to be read against.
+    let gone = makeDatabase()
+    steady(gone, from: BytemeterCalendar.minute(from: london.parseLocal("2026-08-24T00:00")!),
+           to: BytemeterCalendar.minute(from: london.parseLocal("2026-09-08T00:00")!))
+    let goneChart = panel(BuiltPage(gone, now: fixtureMoment).html, heading: "Last 30 days")
+    check(goneChart.contains("Seven-day average"), "after a month off, the key still names the average its line draws")
+    expect(axisFigures(goneChart).prefix(5), ["1.25 GB", "1.25 GB", "2.5 GB", "2.5 GB", "0"],
+           "so the chart draws its scale and its 0, though every bar on it is empty")
+    // 15, 12, 9, 6 and 3 GB over a week, on a 2.5 GB scale.
+    expect(averageLine(goneChart), ["26.00", "40.40", "54.80", "69.20", "83.60"],
+           "and its five points fall as the busy days leave the week, each at its own figure")
 }
 
 // MARK: - The heatmap is an average over whole weeks
@@ -361,10 +421,6 @@ private func checkMutedTextMeetsAA(_ built: BuiltPage) {
 // MARK: - A chart with nothing on it draws its baseline and no scale
 
 private func checkEmptyChartsDrawNoScale(_ fewDays: BuiltPage) {
-    /// Every axis figure in a piece of the page, in order.
-    func axisFigures(_ html: String) -> [String] {
-        html.components(separatedBy: "class=\"axis\">").dropFirst().map { $0.components(separatedBy: "<")[0] }
-    }
     func count(_ text: String, in html: String) -> Int { html.components(separatedBy: text).count - 1 }
 
     // A new install: nothing counted at all.

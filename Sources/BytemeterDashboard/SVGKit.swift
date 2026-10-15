@@ -143,18 +143,23 @@ enum SVGKit {
         return max(1, Int((widest / slot).rounded(.up)))
     }
 
-    /// The axis maximum for a set of bars, shared by the drawing and by
-    /// `barsShowEstimate`, so the two can never disagree.
-    private static func barScale(_ values: [(label: String, totals: Totals)]) -> Double {
+    /// The axis maximum for a set of bars and the rolling average drawn over
+    /// them, shared by the drawing and by `barsShowEstimate`, so the two can
+    /// never disagree. The average counts as well as the bars because the
+    /// 30-day chart's first points average days before its first bar, and
+    /// one heavy day there can put them above every bar on the chart.
+    private static func barScale(_ values: [(label: String, totals: Totals)], averages: [Double?]) -> Double {
         let peak = values.map { max($0.totals.bytesIn, $0.totals.bytesOut) }.max() ?? 0
-        return niceCeiling(Double(max(peak, 1)))
+        let line = drawsAverage(averages) ? averages.compactMap { $0 }.max() ?? 0 : 0
+        return niceCeiling(max(Double(max(peak, 1)), line))
     }
 
     /// Whether a bar chart will draw any estimated portion thick enough to
     /// see. A day's estimate is often a few MB on a bar of several GB, and a
-    /// key for marks nobody can see would only confuse.
-    static func barsShowEstimate(_ values: [(label: String, totals: Totals)]) -> Bool {
-        let scaleMax = barScale(values)
+    /// key for marks nobody can see would only confuse. `averages` is the
+    /// chart's rolling average, if it has one, since it can set the scale.
+    static func barsShowEstimate(_ values: [(label: String, totals: Totals)], averages: [Double?] = []) -> Bool {
+        let scaleMax = barScale(values, averages: averages)
         return values.contains { entry in
             Double(min(entry.totals.estimatedIn, entry.totals.bytesIn)) / scaleMax * barHalfHeight > minimumBarHeight
                 || Double(min(entry.totals.estimatedOut, entry.totals.bytesOut)) / scaleMax * barHalfHeight > minimumBarHeight
@@ -199,7 +204,8 @@ enum SVGKit {
         let baseline = topPad + halfHeight
         let height = topPad + halfHeight * 2 + labelBand
 
-        let scaleMax = barScale(values)
+        let averages = rollingAverage ?? []
+        let scaleMax = barScale(values, averages: averages)
         let slot = plotWidth / Double(count)
         // Capped, so a chart with only two or three bars does not turn them
         // into slabs the width of the page.
@@ -215,8 +221,10 @@ enum SVGKit {
         // same values, so the shared scale is visible rather than asserted.
         // A chart with nothing on it, such as today's just after midnight or
         // any of them on a new install, has no scale to show: it draws its
-        // baseline alone, rather than an axis that runs from 0 B to 1 B.
-        let hasScale = values.contains { !$0.totals.isEmpty }
+        // baseline alone, rather than an axis that runs from 0 B to 1 B. A
+        // line over empty bars, as after a month with the Mac off, has
+        // something to show, so it keeps its scale.
+        let hasScale = values.contains { !$0.totals.isEmpty } || drawsAverage(averages)
         if hasScale {
             for fraction in [0.5, 1.0] {
                 for direction in [-1.0, 1.0] {
@@ -286,12 +294,12 @@ enum SVGKit {
             """
         }
 
-        if let averages = rollingAverage, drawsAverage(averages) {
+        if drawsAverage(averages) {
             var points: [String] = []
             for (index, value) in averages.enumerated() {
                 guard let value, value > 0 else { continue }
                 let x = leftPad + slot * Double(index) + slot / 2
-                let y = baseline - min(value / scaleMax, 1.0) * halfHeight
+                let y = baseline - value / scaleMax * halfHeight
                 points.append("\(fmt(x)),\(fmt(y))")
             }
             svg += """

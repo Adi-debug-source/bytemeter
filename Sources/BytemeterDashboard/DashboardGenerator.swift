@@ -134,7 +134,8 @@ public enum DashboardGenerator {
               return "\(cal.fullDayLabel(entry.date)), down \(Units.bytes(entry.totals.bytesIn)), "
                    + "up \(Units.bytes(entry.totals.bytesOut))." + estimateNote(entry.totals)
           })
-          \(downUpLegend(averages: data.rollingAverage, estimated: SVGKit.barsShowEstimate(dayValues)))
+          \(downUpLegend(averages: data.rollingAverage,
+                       estimated: SVGKit.barsShowEstimate(dayValues, averages: data.rollingAverage)))
         </section>
         """
     }
