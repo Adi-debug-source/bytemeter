@@ -25,6 +25,7 @@ func runDashboardChecks() {
     checkLongHistoriesKeepTheirLabelsApart()
     checkChartsAndNamesCanBeRead(fewDays: fewDays, fortyDays: fortyDays, cycles: fortyDaysOnACycle)
     checkMutedTextMeetsAA(fewDays)
+    checkEmptyChartsDrawNoScale(fewDays)
 }
 
 // MARK: - The fixtures
@@ -352,3 +353,36 @@ private func checkMutedTextMeetsAA(_ built: BuiltPage) {
           "notes, axis labels and table headings in \(muted) on \(plane) clear WCAG AA's 4.5 to 1, at \(contrast(muted, plane))")
     check(contrast("#6d777e", "#0b0d0f") < 4.5, "where the earlier grey, at 4.26 to 1, did not")
 }
+
+// MARK: - A chart with nothing on it draws its baseline and no scale
+
+private func checkEmptyChartsDrawNoScale(_ fewDays: BuiltPage) {
+    /// Every axis figure in a piece of the page, in order.
+    func axisFigures(_ html: String) -> [String] {
+        html.components(separatedBy: "class=\"axis\">").dropFirst().map { $0.components(separatedBy: "<")[0] }
+    }
+    func count(_ text: String, in html: String) -> Int { html.components(separatedBy: text).count - 1 }
+
+    // A new install: nothing counted at all.
+    let empty = BuiltPage(makeDatabase(), now: fixtureMoment)
+    let byteFigures = axisFigures(empty.html).filter { $0.hasSuffix("B") }
+    check(byteFigures.isEmpty, "an empty page has no axis figure in bytes, where it had 0 B and 1 B, got \(byteFigures)")
+    expect(count("role=\"img\"", in: empty.html), 4, "and still draws its four charts")
+    for heading in ["Today by hour", "Last 30 days"] {
+        let chart = panel(empty.html, heading: heading)
+        check(count("<line ", in: chart) == 1 && count("<g class=\"bar\">", in: chart) > 0,
+              "the empty \(heading) chart draws its baseline alone, and keeps a column for each bar")
+        check(!chart.contains("class=\"axis\">0<"), "and no 0 beside it, with no scale to start")
+    }
+
+    // Just after midnight today's chart has nothing on it, while the 30 days do.
+    let midnight = BuiltPage(fewDaysDatabase(), now: "2026-10-09T00:30")
+    check(axisFigures(panel(midnight.html, heading: "Today by hour")).allSatisfy { !$0.hasSuffix("B") && $0 != "0" },
+          "just after midnight, today's empty chart draws no scale")
+    check(panel(midnight.html, heading: "Last 30 days").contains("class=\"axis\">2.5 GB<"),
+          "while the 30 day chart beside it keeps its own")
+    let hourly = panel(fewDays.html, heading: "Today by hour")
+    check(axisFigures(hourly).filter { $0.hasSuffix("B") }.count == 4 && hourly.contains("class=\"axis\">0<"),
+          "a chart with traffic keeps the figures on its gridlines, and its 0")
+}
+

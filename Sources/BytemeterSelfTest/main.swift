@@ -63,6 +63,7 @@ checkReadOnlyOpenChangesNothing()
 checkCapSaysWhatIsLeftOrOver()
 checkMonthByMonthNamesItsPeriods()
 checkMenuSaysWhenRecordingStops()
+checkMenuSaysCountingHasJustStarted()
 runAppChecks()
 runDashboardChecks()
 

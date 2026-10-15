@@ -115,15 +115,21 @@ public enum MenuModel {
             .figure(label: label, down: Units.bytes(totals.bytesIn), up: Units.bytes(totals.bytesOut), strong: strong)
         }
 
-        // With a full disk the figures below stop moving and nothing else
-        // looks wrong, so the first line says so. The baselines stay put
-        // while writes fail, so the next write that succeeds books the
-        // traffic in between, as long as the counters have not restarted.
+        // A line at the top while the figures below cannot be taken at face
+        // value. With a full disk they stop moving and nothing else looks
+        // wrong, so the first line says so. The baselines stay put while
+        // writes fail, so the next write that succeeds books the traffic in
+        // between, as long as the counters have not restarted.
         if let since = data.notRecordingSince {
             lines.append(.text("Not recording since \(data.cal.timestampLabel(since)): the database cannot be written",
                                toolTip: "Bytemeter tries again every 5 seconds. Traffic in the meantime is counted "
                                    + "once a write succeeds, unless the Mac restarts first. The reason is in "
                                    + "~/Library/Logs/Bytemeter/bytemeter.err."))
+            lines.append(.separator)
+        } else if data.allTime.since == nil {
+            // The menu opens by itself two seconds after the first launch,
+            // before a byte is booked, so it says why every figure is 0 B.
+            lines.append(.text("Counting has started: the first figures appear within a minute."))
             lines.append(.separator)
         }
 

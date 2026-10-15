@@ -4,7 +4,8 @@ import BytemeterCore
 // Checks for the figures the menu and the dashboard show: the units, top
 // talkers, the menu bar modes, averages, the projection, the heatmap, the
 // seven day average, the comparison with yesterday, month by month, all
-// time, the figures as of a moment, the headline set, and the cap.
+// time, the figures as of a moment, the headline set, the cap, and the
+// menu's line while counting has only just started.
 
 // MARK: - Units are decimal
 
@@ -619,3 +620,38 @@ func checkCapSaysWhatIsLeftOrOver() {
         check(false, "with a cap set, the menu has a Cap section")
     }
 }
+
+// MARK: - The menu says when counting has only just started
+
+func checkMenuSaysCountingHasJustStarted() {
+    let db = makeDatabase()
+    let now = london.parseLocal("2026-10-08T12:00")!
+    let options = MenuModel.Options(liveSpeed: true, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0,
+                                    perAppSampling: true)
+    func menu() -> [MenuLine] {
+        MenuModel.information(MenuSnapshot(aggregator: Aggregator(db: db, cal: london), now: now), options: options)
+    }
+    let started = MenuLine.text("Counting has started: the first figures appear within a minute.")
+
+    expect(Array(menu().prefix(3)), [started, .separator, .header("Live")],
+           "before a byte is booked, the menu says first that counting has started")
+    db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: now), iface: "en0", bytesIn: 1, bytesOut: 0)],
+                  ssid: ssidPlaceholder, idle: false)
+    let counted = menu()
+    check(!counted.contains(started), "once a byte is booked, the line is gone")
+    expect(counted.first, .header("Live"), "and the menu starts as it always does")
+
+    // Nothing booked and writes failing: the line says why nothing is being
+    // booked, rather than that it soon will be.
+    let failing = makeDatabase()
+    failing.log = { _ in }
+    failing.clock = { now }
+    check(!failing.transaction { throw BytemeterError.sql("INSERT", "simulated failure") }, "a write fails")
+    let lines = MenuModel.information(MenuSnapshot(aggregator: Aggregator(db: failing, cal: london), now: now),
+                                      options: options)
+    check(!lines.contains(started) && lines.first.map { line in
+        if case let .text(text, _) = line { return text.hasPrefix("Not recording since 8 Oct 2026 at 12:00") }
+        return false
+    } == true, "with nothing booked and writes failing, the menu says recording has stopped instead")
+}
+

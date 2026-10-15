@@ -208,22 +208,33 @@ enum SVGKit {
 
         // Gridlines, deliberately recessive. Mirrored above and below with the
         // same values, so the shared scale is visible rather than asserted.
-        for fraction in [0.5, 1.0] {
-            for direction in [-1.0, 1.0] {
-                let y = baseline - halfHeight * fraction * direction
-                svg += """
-                <line x1="\(fmt(leftPad))" y1="\(fmt(y))" x2="\(fmt(width - rightPad))" y2="\(fmt(y))" \
-                stroke="\(grid)" stroke-width="1"/>
-                <text x="\(fmt(leftPad - 8))" y="\(fmt(y + 3.5))" text-anchor="end" class="axis">\
-                \(escape(axisLabel(scaleMax * fraction)))</text>
-                """
+        // A chart with nothing on it, such as today's just after midnight or
+        // any of them on a new install, has no scale to show: it draws its
+        // baseline alone, rather than an axis that runs from 0 B to 1 B.
+        let hasScale = values.contains { !$0.totals.isEmpty }
+        if hasScale {
+            for fraction in [0.5, 1.0] {
+                for direction in [-1.0, 1.0] {
+                    let y = baseline - halfHeight * fraction * direction
+                    svg += """
+                    <line x1="\(fmt(leftPad))" y1="\(fmt(y))" x2="\(fmt(width - rightPad))" y2="\(fmt(y))" \
+                    stroke="\(grid)" stroke-width="1"/>
+                    <text x="\(fmt(leftPad - 8))" y="\(fmt(y + 3.5))" text-anchor="end" class="axis">\
+                    \(escape(axisLabel(scaleMax * fraction)))</text>
+                    """
+                }
             }
         }
         svg += """
         <line x1="\(fmt(leftPad))" y1="\(fmt(baseline))" x2="\(fmt(width - rightPad))" y2="\(fmt(baseline))" \
         stroke="\(baselineStroke)" stroke-width="1"/>
-        <text x="\(fmt(leftPad - 8))" y="\(fmt(baseline + 3.5))" text-anchor="end" class="axis">0</text>
         """
+        if hasScale {
+            svg += """
+
+            <text x="\(fmt(leftPad - 8))" y="\(fmt(baseline + 3.5))" text-anchor="end" class="axis">0</text>
+            """
+        }
 
         for (index, entry) in values.enumerated() {
             let x = leftPad + slot * Double(index) + (slot - barWidth) / 2
@@ -385,14 +396,17 @@ enum SVGKit {
         return svg
     }
 
+    /// The ramp's key, from none to the busiest cell's average. With nothing
+    /// counted there is no busiest cell, so the figure at the top is left
+    /// out rather than reading 0 B.
     static func heatLegend(peak: UInt64, estimateKey: String) -> String {
         var swatches = ""
         for colour in heatRamp {
             swatches += "<span class=\"swatch\" style=\"background:\(colour)\"></span>"
         }
+        let top = peak > 0 ? "<span class=\"axis\">\(escape(Units.bytes(peak)))</span>" : ""
         return """
-        <div class="legend"><span class="axis">none</span>\(swatches)\
-        <span class="axis">\(escape(Units.bytes(peak)))</span>\(estimateKey)</div>
+        <div class="legend"><span class="axis">none</span>\(swatches)\(top)\(estimateKey)</div>
         """
     }
 
