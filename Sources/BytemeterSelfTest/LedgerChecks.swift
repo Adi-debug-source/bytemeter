@@ -4,7 +4,7 @@ import BytemeterCore
 // Checks for Ledger.ingest, which turns two counter readings into traffic:
 // an ordinary delta, first sight, resets and restarts, 32 bit wraps, gaps
 // spread across sleep and downtime, the counter source, which interfaces
-// count, and a clock that is set wrong.
+// count, a clock that is set wrong, and the events read back in plain words.
 
 // MARK: - The ordinary case
 
@@ -501,3 +501,91 @@ func checkClockThatStaysWrongBooksNothingInThePast() {
     check(earliest >= goodMinute, "and nothing before the last good minute")
     check(zip(times, times.dropFirst()).allSatisfy { $0 <= $1 }, "and its saved times never go backwards, got \(times)")
 }
+
+// MARK: - Recent events read in plain words, and the stored text stays as it was
+
+func checkEventsReadInPlainWords() {
+    func worded(_ event: LedgerEvent?) -> (label: String, text: String) {
+        EventWording.describe(kind: event?.kind ?? "", detail: event?.detail ?? "")
+    }
+    func ingest(_ previous: [String: RawCounter], _ current: InterfaceReading, now: Int64, reason: GapReason = .normal,
+                bootTime: Int64? = 900_000, bootSession: String? = nil) -> LedgerEvent? {
+        Ledger.ingest(readings: [current], previous: previous, now: now, reason: reason, bootTime: bootTime,
+                      bootSession: bootSession).events.first
+    }
+
+    // Every kind the ledger writes, made by the ledger itself, so a change to
+    // its wording that the labels rely on is caught here.
+    let at: Int64 = 1_000_000
+    let plain = ["en0": RawCounter(bytesIn: 9_653_780_865, bytesOut: 858_256_858, at: at)]
+    let fromLedger: [(LedgerEvent?, String)] = [
+        (ingest([:], reading("en0", 5_000, 500), now: at), "New interface"),
+        (ingest(plain, reading("en0", 9_071, 22_190), now: at + 537, bootTime: at + 500), "Restart"),
+        (ingest(["en0": RawCounter(bytesIn: 9_000, bytesOut: 900, at: at, bootSession: "A")],
+                reading("en0", 100, 10), now: at + 537, bootTime: nil, bootSession: "B"), "Restart"),
+        (ingest(plain, reading("en0", 9_071, 22_190), now: at + 537), "Interface reset"),
+        (ingest(["en0": RawCounter(bytesIn: 4_294_967_296 - 1_000, bytesOut: 10, at: at)], reading32("en0", 500, 20),
+                now: at + 5), "Counter wrapped"),
+        (ingest(["en0": RawCounter(bytesIn: 10_000_000_000, bytesOut: 50, at: at, source: .mib64)],
+                reading32("en0", 1_410_065_408, 60), now: at + 5), "Counter changed"),
+        (ingest(["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: at)], reading("en0", 2_000, 200),
+                now: at - 3_600), "Clock went back"),
+        (ingest(["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: at, clockBehind: true)], reading("en0", 2_000, 200),
+                now: at + 5), "Clock caught up"),
+        (ingest(["en0": RawCounter(bytesIn: 1_000, bytesOut: 100, at: at)], reading("en0", 2_000, 200),
+                now: at + 8 * 86_400), "Long gap"),
+    ]
+    for (event, label) in fromLedger {
+        expect(worded(event).label, label, "\(event?.kind ?? "no event") reads as \(label)")
+        expect(worded(event).text, event?.detail ?? "", "and \(label) keeps its stored text")
+    }
+
+    // The kinds written elsewhere, and one this build does not know.
+    for (kind, label) in [("seed", "Counting began"), ("prune", "Tidy up"), ("estimated_backfill", "Upgrade"),
+                          ("data_correction", "Correction"), ("gap_sleep", "Asleep"), ("gap_relaunch", "Not running"),
+                          ("gap_normal", "Gap"), ("something_new", "something_new")] {
+        expect(EventWording.describe(kind: kind, detail: "As stored.").label, label, "\(kind) reads as \(label)")
+    }
+
+    // A real spread, as the ledger writes it, reads as a sentence; the text
+    // stored is unchanged, so the migration still finds the minutes it covers.
+    let before = ["en0": RawCounter(bytesIn: 1_000_000, bytesOut: 100_000, at: 1_790_000_000)]
+    let woke = reading("en0", 1_000_000 + 478_343_847, 100_000 + 68_291_553)
+    let sleep = ingest(before, woke, now: 1_790_026_148, reason: .sleep)
+    expect(worded(sleep).label, "Asleep", "a night's sleep is labelled Asleep")
+    expect(worded(sleep).text, "en0: 7 h 16 min asleep. 478 MB down and 68.3 MB up, spread evenly across the gap.",
+           "and reads as a sentence, with the gap to the nearest minute")
+    check(sleep.map { Ledger.spreadWindow(eventTs: $0.ts, detail: $0.detail) != nil } == true,
+          "while its stored text still reads back for the migration")
+    expect(worded(ingest(before, woke, now: 1_790_026_148, reason: .relaunch)).text,
+           "en0: 7 h 16 min while Bytemeter was not running. 478 MB down and 68.3 MB up, spread evenly across the gap.",
+           "a relaunch says Bytemeter was not running")
+    expect(worded(ingest(before, woke, now: 1_790_002_700)).text,
+           "en0: 45 min between two readings. 478 MB down and 68.3 MB up, spread evenly across the gap.",
+           "an ordinary gap says it fell between two readings")
+
+    // Durations, to the nearest minute under a day and the nearest hour from a day.
+    func spread(_ seconds: Int64) -> String {
+        EventWording.describe(kind: "gap_sleep", detail: "en1 gap of \(seconds) seconds. 1000 in and 10 out spread "
+                                  + "evenly across \(max(1, min(seconds / 60, 10_080))) minutes.").text
+    }
+    for (seconds, duration) in [(10_800, "3 h"), (190_800, "2 days 5 h"), (3_580, "1 h"), (86_380, "1 day"),
+                                (88_199, "1 day"), (88_200, "1 day 1 h"), (26_129, "7 h 15 min"), (91, "2 min"),
+                                (20, "1 min"), (604_800, "7 days")] as [(Int64, String)] {
+        expect(spread(seconds), "en1: \(duration) asleep. 1.0 kB down and 10 B up, spread evenly across the gap.",
+               "\(seconds) seconds reads \(duration)")
+    }
+
+    // Anything that does not read back exactly keeps its stored text.
+    let edited = (sleep?.detail ?? "") + " Edited."
+    expect(EventWording.describe(kind: "gap_sleep", detail: edited).text, edited, "a gap's text with more on it is shown as stored")
+    expect(EventWording.describe(kind: "gap_sleep", detail: edited).label, "Asleep", "under its label all the same")
+    let negative = "en0 gap of -5 seconds. 1000 in and 10 out spread evenly across 2 minutes."
+    expect(EventWording.describe(kind: "gap_normal", detail: negative).text, negative, "so is a gap of negative seconds")
+    let unknownReason = sleep?.detail ?? ""
+    expect(EventWording.describe(kind: "gap_holiday", detail: unknownReason).text, unknownReason,
+           "and a gap of a kind this build does not know, however well its text reads")
+    expect(EventWording.describe(kind: "something_new", detail: "Whatever it said.").text, "Whatever it said.",
+           "an unknown kind keeps its stored text")
+}
+

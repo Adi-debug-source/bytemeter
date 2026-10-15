@@ -64,6 +64,7 @@ checkCapSaysWhatIsLeftOrOver()
 checkMonthByMonthNamesItsPeriods()
 checkMenuSaysWhenRecordingStops()
 checkMenuSaysCountingHasJustStarted()
+checkEventsReadInPlainWords()
 runAppChecks()
 runDashboardChecks()
 

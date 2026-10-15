@@ -468,9 +468,30 @@ public enum Ledger {
 
     /// The one place the text of a spread event is written. The schema 2
     /// migration reads it back to find rows spread before the `estimated`
-    /// column existed, so writing and reading live side by side.
+    /// column existed, and the dashboard rewords it, so writing and reading
+    /// live side by side.
     static func spreadDetail(iface: String, elapsed: Int64, deltaIn: UInt64, deltaOut: UInt64, parts: Int64) -> String {
         "\(iface) gap of \(elapsed) seconds. \(deltaIn) in and \(deltaOut) out spread evenly across \(parts) minutes."
+    }
+
+    /// What a spread event's text says, read back: the interface, the gap in
+    /// seconds, the bytes each way and the minutes they were spread across.
+    /// Nil rather than a guess unless the text is exactly what `spreadDetail`
+    /// writes, with a gap that is not negative and a minute count a spread
+    /// can have. The one reader, for the migration and the dashboard alike.
+    static func readSpreadDetail(_ detail: String)
+        -> (iface: String, elapsed: Int64, deltaIn: UInt64, deltaOut: UInt64, parts: Int64)? {
+        let words = detail.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        guard words.count == 15,
+              let elapsed = Int64(words[3]),
+              let deltaIn = UInt64(words[5]),
+              let deltaOut = UInt64(words[8]),
+              let parts = Int64(words[13]),
+              elapsed >= 0, parts >= 1, parts <= maxSpreadMinutes,
+              spreadDetail(iface: words[0], elapsed: elapsed, deltaIn: deltaIn,
+                           deltaOut: deltaOut, parts: parts) == detail
+        else { return nil }
+        return (words[0], elapsed, deltaIn, deltaOut, parts)
     }
 
     /// The minutes a past spread covered, from its event's timestamp and text.
@@ -480,21 +501,11 @@ public enum Ledger {
     /// not exactly what `spreadDetail` writes, or if its minute count does not
     /// agree with its own duration, which it always does for a real event.
     public static func spreadWindow(eventTs: Int64, detail: String) -> SpreadWindow? {
-        let words = detail.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
-        guard words.count == 15,
-              let elapsed = Int64(words[3]),
-              let deltaIn = UInt64(words[5]),
-              let deltaOut = UInt64(words[8]),
-              let parts = Int64(words[13]),
-              parts >= 1, parts <= maxSpreadMinutes,
-              spreadDetail(iface: words[0], elapsed: elapsed, deltaIn: deltaIn,
-                           deltaOut: deltaOut, parts: parts) == detail
-        else { return nil }
-
+        guard let spread = readSpreadDetail(detail) else { return nil }
         let wakeMinute = floorDiv(eventTs, 60)
-        let (start, overflow) = eventTs.subtractingReportingOverflow(elapsed)
-        guard elapsed >= 0, !overflow, wakeMinute - floorDiv(start, 60) == parts else { return nil }
-        return SpreadWindow(iface: words[0], firstMinute: wakeMinute - parts + 1, lastMinute: wakeMinute)
+        let (start, overflow) = eventTs.subtractingReportingOverflow(spread.elapsed)
+        guard !overflow, wakeMinute - floorDiv(start, 60) == spread.parts else { return nil }
+        return SpreadWindow(iface: spread.iface, firstMinute: wakeMinute - spread.parts + 1, lastMinute: wakeMinute)
     }
 
     /// Integer division that floors towards negative infinity, so pre 1970

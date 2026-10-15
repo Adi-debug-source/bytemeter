@@ -26,6 +26,7 @@ func runDashboardChecks() {
     checkChartsAndNamesCanBeRead(fewDays: fewDays, fortyDays: fortyDays, cycles: fortyDaysOnACycle)
     checkMutedTextMeetsAA(fewDays)
     checkEmptyChartsDrawNoScale(fewDays)
+    checkEventsReadInPlainWordsOnThePage(fewDays)
 }
 
 // MARK: - The fixtures
@@ -384,5 +385,15 @@ private func checkEmptyChartsDrawNoScale(_ fewDays: BuiltPage) {
     let hourly = panel(fewDays.html, heading: "Today by hour")
     check(axisFigures(hourly).filter { $0.hasSuffix("B") }.count == 4 && hourly.contains("class=\"axis\">0<"),
           "a chart with traffic keeps the figures on its gridlines, and its 0")
+}
+
+// MARK: - Recent events in plain words
+
+private func checkEventsReadInPlainWordsOnThePage(_ built: BuiltPage) {
+    // The fixture's one event: the night's sleep, from 23:00 to 07:00.
+    check(!built.html.contains("gap_"), "no raw gap_ kind appears on the page")
+    check(built.html.contains("<span class=\"kind\">Asleep</span><span class=\"detail\">en0: 8 h asleep. "
+                              + "480 MB down and 48.0 MB up, spread evenly across the gap.</span>"),
+          "the night's sleep is labelled Asleep, beside a plain sentence")
 }
 

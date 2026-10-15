@@ -360,12 +360,15 @@ public enum DashboardGenerator {
         return note + breakdownList(named)
     }
 
+    /// Each event in plain words, its label in the badge. The stored kind
+    /// and text stay as they were written; see `EventWording`.
     private static func eventList(_ data: DashboardData) -> String {
         guard !data.events.isEmpty else { return "<p class=\"note\">Nothing to report.</p>" }
         return "<ul class=\"events\">" + data.events.map { event in
             let when = data.cal.timestampLabel(Date(timeIntervalSince1970: TimeInterval(event.ts)))
-            return "<li><span class=\"when\">\(esc(when))</span><span class=\"kind\">\(esc(event.kind))</span>"
-                 + "<span class=\"detail\">\(esc(event.detail))</span></li>"
+            let wording = EventWording.describe(kind: event.kind, detail: event.detail)
+            return "<li><span class=\"when\">\(esc(when))</span><span class=\"kind\">\(esc(wording.label))</span>"
+                 + "<span class=\"detail\">\(esc(wording.text))</span></li>"
         }.joined() + "</ul>"
     }
 
