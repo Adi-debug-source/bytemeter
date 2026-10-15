@@ -277,8 +277,9 @@ private func checkLongHistoriesKeepTheirLabelsApart() {
 
     let longer = monthly(since: "2025-08-20T10:00", cal: cycleFrom15th)
     expect(longer.bars, 14, "fourteen billing cycles draw fourteen bars")
-    expect(longer.labels, ["15 Aug 2025", "15 Oct 2025", "15 Dec 2025", "15 Feb 2026", "15 Apr 2026", "15 Jun 2026", "15 Aug 2026"],
-           "and label every second one, oldest first, rather than run fourteen dates into each other")
+    expect(longer.labels, ["15 Sep 2025", "15 Nov 2025", "15 Jan 2026", "15 Mar 2026", "15 May 2026", "15 Jul 2026", "15 Sep 2026"],
+           "and label every second one, counting back from the current cycle so it keeps its label, "
+           + "rather than run fourteen dates into each other")
 
     let months = monthly(since: "2025-08-20T10:00", cal: london)
     expect(months.bars, 15, "the same history in calendar months draws fifteen bars")

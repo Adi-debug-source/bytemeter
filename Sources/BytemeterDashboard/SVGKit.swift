@@ -174,9 +174,14 @@ enum SVGKit {
     ///
     /// `label` names the chart for a screen reader, which reads a
     /// `role="img"` as one picture and skips the tooltips inside it.
+    ///
+    /// Axis labels count on from the oldest bar, or back from the newest
+    /// with `labelsFromNewest`, so the newest keeps its label however few
+    /// are drawn.
     static func mirroredBars(id: String,
                              values: [(label: String, totals: Totals)],
                              labelEvery: Int,
+                             labelsFromNewest: Bool = false,
                              rollingAverage: [Double?]? = nil,
                              label: String,
                              tooltip: (Int) -> String) -> String {
@@ -299,7 +304,8 @@ enum SVGKit {
         // for that, or too many, are spaced further apart rather than drawn
         // over each other; every bar keeps its own tooltip.
         let spacing = max(labelEvery, labelSpacing(values.map(\.label), slot: slot))
-        for (index, entry) in values.enumerated() where index % spacing == 0 {
+        for (index, entry) in values.enumerated()
+        where (labelsFromNewest ? values.count - 1 - index : index) % spacing == 0 {
             let x = leftPad + slot * Double(index) + slot / 2
             svg += """
             <text x="\(fmt(x))" y="\(fmt(height - 6))" text-anchor="middle" class="axis">\

@@ -200,7 +200,8 @@ public enum DashboardGenerator {
         return """
         <section class="panel">
           <div class="panel-head"><h2>Month by month</h2>\(note)</div>
-          \(SVGKit.mirroredBars(id: "monthly", values: monthValues, labelEvery: 1, label: label) { index in
+          \(SVGKit.mirroredBars(id: "monthly", values: monthValues, labelEvery: 1, labelsFromNewest: true,
+                                label: label) { index in
               let entry = data.monthly[index]
               return "\(entry.label), down \(Units.bytes(entry.totals.bytesIn)), "
                    + "up \(Units.bytes(entry.totals.bytesOut))." + estimateNote(entry.totals)
