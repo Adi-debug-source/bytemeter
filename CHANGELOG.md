@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The cap bar in the menu rounds down like the percentage beside it, so it is full only once the cap is reached. At 95.9% it drew twelve full cells beside "2.40 GB left".
+
 ## 1.2.0, 15 October 2026
 
 This version corrects several figures, fixes how per-app traffic and sleep are recorded, and makes the cap and the dashboard say exactly what they show. It moves the database to schema version 3 the first time it opens it, as the first item under Counting and accuracy explains.

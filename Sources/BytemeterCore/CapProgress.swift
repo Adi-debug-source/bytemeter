@@ -16,7 +16,9 @@ public struct CapProgress: Equatable {
     /// Whole per cent, rounded down and not clamped, so 99.99% reads 99%
     /// until the cap is really reached.
     public let percent: Int
-    /// Twelve cells, filled to the nearest cell and full from the cap on.
+    /// Twelve cells, rounded down like the percentage, so the bar is full
+    /// only from the cap on: at 95.9% it showed twelve cells beside "2.40 GB
+    /// left".
     public let barText: String
     /// The menu's line: the bar, then "161% of 60.0 GB".
     public let menuText: String
@@ -27,7 +29,7 @@ public struct CapProgress: Equatable {
         fraction = cap == 0 ? 0 : Double(used) / Double(cap)
         percent = Self.wholePercent(used, of: cap)
 
-        let filled = Int((min(1.0, fraction) * 12).rounded())
+        let filled = Int((min(1.0, fraction) * 12).rounded(.down))
         barText = String(repeating: "▰", count: filled) + String(repeating: "▱", count: 12 - filled)
         menuText = "\(barText)  \(percent)% of \(Units.bytes(cap))"
 

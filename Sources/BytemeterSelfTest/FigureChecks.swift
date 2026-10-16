@@ -585,6 +585,12 @@ func checkCapSaysWhatIsLeftOrOver() {
     expect(nearly.percent, 99, "99.99% reads 99%: the cap is not reached until it is")
     check(nearly.menuText.hasSuffix("  99% of 60.0 GB"), "the menu says 99%, got \(nearly.menuText)")
     expect(nearly.remainingText, "6.0 MB left, 2 days to go", "and what is left, however little")
+    // The bar rounds down like the percentage: it is full only from the cap on.
+    let eleven = String(repeating: "▰", count: 11) + "▱"
+    expect(nearly.barText, eleven, "at 99.99% the bar keeps one cell empty, as the 99% beside it says")
+    expect(progress(57_540_000_000).barText, eleven, "and at 95.9%, where rounding to the nearest cell filled it")
+    expect(progress(55 * gb).barText, eleven, "11 cells at exactly 11/12")
+    expect(progress(54_999_999_999).barText, String(repeating: "▰", count: 10) + "▱▱", "and 10 just under it")
 
     let reached = progress(cap)
     expect(reached.percent, 100, "exactly the cap is 100%")
