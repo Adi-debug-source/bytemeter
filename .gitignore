@@ -5,3 +5,12 @@
 
 # A folder for install.sh --bundle-only, if you build one by hand
 dist/
+
+# A database made for a try-out, and anything that looks like one, never
+# belongs in the repository: Scripts/make_demo_db.py writes into a folder you
+# name, and the app's own lives under ~/Library/Application Support/Bytemeter
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+.env
