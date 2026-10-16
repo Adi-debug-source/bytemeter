@@ -72,9 +72,12 @@ If a generator is ever written, it has to reproduce this file before it
 replaces it, checked by eye at 32 and 1024 pixels.
 
 Its SHA-256 is
-`c5793d5e74ebd6e8da8b5195d6fdde4c549eec35005280c2f4c198cfdb34d6cd`. It holds
+`bad99db08f583a0a0a41614f3e98b0e9f527fe764dc6f8f5b2087848648d4f2d`. It holds
 the 32, 64, 256, 512 and 1024 pixel sizes, and macOS scales the others from
-those.
+those. On 16 October 2026 each size was converted from the colour profile of
+the display it was drawn on, which the file carried under that display's
+name, to sRGB, with `sips --matchTo` and `iconutil`; only the conversion
+changed the pixels, and that is the one change the rule above allows.
 
 ## The dashboard's fonts
 
@@ -282,7 +285,7 @@ swift Scripts/snapshot.swift --strip docs/icon.png
    swift Scripts/snapshot.swift --strip docs/menu.png
    ```
 
-5. The icon's 256 pixel copy is converted to sRGB the same way, because `AppIcon.icns` carries the profile of the display it was drawn on, and `--strip` then leaves each image with nothing but its pixels and an sRGB mark.
+5. The icon's 256 pixel copy is converted to sRGB the same way, which changes nothing now that `AppIcon.icns` is sRGB itself, and `--strip` then leaves each image with nothing but its pixels and an sRGB mark.
 
 ## Known limits
 

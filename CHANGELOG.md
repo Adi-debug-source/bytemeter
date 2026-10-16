@@ -4,6 +4,7 @@
 
 - The cap bar in the menu rounds down like the percentage beside it, so it is full only once the cap is reached. At 95.9% it drew twelve full cells beside "2.40 GB left". The self-test checks the bar at four points, 919 checks in all.
 - The README's icon and menu images are plain sRGB. The icon carried the colour profile of the display it was made on, under that display's name, and the menu image carried Display P3.
+- The app icon itself is sRGB too. `AppIcon.icns` carried the same display profile in each of its sizes; the conversion changed only what that profile implied, and the design is as it was.
 - `.gitignore` leaves out SQLite databases and their journals, and `.env`, so a try-out database made in the working copy cannot be committed.
 - A `SECURITY.md` says how to report a vulnerability.
 
