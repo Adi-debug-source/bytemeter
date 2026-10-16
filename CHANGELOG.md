@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The cap bar in the menu rounds down like the percentage beside it, so it is full only once the cap is reached. At 95.9% it drew twelve full cells beside "2.40 GB left".
+- The README's icon and menu images are plain sRGB. The icon carried the colour profile of the display it was made on, under that display's name, and the menu image carried Display P3.
 
 ## 1.2.0, 15 October 2026
 

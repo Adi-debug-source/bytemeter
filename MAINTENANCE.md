@@ -268,13 +268,21 @@ sips -c 2069 2360 --cropOffset 32 220   /tmp/bytemeter-demo/page.png --out docs/
 sips -c 920 2360  --cropOffset 2103 220 /tmp/bytemeter-demo/page.png --out docs/thirty-days.png
 sips -c 896 2336  --cropOffset 3025 232 /tmp/bytemeter-demo/page.png --out docs/heatmap.png
 swift Scripts/snapshot.swift --strip docs/dashboard.png docs/thirty-days.png docs/heatmap.png
-sips -s format png -Z 256 Resources/AppIcon.icns --out docs/icon.png
+sips -s format png -Z 256 --matchTo '/System/Library/ColorSync/Profiles/sRGB Profile.icc' Resources/AppIcon.icns --out docs/icon.png
+swift Scripts/snapshot.swift --strip docs/icon.png
 ```
 
 1. `Scripts/snapshot.swift` renders the page in WebKit, the engine Safari uses, 1400 CSS pixels wide and twice that in pixels. It needs no browser and fetches nothing. It takes the screen's scale, so it needs a Retina screen, and it stops with an error rather than write a blurry image.
 2. It prints where each part of the page sits in `page.png`, in pixels, and the crops follow those boxes. The first runs the width of the page body, from 32 pixels down to the bottom of Today by hour less the 2 pixel rule under it. Last 30 days runs from its top to its bottom less its rule. The heatmap takes its panel's own, wider box. If the dashboard's layout changes, run it and take the numbers again.
 3. `sips` swaps the PNG's sRGB mark for gAMA, cHRM and EXIF chunks while it crops. `--strip` takes them out and puts the sRGB mark back, and leaves the pixels alone.
-4. The menu image comes from the real menu running read-only against the same database: `.build/release/Bytemeter --demo /tmp/bytemeter-demo --as-of 2026-09-29T21:30`. Open the menu, capture it (Cmd+Shift+4, then drag a box just inside the menu's edge, so there is no shadow), save it as `docs/menu.png`, and choose Quit from that menu to end it. The demo never writes and leaves a running Bytemeter alone.
+4. The menu image comes from the real menu running read-only against the same database: `.build/release/Bytemeter --demo /tmp/bytemeter-demo --as-of 2026-09-29T21:30`. Open the menu, capture it (Cmd+Shift+4, then drag a box just inside the menu's edge, so there is no shadow), save it as `docs/menu.png`, and choose Quit from that menu to end it. The demo never writes and leaves a running Bytemeter alone. A screen capture is tagged with the display's own colour profile, Display P3 on a recent Mac, so convert it to sRGB and strip it, as the icon is:
+
+   ```bash
+   sips --matchTo '/System/Library/ColorSync/Profiles/sRGB Profile.icc' docs/menu.png --out docs/menu.png
+   swift Scripts/snapshot.swift --strip docs/menu.png
+   ```
+
+5. The icon's 256 pixel copy is converted to sRGB the same way, because `AppIcon.icns` carries the profile of the display it was drawn on, and `--strip` then leaves each image with nothing but its pixels and an sRGB mark.
 
 ## Known limits
 
