@@ -135,19 +135,19 @@ func checkOnlySpreadRowsAreEstimated() {
 // MARK: - A restart books the bytes since boot; a bare interface reset does not
 
 func checkRestartBooksBytesSinceBoot() {
-    let previous = ["en0": RawCounter(bytesIn: 9_653_780_865, bytesOut: 858_256_858, at: 1_000_000)]
+    let previous = ["en0": RawCounter(bytesIn: 9_500_000_000, bytesOut: 850_000_000, at: 1_000_000)]
 
-    let soon = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: previous,
+    let soon = Ledger.ingest(readings: [reading("en0", 8_000, 20_000)], previous: previous,
                              now: 1_000_537, reason: .relaunch, bootTime: 1_000_500)
     expect(soon.buckets.count, 1, "a restart moments ago books its bytes in one minute")
-    expect(soon.buckets.first?.bytesIn, 9_071, "everything since the restart is counted, down")
-    expect(soon.buckets.first?.bytesOut, 22_190, "everything since the restart is counted, up")
+    expect(soon.buckets.first?.bytesIn, 8_000, "everything since the restart is counted, down")
+    expect(soon.buckets.first?.bytesOut, 20_000, "everything since the restart is counted, up")
     expect(soon.buckets.first?.minute, Ledger.floorDiv(1_000_537, 60), "in the current minute")
     check(soon.buckets.first?.estimated == false, "a restart within the threshold is not an estimate")
     expect(soon.events.first?.kind, "counter_reset", "the fall is still logged as a reset")
     check(soon.events.first?.detail.contains("restarted 37 seconds before") == true,
           "the event says it was a restart, got: \(soon.events.first?.detail ?? "")")
-    expect(soon.baselines["en0"]?.bytesIn, 9_071, "the baseline moves to the new reading")
+    expect(soon.baselines["en0"]?.bytesIn, 8_000, "the baseline moves to the new reading")
 
     let boot: Int64 = 1_000_500
     let later = Ledger.ingest(readings: [reading("en0", 6_000_007, 600_011)], previous: previous,
@@ -160,19 +160,19 @@ func checkRestartBooksBytesSinceBoot() {
     check(later.events.first?.detail.contains("Spread evenly across 61 minutes from the restart") == true,
           "the event says how the restart was booked, got: \(later.events.first?.detail ?? "")")
 
-    let interfaceOnly = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: previous,
+    let interfaceOnly = Ledger.ingest(readings: [reading("en0", 8_000, 20_000)], previous: previous,
                                       now: 1_000_537, reason: .normal, bootTime: 900_000)
     check(interfaceOnly.buckets.isEmpty, "an interface reset without a restart records nothing")
     check(interfaceOnly.events.first?.detail.contains("interface itself was reset") == true,
           "the event says it was the interface, got: \(interfaceOnly.events.first?.detail ?? "")")
 
-    let unknown = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: previous,
+    let unknown = Ledger.ingest(readings: [reading("en0", 8_000, 20_000)], previous: previous,
                                 now: 1_000_537, reason: .normal, bootTime: nil)
     check(unknown.buckets.isEmpty, "with no boot time a fall records nothing, as before")
     check(unknown.events.first?.detail.contains("could not be read") == true,
           "the event says the boot time was unreadable, got: \(unknown.events.first?.detail ?? "")")
 
-    let future = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: previous,
+    let future = Ledger.ingest(readings: [reading("en0", 8_000, 20_000)], previous: previous,
                                now: 1_000_537, reason: .normal, bootTime: 2_000_000)
     check(future.buckets.isEmpty, "a boot time later than now is not trusted, so nothing is booked")
 
@@ -219,7 +219,7 @@ func checkIdleInterfaceSaysNothingAcrossRestart() {
     // Beside a busy interface, only the busy one is logged.
     var busyAndIdle = idleBefore
     busyAndIdle["en0"] = RawCounter(bytesIn: 5_000_000, bytesOut: 400_000, at: 1_000_000, bootSession: "A")
-    let both = Ledger.ingest(readings: [reading("en0", 9_071, 22_190), reading("en1", 0, 0)],
+    let both = Ledger.ingest(readings: [reading("en0", 8_000, 20_000), reading("en1", 0, 0)],
                              previous: busyAndIdle, now: 1_000_537, reason: .relaunch,
                              bootTime: boot, bootSession: "B")
     expect(both.events.filter { $0.kind == "counter_reset" }.count, 1, "beside a busy interface, one reset is logged")
@@ -292,7 +292,7 @@ func checkRestartIsDecidedFirst() {
     check(unplaced.events.first?.detail.contains("could not say when") == true,
           "the event says the time was unknown, got: \(unplaced.events.first?.detail ?? "")")
 
-    let fellSameSession = Ledger.ingest(readings: [reading("en0", 9_071, 22_190)], previous: sessionA,
+    let fellSameSession = Ledger.ingest(readings: [reading("en0", 8_000, 20_000)], previous: sessionA,
                                         now: 1_000_537, reason: .normal,
                                         bootTime: 1_000_500, bootSession: "A")
     check(fellSameSession.buckets.isEmpty, "a fall in the same boot session is an interface reset and books nothing")
@@ -517,14 +517,14 @@ func checkEventsReadInPlainWords() {
     // Every kind the ledger writes, made by the ledger itself, so a change to
     // its wording that the labels rely on is caught here.
     let at: Int64 = 1_000_000
-    let plain = ["en0": RawCounter(bytesIn: 9_653_780_865, bytesOut: 858_256_858, at: at)]
+    let plain = ["en0": RawCounter(bytesIn: 9_500_000_000, bytesOut: 850_000_000, at: at)]
     let fromLedger: [(LedgerEvent?, String)] = [
         (ingest([:], reading("en0", 5_000, 500), now: at), "New interface"),
-        (ingest(plain, reading("en0", 9_071, 22_190), now: at + 537, bootTime: at + 500), "Restart"),
+        (ingest(plain, reading("en0", 8_000, 20_000), now: at + 537, bootTime: at + 500), "Restart"),
         (ingest(["en0": RawCounter(bytesIn: 9_000, bytesOut: 900, at: at, bootSession: "A")],
                 reading("en0", 100, 10), now: at + 537, bootTime: nil, bootSession: "B"), "Restart"),
-        (ingest(plain, reading("en0", 9_071, 22_190), now: at + 537), "Interface reset"),
-        (ingest(plain, reading("en0", 9_071, 22_190), now: at + 537, bootTime: nil), "Counter reset"),
+        (ingest(plain, reading("en0", 8_000, 20_000), now: at + 537), "Interface reset"),
+        (ingest(plain, reading("en0", 8_000, 20_000), now: at + 537, bootTime: nil), "Counter reset"),
         (ingest(["en0": RawCounter(bytesIn: 4_294_967_296 - 1_000, bytesOut: 10, at: at)], reading32("en0", 500, 20),
                 now: at + 5), "Counter wrapped"),
         (ingest(["en0": RawCounter(bytesIn: 10_000_000_000, bytesOut: 50, at: at, source: .mib64)],

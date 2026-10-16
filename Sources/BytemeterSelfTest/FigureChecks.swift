@@ -390,9 +390,9 @@ func checkTodayAgainstYesterdayAtThisTime() {
 func checkAllTimeIsTheSumOfSamples() {
     let db = makeDatabase()
     var baselines: [String: RawCounter] = [:]
-    var counter: UInt64 = 4_770_858_429          // the lump already on the interface
+    var counter: UInt64 = 5_000_000_000          // the lump already on the interface
     var expectedIn: UInt64 = 0
-    var clock: Int64 = 1_789_924_808
+    var clock: Int64 = 1_789_920_000
     for index in 0..<200 {
         if index > 0 {
             counter += 123_457
