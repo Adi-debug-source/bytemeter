@@ -62,7 +62,7 @@ The menu holds:
 - **Averages:** per hour today, per day this week, per day this month, and per day across all time.
 - A **month-end projection** (download and upload combined, as a provider counts them), the **peak hour** and the **peak day**, and the **cap** when one is set. Every other headline figure is download; the projection and the cap are the figures that add the two together, and the projection says so beside its figure. The projection carries the month's rate so far on to its end. On the first day of a month it runs the last 24 hours on instead, and with under a day counted at all it says it is too early to project.
 - **Top talkers** today, per app.
-- **Open dashboard** (⌘D), **Preferences** and **Quit**.
+- **Open dashboard** (⌘D), **Preferences** (⌘,) and **Quit Bytemeter** (⌘Q).
 
 If recording stops because the database cannot be written, for example on a full disk, a line at the top of the menu says so and since when, and on a new install, until the first figures arrive, it says counting has started.
 

@@ -61,7 +61,9 @@ To bump it:
 1. Change `VERSION`: a fix moves the last number, a new feature the middle one.
 2. Add one to `BUILD`, whatever `VERSION` did. It only ever goes up.
 3. Commit with the version as the message, for example `Bytemeter 1.0.1`.
-4. The tag is the same number with a `v` in front: `v1.0.1`.
+4. The tag is the same number with a `v` in front: `v1.0.1`. It goes on the
+   last commit of the release, the one that dates the CHANGELOG heading, which
+   can come after the version commit.
 
 ## The icon
 
