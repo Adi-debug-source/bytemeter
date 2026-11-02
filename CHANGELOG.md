@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.3, not yet released
+
+The menu bar tooltip, which 1.2.2 did not fully fix, and some tidying. The self-test runs 957 checks, up from 951.
+
+- The menu bar item's tooltip no longer pops up away from the item. 1.2.2 stopped it changing while the pointer was elsewhere, but it still appeared mid-desktop on its own, most likely when the figure in the menu bar changed width. The item now carries a tooltip only while the pointer is on it, so there is nothing for macOS to show anywhere else.
+- The dashboard's options come from one place, for the menu's Open dashboard and for `--dashboard`, so the two pages cannot differ.
+- Two functions only the self-test used move out of the engine into the self-test, and the self-test shares its helpers instead of repeating them.
+- The README names the menu items as the menu does, and MAINTENANCE says the tag goes on the commit that dates the changelog.
+
 ## 1.2.2, 2 November 2026
 
 An audit of 2 November 2026: the menu bar tooltip that popped up across the desktop, the cap typed with a decimal comma, and a guard on the demo script. The self-test runs 951 checks, up from 919.

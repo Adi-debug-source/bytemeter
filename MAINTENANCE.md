@@ -48,8 +48,8 @@ says exactly what would happen, with full paths, without changing anything.
 
 `VERSION` holds both numbers:
 
-    VERSION=1.2.2
-    BUILD=4
+    VERSION=1.2.3
+    BUILD=5
 
 `install.sh` writes them into `CFBundleShortVersionString` and
 `CFBundleVersion` when it builds the app. Nothing the build reads carries a
