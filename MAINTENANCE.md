@@ -188,7 +188,8 @@ where there is no such mark. A release is a tag, its notes, and the formula
 pointed at it.
 
 1. Bump the version as above and commit it.
-2. Run the checks above, then tag the commit and push both:
+2. Run the checks above, date the CHANGELOG heading and commit that, then
+   tag that last commit and push both:
 
         git tag -a v1.0.1 -m "Bytemeter 1.0.1"
         git push origin main v1.0.1
@@ -280,7 +281,7 @@ swift Scripts/snapshot.swift --strip docs/icon.png
 1. `Scripts/snapshot.swift` renders the page in WebKit, the engine Safari uses, 1400 CSS pixels wide and twice that in pixels. It needs no browser and fetches nothing. It takes the screen's scale, so it needs a Retina screen, and it stops with an error rather than write a blurry image.
 2. It prints where each part of the page sits in `page.png`, in pixels, and the crops follow those boxes. The first runs the width of the page body, from 32 pixels down to the bottom of Today by hour less the 2 pixel rule under it. Last 30 days runs from its top to its bottom less its rule. The heatmap takes its panel's own, wider box. If the dashboard's layout changes, run it and take the numbers again.
 3. `sips` swaps the PNG's sRGB mark for gAMA, cHRM and EXIF chunks while it crops. `--strip` takes them out and puts the sRGB mark back, and leaves the pixels alone.
-4. The menu image comes from the real menu running read-only against the same database: `.build/release/Bytemeter --demo /tmp/bytemeter-demo --as-of 2026-09-29T21:30`. Open the menu, capture it (Cmd+Shift+4, then drag a box just inside the menu's edge, so there is no shadow), save it as `docs/menu.png`, and choose Quit from that menu to end it. The demo never writes and leaves a running Bytemeter alone. A screen capture is tagged with the display's own colour profile, Display P3 on a recent Mac, so convert it to sRGB and strip it, as the icon is:
+4. The menu image comes from the real menu running read-only against the same database: `.build/release/Bytemeter --demo /tmp/bytemeter-demo --as-of 2026-09-29T21:30`. Open the menu, capture it (Cmd+Shift+4, then drag a box just inside the menu's edge, so there is no shadow), save it as `docs/menu.png`, and choose Quit Bytemeter from that menu to end it. The demo never writes and leaves a running Bytemeter alone. A screen capture is tagged with the display's own colour profile, Display P3 on a recent Mac, so convert it to sRGB and strip it, as the icon is:
 
    ```bash
    sips --matchTo '/System/Library/ColorSync/Profiles/sRGB Profile.icc' docs/menu.png --out docs/menu.png
