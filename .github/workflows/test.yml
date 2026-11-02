@@ -38,7 +38,8 @@ jobs:
           home="$RUNNER_TEMP/home"
           mkdir -p "$home/Library/Application Support/Bytemeter"
           for folder in "Library/Application Support/Bytemeter" "library/application support/BYTEMETER"; do
-            if HOME="$home" python3 Scripts/make_demo_db.py "$home/$folder" --force; then exit 1; fi
+            if HOME="$home" python3 Scripts/make_demo_db.py "$home/$folder" --force 2> "$RUNNER_TEMP/refusal"; then exit 1; fi
+            grep -q "where the app keeps its real data" "$RUNNER_TEMP/refusal"
           done
           test -z "$(ls -A "$home/Library/Application Support/Bytemeter")"
       - name: Install script parses
