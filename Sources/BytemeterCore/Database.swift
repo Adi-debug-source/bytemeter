@@ -145,10 +145,17 @@ public final class Database {
         handle = db
         var version: Int64 = -1
         try query("PRAGMA user_version;") { version = $0.int(0) }
-        guard version == Self.schemaVersion else {
+        // An older file can be brought up to date with --dashboard; nothing in
+        // this build can bring a newer one back, so the two say different things.
+        if version < Self.schemaVersion {
             throw BytemeterError.open("\(path) is at schema version \(version) and this build reads version "
                                       + "\(Self.schemaVersion). Run Bytemeter --dashboard on its folder once to "
                                       + "bring it up to date")
+        }
+        if version > Self.schemaVersion {
+            throw BytemeterError.open("\(path) is at schema version \(version), from a later Bytemeter than this "
+                                      + "build, which reads version \(Self.schemaVersion). Update this Bytemeter "
+                                      + "to read it")
         }
     }
 

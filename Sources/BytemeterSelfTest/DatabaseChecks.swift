@@ -245,10 +245,25 @@ func checkReadOnlyOpenChangesNothing() {
     // A database from before version 2 is refused, not read wrongly or upgraded.
     let oldPath = scratchFolder + "v1ro_\(UUID().uuidString).db"
     _ = rawExec(oldPath, "CREATE TABLE samples(minute INTEGER); PRAGMA user_version=1;")
-    var oldRefused = false
-    do { _ = try Database(readOnlyPath: oldPath) } catch { oldRefused = "\(error)".contains("schema version 1") }
-    check(oldRefused, "a version 1 database is refused with the reason")
+    var oldRefusal = ""
+    do { _ = try Database(readOnlyPath: oldPath) } catch { oldRefusal = "\(error)" }
+    check(oldRefusal.contains("schema version 1"), "a version 1 database is refused with the reason")
+    check(oldRefusal.contains("Run Bytemeter --dashboard on its folder once to bring it up to date")
+            && !oldRefusal.contains("later Bytemeter"),
+          "and is told to bring it up to date, got: \(oldRefusal)")
     expect(rawInt(oldPath, "PRAGMA user_version;"), 1, "and is left at version 1")
+
+    // A database from a later build is refused too, but --dashboard cannot help with that one.
+    let newerPath = scratchFolder + "newerro_\(UUID().uuidString).db"
+    let newer = Database.schemaVersion + 1
+    _ = rawExec(newerPath, "CREATE TABLE samples(minute INTEGER); PRAGMA user_version=\(newer);")
+    var newerRefusal = ""
+    do { _ = try Database(readOnlyPath: newerPath) } catch { newerRefusal = "\(error)" }
+    check(newerRefusal.contains("is at schema version \(newer), from a later Bytemeter than this build"),
+          "a database newer than the build is refused as from a later Bytemeter, got: \(newerRefusal)")
+    check(newerRefusal.contains("Update this Bytemeter to read it") && !newerRefusal.contains("--dashboard"),
+          "and is told to update this Bytemeter, not to run --dashboard, got: \(newerRefusal)")
+    expect(rawInt(newerPath, "PRAGMA user_version;"), newer, "and is left at its version")
 
     // A write-ahead log that still holds changes is refused, because immutable mode would not see them.
     FileManager.default.createFile(atPath: path + "-wal", contents: Data(repeating: 1, count: 32))
