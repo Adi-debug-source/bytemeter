@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.2.2, not yet released
+
+An audit of 2 November 2026: the menu bar tooltip that popped up across the desktop, the cap typed with a decimal comma, and a guard on the demo script. The self-test runs 947 checks, up from 919.
 
 - The menu bar item's tooltip no longer pops up across the desktop. The item set a new tooltip every time its figure changed, up to once a second, and once its tooltip had been seen, macOS could show each new one at the pointer, wherever it was. A new tooltip now waits until the pointer is on the item and goes in then, so it shows where it belongs and with the current figures.
 - On a billing cycle, the menu bar item's tooltip calls the month figure This cycle, as the menu does, rather than This month.
