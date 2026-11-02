@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.5, not yet released
+
+Three gaps the reviews of 1.2.4 found, with no change to any figure. The self-test runs 1,193 checks, up from 1,166.
+
+- `--dashboard` waits for the app to finish bringing the database up to date, where it gave up after 3 seconds and could fail as busy behind a slow first upgrade of a large file. An open that finds the file out of date now waits up to a minute for the write lock; a file already up to date, and every statement after the open, still waits 3 seconds at most. The app's own lock is still not taken, because the app holds it for as long as it runs, so `--dashboard` keeps working while the app is up.
+- `--demo` says the right thing about a database it cannot read. A file from an older build is still told to run `--dashboard` on its folder; a file from a later Bytemeter is told to update this one, since `--dashboard` cannot help with that.
+- The self-test checks the query plans of the statements the engine really runs, caught as they are prepared, where it checked copies of them that an edited query would have left behind.
+
 ## 1.2.4, 2 November 2026
 
 Leaner, with no change to any figure. The dashboard builds about a quarter faster, and the database drops two indexes that repeated what its keys already do. The self-test runs 1,166 checks, up from 957.
