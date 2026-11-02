@@ -68,7 +68,7 @@ func checkPruningKeepsEstimatedBytesExactly() {
     // and on en1, on another network, measured minutes only.
     let db = makeDatabase()
     let now = london.parseLocal("2026-10-02T12:00")!
-    let hour = BytemeterCalendar.minute(from: london.parseLocal("2026-05-02T10:00")!)
+    let hour = londonMinute("2026-05-02T10:00")
     for offset in Int64(0)..<60 {
         let spread = offset == 17
         db.addBuckets([BucketDelta(minute: hour + offset, iface: "en0", bytesIn: spread ? 7_777 : 1_000,
@@ -139,7 +139,7 @@ func checkPruningKeepsLocalHoursInEveryZone() {
     // A prune that fails records neither its event nor the tidy up as done, and the next check does the work.
     let db = makeDatabase()
     let now = london.parseLocal("2026-10-02T12:00")!
-    let oldHour = BytemeterCalendar.minute(from: london.parseLocal("2026-03-02T10:00")!)
+    let oldHour = londonMinute("2026-03-02T10:00")
     db.addBuckets((1...60).map { BucketDelta(minute: oldHour + Int64($0), iface: "en0", bytesIn: 1_000, bytesOut: 10) },
                   ssid: ssidPlaceholder, idle: false)
     try! db.exec("CREATE TRIGGER fail_prune BEFORE INSERT ON samples BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;")

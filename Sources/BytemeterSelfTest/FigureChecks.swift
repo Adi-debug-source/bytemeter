@@ -98,9 +98,9 @@ func checkShapedViewsCarryTheEstimate() {
 func checkMonthByMonthKeepsTheNewestMonths() {
     let now = london.parseLocal("2026-10-02T12:00")!
     let stray = makeDatabase()
-    stray.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2001-01-01T10:00")!), iface: "en0",
+    stray.addBuckets([BucketDelta(minute: londonMinute("2001-01-01T10:00"), iface: "en0",
                                   bytesIn: 5, bytesOut: 0),
-                      BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-03-15T10:00")!), iface: "en0",
+                      BucketDelta(minute: londonMinute("2026-03-15T10:00"), iface: "en0",
                                   bytesIn: 1_000, bytesOut: 0),
                       BucketDelta(minute: BytemeterCalendar.minute(from: now) - 10, iface: "en0", bytesIn: 7_000_000_000, bytesOut: 0)],
                      ssid: ssidPlaceholder, idle: false)
@@ -125,7 +125,7 @@ func checkMonthByMonthNamesItsPeriods() {
     let db = makeDatabase()
     for (local, bytes) in [("2026-08-20T10:00", 1_000), ("2026-09-10T10:00", 2_000),
                            ("2026-09-20T10:00", 30_000), ("2026-10-02T10:00", 400_000)] as [(String, UInt64)] {
-        db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal(local)!), iface: "en0",
+        db.addBuckets([BucketDelta(minute: londonMinute(local), iface: "en0",
                                    bytesIn: bytes, bytesOut: 0)], ssid: ssidPlaceholder, idle: false)
     }
     let now = london.parseLocal("2026-10-08T12:00")!
@@ -147,7 +147,7 @@ func checkAveragesCountFromWhenCountingBegan() {
         let db = makeDatabase()
         let end = london.parseLocal(now)!
         var rows: [BucketDelta] = []
-        var minute = BytemeterCalendar.minute(from: london.parseLocal(began)!)
+        var minute = londonMinute(began)
         while minute < BytemeterCalendar.minute(from: end) {
             rows.append(BucketDelta(minute: minute, iface: "en0", bytesIn: megabyte, bytesOut: 0))
             minute += 1
@@ -296,7 +296,7 @@ func checkHeatmapAveragesWholeWeeks() {
            "a weekday never counted averages to nothing, not to a division by zero")
 
     // A burst this morning: today is not over, so it is in no cell.
-    uniformDB.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-10-08T10:30")!),
+    uniformDB.addBuckets([BucketDelta(minute: londonMinute("2026-10-08T10:30"),
                                       iface: "en0", bytesIn: 10_000_000_000, bytesOut: 0)],
                          ssid: ssidPlaceholder, idle: false)
     expect(uniform.heatmap(now: now), cells, "nothing from today is in any cell")
@@ -346,7 +346,7 @@ func checkSevenDayAverageCountsWholeDays() {
 
     // 7 GB more on 20 September raises the seven points whose window holds
     // that day, each by a seventh of it, and no other.
-    steadyDB.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-09-20T12:00")!),
+    steadyDB.addBuckets([BucketDelta(minute: londonMinute("2026-09-20T12:00"),
                                      iface: "en0", bytesIn: 7_000_000_000, bytesOut: 0)], ssid: ssidPlaceholder, idle: false)
     let after = steady.sevenDayAverage(steady.daily(lastDays: 30, now: now), now: now)
     let heavy = series.firstIndex { $0.label == "20 Sep" }!
@@ -377,8 +377,8 @@ func checkTodayAgainstYesterdayAtThisTime() {
     // yesterday's morning, not against all of yesterday.
     let now = london.parseLocal("2026-10-08T12:00")!
     let steady = Aggregator(db: steadyTraffic(from: "2026-10-06T00:00", to: "2026-10-08T12:01", down: mb), cal: london)
-    expect(london.yesterdayUntil(now), MinuteRange(start: BytemeterCalendar.minute(from: london.parseLocal("2026-10-07T00:00")!),
-                                                   end: BytemeterCalendar.minute(from: london.parseLocal("2026-10-07T12:00")!) + 1),
+    expect(london.yesterdayUntil(now), MinuteRange(start: londonMinute("2026-10-07T00:00"),
+                                                   end: londonMinute("2026-10-07T12:00") + 1),
            "yesterday until now runs from its midnight to the same minute, that minute included")
     expect(DayComparison.text(today: steady.totals(london.today(now)), yesterdaySoFar: steady.totals(london.yesterdayUntil(now)),
                               yesterday: steady.totals(london.yesterday(now))),
@@ -526,15 +526,11 @@ func checkHeadlinesAreOneSet() {
     // Traffic on four days, so today, this week, this month and all time all
     // differ, and a row after the moment that none of them may count.
     let db = makeDatabase()
-    func at(_ local: String, _ bytesIn: UInt64, _ bytesOut: UInt64) {
-        db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal(local)!), iface: "en0",
-                                   bytesIn: bytesIn, bytesOut: bytesOut)], ssid: ssidPlaceholder, idle: false)
-    }
-    at("2026-08-20T10:00", 7_000_000_000, 700_000_000)
-    at("2026-10-02T09:00", 3_000_000_000, 300_000_000)    // a Friday: this month, not this week
-    at("2026-10-06T14:00", 2_000_000_000, 200_000_000)
-    at("2026-10-08T08:30", 1_000_000_000, 100_000_000)
-    at("2026-10-08T15:00", 9_000_000_000, 900_000_000)    // after the moment
+    addTraffic(db, at: "2026-08-20T10:00", 7_000_000_000, 700_000_000)
+    addTraffic(db, at: "2026-10-02T09:00", 3_000_000_000, 300_000_000)    // a Friday: this month, not this week
+    addTraffic(db, at: "2026-10-06T14:00", 2_000_000_000, 200_000_000)
+    addTraffic(db, at: "2026-10-08T08:30", 1_000_000_000, 100_000_000)
+    addTraffic(db, at: "2026-10-08T15:00", 9_000_000_000, 900_000_000)    // after the moment
     let now = london.parseLocal("2026-10-08T12:00")!
     let aggregator = Aggregator(db: db, cal: london)
     let headlines = Headlines(aggregator: aggregator, now: now)
@@ -626,7 +622,7 @@ func checkCapSaysWhatIsLeftOrOver() {
     // The menu shows the three lines only with the cap on and above 0, and
     // counts download and upload together, as a provider does.
     let db = makeDatabase()
-    db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-09-10T09:00")!), iface: "en0",
+    db.addBuckets([BucketDelta(minute: londonMinute("2026-09-10T09:00"), iface: "en0",
                                bytesIn: 50 * gb, bytesOut: 2 * gb)], ssid: ssidPlaceholder, idle: false)
     let snapshot = MenuSnapshot(aggregator: Aggregator(db: db, cal: london), now: london.parseLocal("2026-09-29T21:30")!)
     func menu(capEnabled: Bool, capBytes: UInt64) -> [MenuLine] {

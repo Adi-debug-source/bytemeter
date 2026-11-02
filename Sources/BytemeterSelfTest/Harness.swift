@@ -46,6 +46,18 @@ func reading32(_ name: String, _ bytesIn: UInt64, _ bytesOut: UInt64) -> Interfa
 
 let london = BytemeterCalendar(timeZone: TimeZone(identifier: "Europe/London")!)
 
+/// The minute a London wall clock time such as "2026-10-08T12:00" falls in.
+func londonMinute(_ local: String) -> Int64 {
+    BytemeterCalendar.minute(from: london.parseLocal(local)!)
+}
+
+/// One minute of en0 traffic at a London wall clock time, active and with no
+/// network name, which is how most fixtures fill a database.
+func addTraffic(_ db: Database, at local: String, _ bytesIn: UInt64, _ bytesOut: UInt64) {
+    db.addBuckets([BucketDelta(minute: londonMinute(local), iface: "en0", bytesIn: bytesIn, bytesOut: bytesOut)],
+                  ssid: ssidPlaceholder, idle: false)
+}
+
 // MARK: - Raw SQL, and rows read back
 
 /// Run raw SQL against a file, as the first release would have, without going

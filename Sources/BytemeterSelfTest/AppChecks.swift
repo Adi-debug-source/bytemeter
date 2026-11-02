@@ -24,15 +24,10 @@ private func checkPeaksAreDownloadOnly() {
     // upload shows up as the wrong day, the wrong hour or the wrong figure.
     let now = london.parseLocal("2026-09-29T21:30")!
     let db = makeDatabase()
-    func at(_ local: String, _ bytesIn: UInt64, _ bytesOut: UInt64) {
-        let minute = BytemeterCalendar.minute(from: london.parseLocal(local)!)
-        db.addBuckets([BucketDelta(minute: minute, iface: "en0", bytesIn: bytesIn, bytesOut: bytesOut)],
-                      ssid: ssidPlaceholder, idle: false)
-    }
-    at("2026-09-26T12:00", 5_000_000_000, 100_000_000)     // most downloaded
-    at("2026-09-27T12:00", 3_000_000_000, 4_000_000_000)   // most in total
-    at("2026-09-29T10:15", 900_000_000, 50_000_000)        // most downloaded today
-    at("2026-09-29T14:15", 200_000_000, 2_000_000_000)     // most in total today
+    addTraffic(db, at: "2026-09-26T12:00", 5_000_000_000, 100_000_000)     // most downloaded
+    addTraffic(db, at: "2026-09-27T12:00", 3_000_000_000, 4_000_000_000)   // most in total
+    addTraffic(db, at: "2026-09-29T10:15", 900_000_000, 50_000_000)        // most downloaded today
+    addTraffic(db, at: "2026-09-29T14:15", 200_000_000, 2_000_000_000)     // most in total today
 
     let aggregator = Aggregator(db: db, cal: london)
     // The heaviest day this month and hour today by download plus upload.
@@ -97,7 +92,7 @@ private func checkProjectionWording() {
     // directly under the line it explains.
     let now = london.parseLocal("2026-09-29T21:30")!
     let db = makeDatabase()
-    db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-09-10T09:00")!),
+    db.addBuckets([BucketDelta(minute: londonMinute("2026-09-10T09:00"),
                                iface: "en0", bytesIn: 40_000_000_000, bytesOut: 5_000_000_000)],
                   ssid: ssidPlaceholder, idle: false)
     let snapshot = MenuSnapshot(aggregator: Aggregator(db: db, cal: london), now: now)

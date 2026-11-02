@@ -71,15 +71,10 @@ private struct BuiltPage {
 /// for markup or a formula.
 private func fewDaysDatabase() -> Database {
     let db = makeDatabase()
-    func at(_ local: String, _ bytesIn: UInt64, _ bytesOut: UInt64) {
-        db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal(local)!),
-                                   iface: "en0", bytesIn: bytesIn, bytesOut: bytesOut)],
-                      ssid: ssidPlaceholder, idle: false)
-    }
-    at("2026-10-05T09:00", 300_000_000, 30_000_000)
-    at("2026-10-06T10:00", 2_200_000_000, 100_000_000)
-    at("2026-10-07T09:00", 400_000_000, 40_000_000)
-    at("2026-10-08T10:00", 100_000_000, 10_000_000)
+    addTraffic(db, at: "2026-10-05T09:00", 300_000_000, 30_000_000)
+    addTraffic(db, at: "2026-10-06T10:00", 2_200_000_000, 100_000_000)
+    addTraffic(db, at: "2026-10-07T09:00", 400_000_000, 40_000_000)
+    addTraffic(db, at: "2026-10-08T10:00", 100_000_000, 10_000_000)
 
     // Asleep from 23:00 to 07:00, then the first reading after waking.
     let slept = Int64(london.parseLocal("2026-10-07T23:00")!.timeIntervalSince1970)
@@ -89,7 +84,7 @@ private func fewDaysDatabase() -> Database {
                              previous: db.baselines(), now: woke, reason: .sleep, bootTime: nil, bootSession: "A")
     _ = db.transaction { try db.writeReading(wake, ssid: ssidPlaceholder, idle: false, reason: .sleep, counterSource: .mib64) }
 
-    db.addProcBuckets(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-10-08T10:00")!),
+    db.addProcBuckets(minute: londonMinute("2026-10-08T10:00"),
                       deltas: ["=HYPERLINK(\"x\")": (50_000_000, 5_000_000), "<b>bold</b>": (20_000_000, 2_000_000)])
     return db
 }
@@ -98,7 +93,7 @@ private func fewDaysDatabase() -> Database {
 /// the fixture moment.
 private func fortyUniformDaysDatabase() -> Database {
     let db = makeDatabase()
-    let end = BytemeterCalendar.minute(from: london.parseLocal(fixtureMoment)!)
+    let end = londonMinute(fixtureMoment)
     let rows = stride(from: end - 40 * 24 * 60, to: end, by: 60).map {
         BucketDelta(minute: $0, iface: "en0", bytesIn: 60_000_000, bytesOut: 6_000_000)
     }
@@ -204,7 +199,7 @@ private func checkAverageLineOnlyOverAWholeWeek(fewDays: BuiltPage, fortyDays: B
 // MARK: - The seven-day average is drawn on the chart's own scale
 
 private func checkAverageSharesTheChartsScale() {
-    let end = BytemeterCalendar.minute(from: london.parseLocal(fixtureMoment)!)
+    let end = londonMinute(fixtureMoment)
     /// 125 MB down at the start of every hour from `start` up to `end`,
     /// which is 3 GB a whole day.
     func steady(_ db: Database, from start: Int64, to end: Int64) {
@@ -221,7 +216,7 @@ private func checkAverageSharesTheChartsScale() {
     // three points were pinned to its top line.
     let heavy = makeDatabase()
     steady(heavy, from: end - 40 * 1_440, to: end)
-    heavy.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal("2026-09-05T09:30")!),
+    heavy.addBuckets([BucketDelta(minute: londonMinute("2026-09-05T09:30"),
                                   iface: "en0", bytesIn: 27_000_000_000, bytesOut: 0)],
                      ssid: ssidPlaceholder, idle: false)
     let heavyChart = panel(BuiltPage(heavy, now: fixtureMoment).html, heading: "Last 30 days")
@@ -237,8 +232,8 @@ private func checkAverageSharesTheChartsScale() {
     // points average days that had traffic, so the line is drawn, and a
     // line needs a scale to be read against.
     let gone = makeDatabase()
-    steady(gone, from: BytemeterCalendar.minute(from: london.parseLocal("2026-08-24T00:00")!),
-           to: BytemeterCalendar.minute(from: london.parseLocal("2026-09-08T00:00")!))
+    steady(gone, from: londonMinute("2026-08-24T00:00"),
+           to: londonMinute("2026-09-08T00:00"))
     let goneChart = panel(BuiltPage(gone, now: fixtureMoment).html, heading: "Last 30 days")
     check(goneChart.contains("Seven-day average"), "after a month off, the key still names the average its line draws")
     expect(axisFigures(goneChart).prefix(5), ["1.25 GB", "1.25 GB", "2.5 GB", "2.5 GB", "0"],
@@ -324,7 +319,7 @@ private func checkLongHistoriesKeepTheirLabelsApart() {
     /// Month by month's bars, and the labels drawn under them, in order.
     func monthly(since local: String, cal: BytemeterCalendar) -> (bars: Int, labels: [String]) {
         let db = makeDatabase()
-        db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: london.parseLocal(local)!), iface: "en0",
+        db.addBuckets([BucketDelta(minute: londonMinute(local), iface: "en0",
                                    bytesIn: 1_000_000, bytesOut: 100_000)], ssid: ssidPlaceholder, idle: false)
         let section = panel(BuiltPage(db, now: fixtureMoment, cal: cal).html, heading: "Month by month")
         let labels = section.components(separatedBy: "text-anchor=\"middle\" class=\"axis\">").dropFirst()
@@ -463,7 +458,7 @@ private func checkStandInNetworkNamesReadAsUnknown() {
     // Minutes stored under a stand-in, as an earlier build recorded them,
     // beside minutes with no name and a made-up network.
     let db = makeDatabase()
-    let minute = BytemeterCalendar.minute(from: london.parseLocal("2026-10-07T09:00")!)
+    let minute = londonMinute("2026-10-07T09:00")
     for (offset, ssid, bytesIn) in [(0, "Harbour Cafe", 900_000_000), (1, "Loading...", 300_000_000),
                                     (2, NetworkNames.unknown, 200_000_000)] as [(Int64, String, UInt64)] {
         db.addBuckets([BucketDelta(minute: minute + offset, iface: "en0", bytesIn: bytesIn, bytesOut: 0)],
@@ -489,7 +484,7 @@ private func checkProjectionTileReadsAsASentence(_ fortyDays: BuiltPage) {
     }
     // Six hours counted on a new install: too early to project.
     let db = makeDatabase()
-    let start = BytemeterCalendar.minute(from: london.parseLocal("2026-10-08T06:00")!)
+    let start = londonMinute("2026-10-08T06:00")
     db.addBuckets(stride(from: start, to: start + 360, by: 60).map {
         BucketDelta(minute: $0, iface: "en0", bytesIn: 50_000_000, bytesOut: 5_000_000)
     }, ssid: ssidPlaceholder, idle: false)
