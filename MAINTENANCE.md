@@ -301,6 +301,15 @@ swift Scripts/snapshot.swift --strip docs/icon.png
   time within a boot session would remove this, and is left for a later
   version, since macOS sets the clock itself and this needs a clock moved by
   hand.
+- **An interface unplugged and plugged back in with nobody watching.** The
+  kernel starts an interface's counter from zero each time it is attached.
+  While Bytemeter runs it reads every 5 seconds, so a replug costs at most one
+  reading. With the app quit, or the Mac asleep, there is no reading in
+  between, and Bytemeter misses the smaller of what the interface carried
+  before it was unplugged and what it carried after it came back. Remembering
+  that an interface was seen absent would let the next reading count all of
+  the new figure, and is left for a later version, because a wrong absence
+  would then count a whole boot's traffic twice.
 - **The 32 bit fallback.** It is used only if the 64 bit interface counter
   cannot be read, and it can only recognise a wrap if under 200 MB moved
   between two readings.
