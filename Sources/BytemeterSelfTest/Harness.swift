@@ -159,6 +159,33 @@ func writeSample(_ db: Database, raw: UInt64, at: Int64, counterSource: CounterS
     }
 }
 
+// MARK: - Engine forms only the checks use
+
+// The app never calls these, so they live here rather than in the engine.
+
+extension Database {
+    /// Forgiving: a failure is dropped. Inside a transaction it still rolls
+    /// the transaction back; see `inTransaction`.
+    func saveBaselines(_ baselines: [String: RawCounter]) {
+        try? writeBaselines(baselines)
+    }
+}
+
+extension Headlines {
+    /// The figure the menu bar shows in `mode`, read from the headlines, with
+    /// the start date its tooltip names for all time. These are the four rows
+    /// the menu draws in full contrast, so the menu and the figure point at
+    /// each other, and `Headlines.figure(for:aggregator:now:)` must agree.
+    func figure(for mode: StatusMode) -> (totals: Totals, since: Date?) {
+        switch mode {
+        case .today: return (today, nil)
+        case .week: return (thisWeek, nil)
+        case .month: return (thisMonth, nil)
+        case .allTime: return (allTime.totals, allTime.since)
+        }
+    }
+}
+
 // MARK: - The schema the first release created
 
 /// A schema 1 database, exactly as the first release created it. A check that

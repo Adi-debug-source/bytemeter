@@ -456,12 +456,6 @@ public final class Database {
         return out
     }
 
-    /// Forgiving: a failure is dropped. Inside a transaction it still rolls
-    /// the transaction back; see `inTransaction`.
-    public func saveBaselines(_ baselines: [String: RawCounter]) {
-        try? writeBaselines(baselines)
-    }
-
     public func writeBaselines(_ baselines: [String: RawCounter]) throws {
         for (iface, counter) in baselines.sorted(by: { $0.key < $1.key }) {
             try writeState(StateKey.rawCounter(iface), counter.encoded)

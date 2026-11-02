@@ -45,22 +45,12 @@ public struct Headlines {
     }
 
     /// The figure the menu bar shows in `mode`, with the start date its
-    /// tooltip names for all time. These are the four rows the menu draws in
-    /// full contrast, so the menu and the figure point at each other.
-    public func figure(for mode: StatusMode) -> (totals: Totals, since: Date?) {
-        switch mode {
-        case .today: return (today, nil)
-        case .week: return (thisWeek, nil)
-        case .month: return (thisMonth, nil)
-        case .allTime: return (allTime.totals, allTime.since)
-        }
-    }
-
-    /// The same figure as `figure(for:)`, worked out on its own. The menu bar
-    /// asks for its one figure every five seconds, on the main thread, and
-    /// every headline at once costs far more than the one: on 90 days of
-    /// minute rows, about a fifth of a second against under a millisecond
-    /// for today. The self-test holds the two to the same answer.
+    /// tooltip names for all time, worked out on its own rather than as one
+    /// of the headlines. The menu bar asks for its one figure every five
+    /// seconds, on the main thread, and every headline at once costs far more
+    /// than the one: on 90 days of minute rows, about a fifth of a second
+    /// against under a millisecond for today. The self-test holds it to the
+    /// matching headline.
     public static func figure(for mode: StatusMode, aggregator: Aggregator,
                               now: Date) -> (totals: Totals, since: Date?) {
         let cal = aggregator.cal
