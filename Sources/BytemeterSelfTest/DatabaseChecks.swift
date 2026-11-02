@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import BytemeterCore
 
 // Checks for how the database writes and reads: rows that add up on
@@ -203,6 +204,50 @@ func checkRecentEventsStopAtTheMoment() {
            "each event reads back whole")
     check(db.recentEvents(upTo: 119, limit: 10).isEmpty && makeDatabase().recentEvents(upTo: 600, limit: 10).isEmpty,
           "before the first event, or with none at all, there is nothing to list")
+}
+
+// MARK: - An open waits out another process's upgrade
+
+/// An open that finds the file out of date waits for whoever is upgrading
+/// it, for longer than the ordinary busy wait, rather than failing as busy.
+/// This is a `--dashboard` run while the app upgrades the file, which the
+/// single instance lock cannot order, since the app holds that all the time.
+/// Two connections in one process stand in for the two processes: SQLite
+/// locks between them exactly as it does between processes.
+func checkOpenWaitsOutAnotherUpgrade() {
+    let path = scratchFolder + "upgrading_\(UUID().uuidString).db"
+    var holder: OpaquePointer?
+    guard sqlite3_open(path, &holder) == SQLITE_OK,
+          sqlite3_exec(holder, "PRAGMA journal_mode=WAL; BEGIN IMMEDIATE; CREATE TABLE upgrading(x);",
+                       nil, nil, nil) == SQLITE_OK else {
+        check(false, "the stand-in upgrade takes the write lock")
+        return
+    }
+    // Held a second longer than an ordinary statement would wait.
+    let hold = Double(Database.busyWait) / 1_000 + 1
+    let released = DispatchSemaphore(value: 0)
+    let started = Date()
+    DispatchQueue.global().asyncAfter(deadline: .now() + hold) {
+        sqlite3_exec(holder, "COMMIT;", nil, nil, nil)
+        sqlite3_close(holder)
+        released.signal()
+    }
+    do {
+        let db = try Database(path: path)
+        check(Date().timeIntervalSince(started) >= hold - 0.1,
+              "the open waited for the other upgrade to let go of the file")
+        expect(rawInt(path, "PRAGMA user_version;"), Database.schemaVersion,
+               "and then brought the file up to date")
+        var tables: Int64 = 0
+        try db.query("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('samples','upgrading');") { tables = $0.int(0) }
+        expect(tables, 2, "keeping what the other connection committed")
+        var wait: Int64 = -1
+        try db.query("PRAGMA busy_timeout;") { wait = $0.int(0) }
+        expect(wait, Int64(Database.busyWait), "and every statement after the upgrade waits only the ordinary time")
+    } catch {
+        check(false, "an open behind an upgrade longer than the ordinary busy wait succeeds, got: \(error)")
+    }
+    released.wait()
 }
 
 // MARK: - The demo opens its database strictly read only

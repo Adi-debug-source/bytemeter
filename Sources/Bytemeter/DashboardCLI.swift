@@ -9,7 +9,9 @@ import BytemeterDashboard
 /// the dashboard gets tested. It only reads the samples, except that opening
 /// an older database brings its schema up to date first, as any open does.
 /// The single instance lock is deliberately not taken, because this does not
-/// sample anything.
+/// sample anything, and the app holds it for as long as it runs, so taking it
+/// would refuse every run made while the app is up. If the app is upgrading
+/// the file at that moment, the open waits for it (`Database.migrationWait`).
 enum DashboardCLI {
 
     /// An optional folder points at a different copy of the data, which is how

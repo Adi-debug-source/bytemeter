@@ -106,11 +106,27 @@ public final class Database {
             throw BytemeterError.open(message)
         }
         handle = db
-        sqlite3_busy_timeout(handle, 3_000)
+        sqlite3_busy_timeout(handle, Self.busyWait)
         try exec("PRAGMA journal_mode=WAL;")
         try exec("PRAGMA synchronous=NORMAL;")
         try migrate()
     }
+
+    /// How long a statement waits for another connection's write lock, in
+    /// milliseconds, before it fails as busy. Ordinary writes hold it for
+    /// milliseconds, so this is reached only when something holds it far
+    /// longer, such as another process bringing the file up to date.
+    public static let busyWait: Int32 = 3_000
+
+    /// How long an open that finds the file out of date waits for the write
+    /// lock, in milliseconds. Whoever holds it may be upgrading the same file:
+    /// the app on its first launch after an update, say, while a `--dashboard`
+    /// run opens it too. On a large file that takes far longer than any
+    /// ordinary write. When the lock comes free the upgrade is usually done,
+    /// and the waiting open has nothing left to do; if it was not, because
+    /// the other upgrade failed and rolled back, the waiting open does it.
+    /// An open of a file that is already up to date never waits here at all.
+    public static let migrationWait: Int32 = 60_000
 
     /// The schema version this build writes and reads. Raise it with each new
     /// step in `migrate()`.
@@ -293,13 +309,16 @@ public final class Database {
     ///
     /// Two processes can open the same file at once, the app and a
     /// `--dashboard` run for example. Both read the version, both find it
-    /// old, and one waits for the other's write lock. So the version is read
+    /// old, and one waits for the other's write lock, for up to
+    /// `migrationWait` rather than the ordinary `busyWait`. So the version is read
     /// again once the lock is held, and if the other process has already
     /// done the work there is nothing left to do. Every step, the version
     /// number with it, commits together or not at all, so a failure leaves
     /// the file as it was and the next launch tries again.
     private func migrate() throws {
         guard try userVersion() < Self.schemaVersion else { return }
+        sqlite3_busy_timeout(handle, Self.migrationWait)
+        defer { sqlite3_busy_timeout(handle, Self.busyWait) }
         try exec("BEGIN IMMEDIATE;")
         do {
             let version = try userVersion()
