@@ -87,6 +87,12 @@ public final class Database {
     /// The moment a run of failures is stamped with. The clock by default;
     /// replaceable so the self-test can fix the moment the menu names.
     public var clock: () -> Date = { Date() }
+    /// Told the SQL text of every statement just before SQLite prepares it,
+    /// through `run`, `query` and `exec` alike. Nil by default, which costs
+    /// one check per statement; set by the self-test to read the plans of
+    /// the statements the engine really runs, rather than copies of them.
+    /// Set after `init`, so the migration's statements are never seen.
+    public var statementObserver: ((String) -> Void)?
 
     public init(path: String) throws {
         self.path = path
@@ -158,7 +164,7 @@ public final class Database {
     public func run(_ sql: String, _ binds: [Binding] = []) throws {
         try guardOpenTransaction(sql)
         do {
-            let statement = try Statement(db: handle, sql: sql)
+            let statement = try prepare(sql)
             statement.bind(binds)
             let result = sqlite3_step(statement.handle)
             guard result == SQLITE_DONE || result == SQLITE_ROW else {
@@ -170,7 +176,16 @@ public final class Database {
         }
     }
 
+    /// The one place a `Statement` is made, so `statementObserver` sees each.
+    private func prepare(_ sql: String) throws -> Statement {
+        statementObserver?(sql)
+        return try Statement(db: handle, sql: sql)
+    }
+
+    /// SQLite prepares these itself, inside `sqlite3_exec`, so the observer
+    /// is told here too.
     private func rawExec(_ sql: String) throws {
+        statementObserver?(sql)
         var error: UnsafeMutablePointer<CChar>?
         if sqlite3_exec(handle, sql, nil, nil, &error) != SQLITE_OK {
             let message = error.map { String(cString: $0) } ?? "unknown"
@@ -200,7 +215,7 @@ public final class Database {
     }
 
     public func query(_ sql: String, _ binds: [Binding] = [], each: (Statement) -> Void) throws {
-        let statement = try Statement(db: handle, sql: sql)
+        let statement = try prepare(sql)
         statement.bind(binds)
         while sqlite3_step(statement.handle) == SQLITE_ROW { each(statement) }
     }

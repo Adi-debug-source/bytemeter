@@ -295,63 +295,101 @@ func checkVersion4DropsTheMinuteIndexes() {
     expect(rawInt(fresh.path, minuteIndexes), 0, "and has neither index on minute alone")
     expect(rawInt(fresh.path, eventsIndex), 1, "and has the index on event times")
 
-    // Every range the engine reads, sums, marks or prunes on these tables is
-    // searched on the primary key's index, never scanned. The plans come
-    // from the engine's own SQLite, through `Database.query`. The SQL is
-    // as Aggregation.swift and Maintenance.swift write it, with the hour
-    // start the prune groups by in the shape `hourStartSQL` gives it.
-    let hour = "(CASE WHEN minute<29600120 THEN MAX(29600000, minute-(((minute+60)%60)+60)%60) ELSE minute END)"
-    let rangeQueries: [(table: String, sql: String)] = [
-        ("samples", """
-            SELECT COALESCE(SUM(bytes_in),0), COALESCE(SUM(bytes_out),0),
-                   COALESCE(SUM(est_in),0), COALESCE(SUM(est_out),0)
-            FROM samples WHERE minute>=? AND minute<?;
-            """),
-        ("samples", """
-            SELECT minute, SUM(bytes_in), SUM(bytes_out), MIN(idle), SUM(est_in), SUM(est_out)
-            FROM samples WHERE minute>=? AND minute<? GROUP BY minute ORDER BY minute;
-            """),
-        ("samples", "SELECT MIN(minute) FROM samples WHERE minute>=? AND minute<?;"),
-        ("proc_samples", """
-            SELECT proc, SUM(bytes_in), SUM(bytes_out) FROM proc_samples
-            WHERE minute>=? AND minute<? GROUP BY proc
-            ORDER BY SUM(bytes_in)+SUM(bytes_out) DESC LIMIT ?;
-            """),
-        ("samples", "SELECT idle, SUM(bytes_in), SUM(bytes_out) FROM samples WHERE minute>=? AND minute<? GROUP BY idle;"),
-        ("samples", """
-            SELECT iface, SUM(bytes_in), SUM(bytes_out) FROM samples
-            WHERE minute>=? AND minute<? GROUP BY iface ORDER BY SUM(bytes_in)+SUM(bytes_out) DESC;
-            """),
-        ("samples", """
-            SELECT ssid, SUM(bytes_in), SUM(bytes_out) FROM samples
-            WHERE minute>=? AND minute<? GROUP BY ssid ORDER BY SUM(bytes_in)+SUM(bytes_out) DESC;
-            """),
-        ("samples", "SELECT MIN(minute) FROM samples WHERE minute<?;"),
-        ("proc_samples", "SELECT MIN(minute) FROM proc_samples WHERE minute<?;"),
-        ("samples", "SELECT COUNT(*), MIN(\(hour)) FROM samples WHERE minute<? AND minute!=\(hour);"),
-        ("proc_samples", "SELECT COUNT(*), MIN(\(hour)) FROM proc_samples WHERE minute<? AND minute!=\(hour);"),
-        ("samples", """
-            SELECT \(hour) AS m, iface, ssid,
-                   SUM(bytes_in) AS bi, SUM(bytes_out) AS bo, MIN(idle) AS idl,
-                   MAX(estimated) AS est, SUM(est_in) AS ei, SUM(est_out) AS eo
-            FROM samples WHERE minute>=? AND minute<? GROUP BY m, iface, ssid;
-            """),
-        ("samples", "DELETE FROM samples WHERE minute>=? AND minute<?;"),
-        ("proc_samples", """
-            SELECT \(hour) AS m, proc,
-                   SUM(bytes_in) AS bi, SUM(bytes_out) AS bo
-            FROM proc_samples WHERE minute>=? AND minute<? GROUP BY m, proc;
-            """),
-        ("proc_samples", "DELETE FROM proc_samples WHERE minute>=? AND minute<?;"),
-        ("samples", "UPDATE samples SET estimated=1 WHERE iface=? AND minute>=? AND minute<=? AND estimated=0;"),
-    ]
-    for (name, db) in [("a new database", fresh), ("a migrated version 1 database", try! Database(path: v1))] {
-        for query in rangeQueries {
+    checkEngineRangeQueriesSearchTheKey(in: [("a new database", fresh), ("a migrated version 1 database", try! Database(path: v1))])
+}
+
+/// The engine functions whose statements on `samples` and `proc_samples`
+/// must search the primary key, each run once on a database with two hours
+/// of minute rows and per-app rows in it, the prune last, since it rewrites
+/// them. Every statement each one hands to the database is kept, in order,
+/// with the function's name, through `Database.statementObserver`.
+private func statementsTheEngineRuns() -> [(function: String, sql: String)] {
+    let db = makeDatabase()
+    let start: Int64 = 29_600_000
+    for step in Int64(0)..<120 {
+        db.addBuckets([BucketDelta(minute: start + step, iface: "en0", bytesIn: 1_000 + UInt64(step), bytesOut: 100)],
+                      ssid: step < 60 ? "Home" : ssidPlaceholder, idle: step % 2 == 0)
+        if step % 3 == 0 {
+            db.addBuckets([BucketDelta(minute: start + step, iface: "en1", bytesIn: 50_000, bytesOut: 3_000)],
+                          ssid: "Cafe", idle: false)
+        }
+        db.addProcBuckets(minute: start + step, deltas: ["Safari": (bytesIn: 400, bytesOut: 40), "Music": (bytesIn: 90, bytesOut: 9)])
+    }
+    let aggregator = Aggregator(db: db, cal: london)
+    let range = MinuteRange(start: start, end: start + 120)
+
+    var seen: [(function: String, sql: String)] = []
+    var function = ""
+    db.statementObserver = { seen.append((function, $0)) }
+    func run(_ name: String, _ body: () -> Void) { function = name; body() }
+    run("totals") { check(aggregator.totals(range).bytesIn > 0, "the plan fixture has traffic for totals to sum") }
+    run("minuteRows") { expect(aggregator.minuteRows(range).count, 120, "the plan fixture has a row for every minute") }
+    run("earliestMinute") { expect(aggregator.earliestMinute(), start, "the plan fixture's earliest minute is found") }
+    run("topTalkers") { expect(aggregator.topTalkers(range, limit: 5).count, 2, "the plan fixture has two apps") }
+    run("idleSplit") { check(aggregator.idleSplit(range).idle.bytesIn > 0, "the plan fixture has idle minutes") }
+    run("byInterface") { expect(aggregator.byInterface(range).count, 2, "the plan fixture has two interfaces") }
+    run("bySSID") { expect(aggregator.bySSID(range).count, 3, "the plan fixture has three networks") }
+    // An hour into the fixture is 90 days old, so the prune collapses the
+    // first hour and goes all the way through its rewrite.
+    let now = Date(timeIntervalSince1970: TimeInterval((start + 60 + Maintenance.retainMinuteDays * 24 * 60) * 60))
+    run("prune") {
+        let collapsed = (try? Maintenance.prune(db: db, now: now, timeZone: TimeZone(identifier: "Europe/London")!)) ?? 0
+        check(collapsed > 0, "the prune on the plan fixture collapses rows, so every statement it writes with runs")
+    }
+    db.statementObserver = nil
+    return seen
+}
+
+/// The table a statement reads rows of, deletes or updates, or nil if it
+/// touches neither `samples` nor `proc_samples` that way. An insert picks no
+/// rows of its table, so it has no range to search and is not one of these.
+/// Matched in any case, after a join as well, and with the name quoted, so a
+/// rewritten statement is not dropped from the check without a word.
+private func rangeTable(_ sql: String) -> String? {
+    let pattern = try! NSRegularExpression(pattern: "\\b(?:FROM|JOIN|UPDATE)\\s+[\"`\\[]?(samples|proc_samples)\\b",
+                                           options: .caseInsensitive)
+    guard let match = pattern.firstMatch(in: sql, range: NSRange(sql.startIndex..., in: sql)),
+          let table = Range(match.range(at: 1), in: sql) else { return nil }
+    return sql[table].lowercased()
+}
+
+/// Every range the engine reads, sums or prunes on these tables is searched
+/// on the primary key's index, never scanned. The statements are the ones
+/// the engine's own functions run, caught as they are prepared, so editing
+/// a query in Aggregation.swift or Maintenance.swift is checked as edited.
+/// The plans come from the engine's own SQLite, through `Database.query`.
+private func checkEngineRangeQueriesSearchTheKey(in databases: [(String, Database)]) {
+    let functions = ["totals", "minuteRows", "earliestMinute", "topTalkers", "idleSplit", "byInterface", "bySSID", "prune"]
+    let seen = statementsTheEngineRuns()
+    var statements: [(table: String, sql: String)] = []
+    for (_, sql) in seen {
+        if let table = rangeTable(sql), !statements.contains(where: { $0.sql == sql }) { statements.append((table, sql)) }
+    }
+    check(!statements.isEmpty, "the engine's statements on samples and proc_samples are caught as they are prepared")
+    for name in functions {
+        check(seen.contains { $0.function == name && rangeTable($0.sql) != nil },
+              "\(name) runs a statement on samples or proc_samples, caught by the statement observer")
+    }
+    for table in ["samples", "proc_samples"] {
+        check(seen.contains { $0.function == "prune" && rangeTable($0.sql) == table && $0.sql.hasPrefix("DELETE") },
+              "the prune's delete from \(table) is among the statements caught")
+    }
+
+    // One statement runs only inside the migration, which `init` runs before
+    // any observer can be set, so it is the one written out here: version
+    // 2's backfill in `markPastSpreads`, as Database.swift writes it.
+    statements.append(("samples", """
+        UPDATE samples SET estimated=1
+        WHERE iface=? AND minute>=? AND minute<=? AND estimated=0;
+        """))
+
+    for (name, db) in databases {
+        for statement in statements {
             var plan: [String] = []
-            try? db.query("EXPLAIN QUERY PLAN " + query.sql) { plan.append($0.string(3)) }
-            let key = "INDEX sqlite_autoindex_\(query.table)_1 (minute"
+            try? db.query("EXPLAIN QUERY PLAN " + statement.sql) { plan.append($0.string(3)) }
+            let key = "INDEX sqlite_autoindex_\(statement.table)_1 (minute"
             check(plan.contains { $0.hasPrefix("SEARCH") && $0.contains(key) } && !plan.contains { $0.hasPrefix("SCAN") },
-                  "in \(name), the engine's range query is searched on the primary key, got \(plan) for: \(query.sql)")
+                  "in \(name), the engine's range query is searched on the primary key, got \(plan) for: \(statement.sql)")
         }
     }
 }
