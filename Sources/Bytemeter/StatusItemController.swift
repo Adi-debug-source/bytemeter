@@ -23,6 +23,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// When all time began, for the tooltip only. The menu bar text never
     /// carries a date.
     private var currentSince: Date?
+    /// Holds a new tooltip back until the pointer is on the item; see
+    /// `StatusTooltip` for why.
+    private var tooltip = StatusTooltip()
 
     var onOpenDashboard: (() -> Void)?
     var onOpenPreferences: (() -> Void)?
@@ -45,6 +48,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             button.action = #selector(statusItemClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.font = MenuRows.figureFont
+            // Tells the controller when the pointer comes onto the item, so a
+            // tooltip held back can go in before macOS shows the old one.
+            // `inVisibleRect` keeps the area the item's size as it changes.
+            button.addTrackingArea(NSTrackingArea(
+                rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: self, userInfo: nil))
         }
         refresh()
     }
@@ -105,17 +114,34 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             text += " · " + Units.rate(rateIn)
         }
         button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.figureFont])
-        // The tooltip has room for the start date that the menu bar text
-        // deliberately leaves out.
-        var mode = settings.statusMode.label
-        if settings.statusMode == .allTime, let since = currentSince {
-            mode += ", since " + BytemeterCalendar().dateLabel(since)
+        let tip = StatusTooltip.text(mode: settings.statusMode, totals: currentTotal, since: currentSince)
+        button.setAccessibilityHelp(tip)
+        if let ready = tooltip.offer(tip, pointerOnItem: pointerIsOnItem) {
+            button.toolTip = ready
         }
-        button.toolTip = "Bytemeter: \(mode). "
-            + "Down \(Units.bytes(currentTotal.bytesIn)), up \(Units.bytes(currentTotal.bytesOut)). "
-            + "Click for the menu. Right-click, two-finger click or Control-click to cycle "
-            + "today, week, month and all time."
     }
+
+    /// Whether the pointer is over the item now, read from where it is rather
+    /// than from the tracking area, so a missed exit cannot leave it true.
+    private var pointerIsOnItem: Bool {
+        guard let frame = statusItem.button?.window?.frame else { return false }
+        // NSMouseInRect, unlike contains, counts the top edge, where a
+        // pointer pushed to the top of the screen sits.
+        return NSMouseInRect(NSEvent.mouseLocation, frame, false)
+    }
+
+    /// Both handlers carry their Objective-C names, since Swift alone would
+    /// export them as `mouseEnteredWith:` and `mouseExitedWith:`, which the
+    /// tracking area never sends.
+    @objc(mouseEntered:) func mouseEntered(with event: NSEvent) {
+        if let ready = tooltip.pointerArrived() {
+            statusItem.button?.toolTip = ready
+        }
+    }
+
+    /// The tracking area sends exits too, and this is not a responder, so
+    /// without this an exit would be an unrecognised selector.
+    @objc(mouseExited:) func mouseExited(with event: NSEvent) {}
 
     // MARK: - Menu
 

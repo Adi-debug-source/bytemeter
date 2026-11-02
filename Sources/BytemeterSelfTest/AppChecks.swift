@@ -5,7 +5,7 @@ import BytemeterCore
 // peaks and projection, the CSV export's cells, the cap typed into
 // Preferences, and when a Wi-Fi network name may be read. Each one was found
 // wrong by a review on 2 October 2026, and each check below fails if its fix
-// is undone.
+// is undone. The menu bar tooltip, last, was found wrong on 2 November 2026.
 
 func runAppChecks() {
     checkPeaksAreDownloadOnly()
@@ -13,6 +13,7 @@ func runAppChecks() {
     checkCSVCells()
     checkCapInput()
     checkNetworkNameRules()
+    checkStatusTooltipWaitsForThePointer()
 }
 
 // MARK: - Peaks, by download, as the dashboard has them
@@ -271,4 +272,48 @@ private func checkNetworkNameRules() {
     expect(listed.first { $0.0 == unknown }?.1, Totals(bytesIn: 5 * gb, bytesOut: gb), "with both its figures added together")
     expect(NetworkNames.displayed([("Harbour Cafe", Totals(bytesIn: gb)), ("Quay", Totals(bytesIn: gb))]).map(\.0),
            ["Harbour Cafe", "Quay"], "equal totals keep the order they came in")
+}
+
+// MARK: - The menu bar tooltip changes only under the pointer
+
+private func checkStatusTooltipWaitsForThePointer() {
+    // Found on 2 November 2026: the item set a new tooltip every second, and
+    // macOS showed each one at the pointer, wherever it was on the desktop.
+    let gb: UInt64 = 1_000_000_000
+    let first = StatusTooltip.text(mode: .today, totals: Totals(bytesIn: 9_750_000_000, bytesOut: 290_000_000),
+                                   since: nil, calendar: london)
+    let second = StatusTooltip.text(mode: .today, totals: Totals(bytesIn: 9_750_000_000, bytesOut: 291_000_000),
+                                    since: nil, calendar: london)
+    expect(first, "Bytemeter: Today. Down 9.75 GB, up 290 MB. Click for the menu. Right-click, two-finger click "
+                  + "or Control-click to cycle today, week, month and all time.",
+           "the tooltip gives both figures and how to use the item")
+    let since = london.parseLocal("2026-09-01T08:00")!
+    check(StatusTooltip.text(mode: .allTime, totals: Totals(bytesIn: gb), since: since, calendar: london)
+            .hasPrefix("Bytemeter: All time, since 1 Sep 2026. "),
+          "all time says when it began")
+    check(!StatusTooltip.text(mode: .today, totals: Totals(bytesIn: gb), since: since, calendar: london).contains("since"),
+          "and no other period does")
+
+    var tooltip = StatusTooltip()
+    expect(tooltip.offer(first, pointerOnItem: false), first, "the first tooltip goes in wherever the pointer is")
+    expect(tooltip.offer(first, pointerOnItem: true), nil, "the same text is never set again")
+    expect(tooltip.offer(second, pointerOnItem: false), nil, "a new text is held back while the pointer is away")
+    expect(tooltip.shown, first, "so the item keeps the old one")
+    expect(tooltip.pointerArrived(), second, "and gets the new one the moment the pointer comes onto it")
+    expect(tooltip.pointerArrived(), nil, "once only")
+    expect(tooltip.offer(first, pointerOnItem: true), first, "under the pointer a new text goes in at once")
+    _ = tooltip.offer(second, pointerOnItem: false)
+    expect(tooltip.offer(first, pointerOnItem: false), nil, "a held text that turns out unchanged is dropped")
+    expect(tooltip.pointerArrived(), nil, "so nothing is set on arrival")
+
+    // The rule only helps if the app goes through it: the status item must set
+    // its tooltip from what the rule returns and nowhere else.
+    let controller = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("../Bytemeter/StatusItemController.swift").standardized
+    let source = (try? String(contentsOf: controller, encoding: .utf8)) ?? ""
+    let assignments = source.components(separatedBy: "\n").filter { $0.contains(".toolTip = ") }
+    check(!assignments.isEmpty && assignments.allSatisfy { $0.trimmingCharacters(in: .whitespaces).hasSuffix("toolTip = ready") },
+          "the status item sets its tooltip only from StatusTooltip, found \(assignments.count) assignments")
+    check(source.contains("@objc(mouseEntered:)") && source.contains("@objc(mouseExited:)"),
+          "the status item's mouse handlers carry the names AppKit sends, or the waiting text never goes in")
 }

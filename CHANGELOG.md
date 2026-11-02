@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The menu bar item's tooltip no longer pops up across the desktop. The item set a new tooltip every time its figure changed, up to once a second, and once its tooltip had been seen, macOS could show each new one at the pointer, wherever it was. A new tooltip now waits until the pointer is on the item and goes in then, so it shows where it belongs and with the current figures.
+
 ## 1.2.1, 16 October 2026
 
 A review of 16 October 2026: the cap bar, the images, the icon, the ignore list and a security policy.
