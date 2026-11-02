@@ -114,7 +114,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             text += " · " + Units.rate(rateIn)
         }
         button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.figureFont])
-        let tip = StatusTooltip.text(mode: settings.statusMode, totals: currentTotal, since: currentSince)
+        let tip = StatusTooltip.text(mode: settings.statusMode, totals: currentTotal, since: currentSince,
+                                     calendar: BytemeterCalendar(cycleStartDay: settings.cycleStartDay))
         button.setAccessibilityHelp(tip)
         if let ready = tooltip.offer(tip, pointerOnItem: pointerIsOnItem) {
             button.toolTip = ready

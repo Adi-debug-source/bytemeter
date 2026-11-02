@@ -293,6 +293,13 @@ private func checkStatusTooltipWaitsForThePointer() {
           "all time says when it began")
     check(!StatusTooltip.text(mode: .today, totals: Totals(bytesIn: gb), since: since, calendar: london).contains("since"),
           "and no other period does")
+    let cycle = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
+    check(StatusTooltip.text(mode: .month, totals: Totals(bytesIn: gb), since: nil, calendar: cycle)
+            .hasPrefix("Bytemeter: This cycle. "),
+          "on a billing cycle the month figure is called a cycle, as the menu calls it")
+    check(StatusTooltip.text(mode: .month, totals: Totals(bytesIn: gb), since: nil, calendar: london)
+            .hasPrefix("Bytemeter: This month. "),
+          "and a month otherwise")
 
     var tooltip = StatusTooltip()
     expect(tooltip.offer(first, pointerOnItem: false), first, "the first tooltip goes in wherever the pointer is")

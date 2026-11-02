@@ -22,7 +22,9 @@ public struct StatusTooltip {
     /// date that the menu bar text deliberately leaves out.
     public static func text(mode: StatusMode, totals: Totals, since: Date?,
                             calendar: BytemeterCalendar = BytemeterCalendar()) -> String {
-        var label = mode.label
+        // The month figure is the billing cycle's when one is set, so it is
+        // called a cycle, as the menu calls it.
+        var label = mode == .month && calendar.cycleStartDay != 1 ? "This cycle" : mode.label
         if mode == .allTime, let since {
             label += ", since " + calendar.dateLabel(since)
         }
