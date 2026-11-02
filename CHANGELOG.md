@@ -6,6 +6,7 @@
 - On a billing cycle, the menu bar item's tooltip calls the month figure This cycle, as the menu does, rather than This month.
 - A monthly cap typed with a decimal comma, as much of Europe writes one, is read as a decimal: 1,5 is 1.5 GB, where it was stored as 15 GB. 1,000 is still a thousand.
 - `Scripts/make_demo_db.py` refuses the folder where the app keeps its real data, however it is spelt, so `--force` can never delete a real database. CI checks it.
+- On the dashboard a figure stays on the same line as its unit, so a sentence no longer breaks between 2.11 and GB.
 
 ## 1.2.1, 16 October 2026
 

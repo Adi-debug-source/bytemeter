@@ -222,7 +222,7 @@ public enum DashboardGenerator {
               bucket. Every other figure on this page is worked out from those buckets when the page is built, so
               the hour, day, week and month totals cannot disagree with each other.</p>
               <p>Only physical interfaces are counted, so a VPN tunnel is never added on top of the Wi-Fi traffic
-              it is already carrying. Units are decimal: 1 GB is 1,000,000,000 bytes, the way routers and
+              it is already carrying. Units are decimal: 1\u{00A0}GB is 1,000,000,000 bytes, the way routers and
               internet providers count.</p>
               <p>While the Mac sleeps, or Bytemeter is not running, the counters keep counting but nobody reads
               them. The difference at the next reading is real traffic and every total includes it, but it cannot
@@ -391,7 +391,16 @@ public enum DashboardGenerator {
         return (String(parts.first ?? "0"), String(parts.count > 1 ? parts[1] : "B"))
     }
 
-    private static func esc(_ text: String) -> String { SVGKit.escape(text) }
+    /// Escaped for the page, with each figure held to its unit by a
+    /// no-break space, so a line never ends on "2.11" with "GB" starting the
+    /// next. The charts' own text is drawn by SVGKit and never wraps.
+    private static func esc(_ text: String) -> String {
+        let escaped = SVGKit.escape(text)
+        return figureAndUnit.stringByReplacingMatches(in: escaped, range: NSRange(escaped.startIndex..., in: escaped),
+                                                      withTemplate: "\u{00A0}")
+    }
+
+    private static let figureAndUnit = try! NSRegularExpression(pattern: "(?<=[0-9]) (?=(?:B|kB|MB|GB|TB|PB)(?:/s)?\\b)")
 
     // MARK: - CSV
 

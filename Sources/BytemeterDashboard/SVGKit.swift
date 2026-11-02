@@ -418,7 +418,10 @@ enum SVGKit {
         for colour in heatRamp {
             swatches += "<span class=\"swatch\" style=\"background:\(colour)\"></span>"
         }
-        let top = peak > 0 ? "<span class=\"axis\">\(escape(Units.bytes(peak)))</span>" : ""
+        // A no-break space, as on the rest of the page, so the key's figure
+        // never leaves its unit on the next line.
+        let figure = escape(Units.bytes(peak)).replacingOccurrences(of: " ", with: "\u{00A0}")
+        let top = peak > 0 ? "<span class=\"axis\">\(figure)</span>" : ""
         return """
         <div class="legend"><span class="axis">none</span>\(swatches)\(top)\(estimateKey)</div>
         """

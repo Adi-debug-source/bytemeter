@@ -30,6 +30,7 @@ func runDashboardChecks() {
     checkEventsReadInPlainWordsOnThePage(fewDays)
     checkStandInNetworkNamesReadAsUnknown()
     checkProjectionTileReadsAsASentence(fortyDays)
+    checkFiguresKeepTheirUnits(["few days": fewDays, "40 days": fortyDays])
 }
 
 // MARK: - The fixtures
@@ -277,13 +278,13 @@ private func checkCapPanelSaysWhatIsLeftOrOver() {
     // 37.224 GB, down and up together. The cycle's last day is 14 October.
     let under = capPanel(BuiltPage(fortyUniformDaysDatabase(), now: fixtureMoment, cal: cycleFrom15th,
                                    capBytes: 40_000_000_000))
-    expect(under.note, "37.2 GB of 40.0 GB used, 93%. 2.78 GB left, 7 days to go.",
+    expect(under.note, "37.2\u{00A0}GB of 40.0\u{00A0}GB used, 93%. 2.78\u{00A0}GB left, 7 days to go.",
            "the cap panel gives what is used, the percentage, and what is left for how long")
     expect(under.width, "93%", "and its bar is filled to the percentage")
 
     // Calendar months: 1 October to 8 October at noon is 11.88 GB.
     let over = capPanel(BuiltPage(fortyUniformDaysDatabase(), now: fixtureMoment, capBytes: 10_000_000_000))
-    expect(over.note, "11.9 GB of 10.0 GB used, 118%. 1.88 GB over the cap.",
+    expect(over.note, "11.9\u{00A0}GB of 10.0\u{00A0}GB used, 118%. 1.88\u{00A0}GB over the cap.",
            "past the cap, the panel gives the real percentage and how far over")
     expect(over.width, "100%", "while its bar stops at full")
 }
@@ -452,7 +453,7 @@ private func checkEventsReadInPlainWordsOnThePage(_ built: BuiltPage) {
     // The fixture's one event: the night's sleep, from 23:00 to 07:00.
     check(!built.html.contains("gap_"), "no raw gap_ kind appears on the page")
     check(built.html.contains("<span class=\"kind\">Asleep</span><span class=\"detail\">en0: 8 h asleep. "
-                              + "480 MB down and 48.0 MB up, spread evenly across the gap.</span>"),
+                              + "480\u{00A0}MB down and 48.0\u{00A0}MB up, spread evenly across the gap.</span>"),
           "the night's sleep is labelled Asleep, beside a plain sentence")
 }
 
@@ -504,4 +505,20 @@ private func checkProjectionTileReadsAsASentence(_ fortyDays: BuiltPage) {
           "with a figure the tile is headed On track for, got \(projected)")
     check(projected.contains("<span class=\"qualifier\">by the end of October</span></dd>"),
           "and gives the deadline under it")
+}
+
+// MARK: - A figure and its unit stay on one line
+
+private func checkFiguresKeepTheirUnits(_ pages: [String: BuiltPage]) {
+    // Found on 2 November 2026: the comparison under today's figure broke
+    // between "2.11" and "GB". Outside the charts, whose text never wraps,
+    // every figure is held to its unit by a no-break space.
+    let split = try! NSRegularExpression(pattern: "[0-9] (?:B|kB|MB|GB|TB|PB)\\b")
+    for (name, built) in pages.sorted(by: { $0.key < $1.key }) {
+        let prose = built.html.replacingOccurrences(of: "<svg[\\s\\S]*?</svg>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "<style>[\\s\\S]*?</style>", with: "", options: .regularExpression)
+        let found = split.matches(in: prose, range: NSRange(prose.startIndex..., in: prose)).count
+        expect(found, 0, "on the \(name) page, no figure outside a chart is split from its unit by a plain space")
+        check(prose.contains("\u{00A0}GB") || prose.contains("\u{00A0}MB"), "and the \(name) page has figures to check")
+    }
 }
