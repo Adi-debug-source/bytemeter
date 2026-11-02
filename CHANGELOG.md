@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.4, not yet released
+
+Leaner, with no change to any figure. The dashboard builds about a quarter faster, and the database drops two indexes that repeated what its keys already do. The self-test runs 1,166 checks, up from 957.
+
+- The dashboard reads its minute rows once, where it read the same rows three times, and works out today's hours once. The calendar keeps its date formatters, one per pattern and time zone, where it made a new one for every label. On five weeks of history the dashboard went from 135 to 97 milliseconds, with the page and the CSV byte for byte as before.
+- The database is at version 4: the indexes on the minute of each reading and each app's reading are gone, since each table's key already starts with the minute and every query finds its rows through it just as fast. A new database is about a fifth smaller, and each reading, every five seconds, updates two indexes rather than four. An existing database keeps its size and fills the freed space before it grows. 1.2.3 still opens a version 4 database, so going back is safe.
+
 ## 1.2.3, 2 November 2026
 
 The menu bar tooltip, which 1.2.2 did not fully fix, and some tidying. The self-test runs 957 checks, up from 951.
