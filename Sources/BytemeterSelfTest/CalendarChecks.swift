@@ -3,7 +3,8 @@ import BytemeterCore
 
 // Checks for the calendar's days, weeks and hours where they are awkward:
 // the week's first day, a clock change that skips midnight, the hour a
-// clock change repeats or skips, and the same time yesterday.
+// clock change repeats or skips, the same time yesterday, and labels from
+// the formatters the calendar keeps.
 
 // MARK: - The week starts on Monday
 
@@ -108,6 +109,95 @@ func checkClockChangeHoursKeepTheirSlot() {
                                                                   now: london.parseLocal("2026-03-29T23:00")!)
     check(forwardHours[0].bytesIn == 1_000 && forwardHours[1].bytesIn == 0 && forwardHours[2].bytesIn == 2_000,
           "the hour skipped when the clocks go forward is empty, and 02:30 is the 02:00 slot")
+}
+
+// MARK: - Kept formatters label as a fresh one would
+
+/// A label the way the calendar made every one before its formatters were
+/// kept: a new DateFormatter for each.
+private func freshLabel(_ cal: BytemeterCalendar, _ date: Date, _ pattern: String) -> String {
+    let f = DateFormatter()
+    f.calendar = cal.calendar
+    f.timeZone = cal.calendar.timeZone
+    f.locale = Locale(identifier: "en_GB")
+    f.dateFormat = pattern
+    return f.string(from: date)
+}
+
+private func freshParse(_ cal: BytemeterCalendar, _ text: String) -> Date? {
+    for pattern in ["yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss"] {
+        let f = DateFormatter()
+        f.calendar = cal.calendar
+        f.timeZone = cal.calendar.timeZone
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.isLenient = false
+        f.dateFormat = pattern
+        if let date = f.date(from: text) { return date }
+    }
+    return nil
+}
+
+/// Every label a calendar gives `date`, with the patterns each is meant to use.
+private func allLabels(_ cal: BytemeterCalendar, _ date: Date) -> [(kept: String, fresh: String)] {
+    [(cal.dayLabel(date), freshLabel(cal, date, "d MMM")),
+     (cal.fullDayLabel(date), freshLabel(cal, date, "EEEE d MMMM yyyy")),
+     (cal.dateLabel(date), freshLabel(cal, date, "d MMM yyyy")),
+     (cal.monthLabel(date), freshLabel(cal, date, "MMM yyyy")),
+     (cal.monthName(date), freshLabel(cal, date, "MMMM")),
+     (cal.timestampLabel(date), freshLabel(cal, date, "d MMM yyyy 'at' HH:mm"))]
+}
+
+func checkKeptFormattersLabelAsAFreshOne() {
+    let newYork = BytemeterCalendar(timeZone: TimeZone(identifier: "America/New_York")!)
+    // Both of 2026's clock changes in each zone, every 20 minutes from a day
+    // before to a day after, the two zones asked in turn so each finds the
+    // other's formatters already kept.
+    let changes = [(london, newYork, "2026-03-29T12:00"), (london, newYork, "2026-10-25T12:00"),
+                   (newYork, london, "2026-03-08T12:00"), (newYork, london, "2026-11-01T12:00")]
+    for (cal, otherZone, day) in changes {
+        let zone = cal.calendar.timeZone.identifier
+        let middle = cal.parseLocal(day)!
+        var labelsDiffer = 0
+        var parsesDiffer = 0
+        for step in -72...72 {
+            let date = middle.addingTimeInterval(TimeInterval(step * 20 * 60))
+            for other in [cal, otherZone] {
+                labelsDiffer += allLabels(other, date).filter { $0.kept != $0.fresh }.count
+            }
+            // Typed back in, including the hour that never happens and the one that happens twice.
+            let typed = freshLabel(cal, date, "yyyy-MM-dd'T'HH:mm")
+            for text in [typed, typed + ":30", typed.replacingOccurrences(of: "T", with: " ")] {
+                if cal.parseLocal(text) != freshParse(cal, text) { parsesDiffer += 1 }
+            }
+        }
+        expect(labelsDiffer, 0, "\(zone) around \(day.prefix(10)): every kept label matches a fresh formatter's")
+        expect(parsesDiffer, 0, "\(zone) around \(day.prefix(10)): parseLocal reads as a fresh formatter does")
+    }
+    expect(london.parseLocal("2026-03-29T01:30"), nil, "London's skipped hour still reads as no time at all")
+    expect(newYork.parseLocal("2026-03-08T02:30"), nil, "and so does New York's")
+
+    // 02:30 UTC on 1 Nov 2026 is 02:30 in London and 22:30 the evening before in New York.
+    let moment = Date(timeIntervalSince1970: 1_793_500_200)
+    expect(london.timestampLabel(moment), "1 Nov 2026 at 02:30", "London labels a moment in its own zone")
+    expect(newYork.timestampLabel(moment), "31 Oct 2026 at 22:30", "New York, asked next, labels it in its own")
+    expect(london.dayLabel(moment), "1 Nov", "and London, asked again, still gets its own day")
+    // A calendar moved to another zone gets that zone's labels, not the old zone's kept formatter.
+    var moved = london
+    expect(moved.timestampLabel(moment), "1 Nov 2026 at 02:30", "a calendar labels in its zone")
+    moved.calendar.timeZone = TimeZone(identifier: "America/New_York")!
+    expect(moved.timestampLabel(moment), "31 Oct 2026 at 22:30", "and in its new zone once it moves")
+    expect(moved.parseLocal("2026-10-31T22:30"), moment, "reading typed text in the new zone too")
+
+    // Labels asked from several threads at once are the labels asked from one.
+    let dates = (0..<200).map { moment.addingTimeInterval(TimeInterval($0) * 4_321) }
+    let serial = dates.map { london.timestampLabel($0) + newYork.fullDayLabel($0) }
+    var parallel = [[String]](repeating: [], count: 8)
+    let slots = NSLock()
+    DispatchQueue.concurrentPerform(iterations: 8) { lane in
+        let labels = dates.map { london.timestampLabel($0) + newYork.fullDayLabel($0) }
+        slots.lock(); parallel[lane] = labels; slots.unlock()
+    }
+    check(parallel.allSatisfy { $0 == serial }, "labels asked from eight threads at once match those asked from one")
 }
 
 // MARK: - Yesterday until now stays inside yesterday, across clock changes

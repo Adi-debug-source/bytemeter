@@ -65,6 +65,7 @@ checkMonthByMonthNamesItsPeriods()
 checkMenuSaysWhenRecordingStops()
 checkMenuSaysCountingHasJustStarted()
 checkEventsReadInPlainWords()
+checkKeptFormattersLabelAsAFreshOne()
 runAppChecks()
 runDashboardChecks()
 

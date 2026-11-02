@@ -167,12 +167,64 @@ public struct BytemeterCalendar {
     /// `date` in this calendar and its zone, in British English, so the
     /// labels read the same on every Mac.
     private func format(_ date: Date, _ pattern: String) -> String {
-        let f = DateFormatter()
-        f.calendar = calendar
-        f.timeZone = calendar.timeZone
-        f.locale = Locale(identifier: "en_GB")
-        f.dateFormat = pattern
-        return f.string(from: date)
+        formatter(pattern, locale: "en_GB", strict: false).string(from: date)
+    }
+
+    /// Everything a kept formatter is set up with. The time zone is part of
+    /// it, so a calendar in another zone, or this one after the Mac's zone
+    /// changes, gets a formatter of its own and never the old zone's labels.
+    private struct FormatterKey: Hashable {
+        let pattern: String
+        let locale: String
+        let strict: Bool
+        let calendar: Calendar.Identifier
+        let calendarLocale: String?
+        let timeZone: String
+        let firstWeekday: Int
+        let minimumDaysInFirstWeek: Int
+    }
+
+    /// The formatters made so far, one per key. Making a DateFormatter costs
+    /// far more than using one, and a dashboard asks for hundreds of labels,
+    /// so each is made once and kept. The engine runs on the database queue
+    /// and the main thread at once, so the dictionary sits behind a lock; a
+    /// DateFormatter itself is safe to use from several threads on macOS 10.9
+    /// and later, and none is changed once it is made.
+    private final class FormatterCache {
+        private let lock = NSLock()
+        private var formatters: [FormatterKey: DateFormatter] = [:]
+
+        func formatter(_ key: FormatterKey, make: () -> DateFormatter) -> DateFormatter {
+            lock.lock(); defer { lock.unlock() }
+            if let kept = formatters[key] { return kept }
+            // A handful of patterns in one or two zones is all the app uses.
+            // Should zones keep changing, start again rather than grow.
+            if formatters.count >= 64 { formatters.removeAll() }
+            let made = make()
+            formatters[key] = made
+            return made
+        }
+    }
+
+    private static let formatters = FormatterCache()
+
+    /// A formatter for `pattern` in this calendar and its zone, made the
+    /// first time it is asked for and kept. `strict` is for reading typed
+    /// text, which is refused rather than guessed at when it does not fit.
+    private func formatter(_ pattern: String, locale: String, strict: Bool) -> DateFormatter {
+        let key = FormatterKey(pattern: pattern, locale: locale, strict: strict,
+                               calendar: calendar.identifier, calendarLocale: calendar.locale?.identifier,
+                               timeZone: calendar.timeZone.identifier, firstWeekday: calendar.firstWeekday,
+                               minimumDaysInFirstWeek: calendar.minimumDaysInFirstWeek)
+        return Self.formatters.formatter(key) {
+            let f = DateFormatter()
+            f.calendar = calendar
+            f.timeZone = calendar.timeZone
+            f.locale = Locale(identifier: locale)
+            if strict { f.isLenient = false }
+            f.dateFormat = pattern
+            return f
+        }
     }
 
     /// "29 Sep".
@@ -205,14 +257,8 @@ public struct BytemeterCalendar {
     /// zone, "2026-10-02T21:30", seconds optional, read in this calendar's
     /// time zone. Nil for anything else, rather than a guess.
     public func parseLocal(_ text: String) -> Date? {
-        for format in ["yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss"] {
-            let f = DateFormatter()
-            f.calendar = calendar
-            f.timeZone = calendar.timeZone
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.isLenient = false
-            f.dateFormat = format
-            if let date = f.date(from: text) { return date }
+        for pattern in ["yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss"] {
+            if let date = formatter(pattern, locale: "en_US_POSIX", strict: true).date(from: text) { return date }
         }
         return nil
     }
