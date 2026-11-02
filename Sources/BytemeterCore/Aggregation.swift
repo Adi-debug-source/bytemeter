@@ -47,6 +47,35 @@ public struct MinuteRow {
     }
 }
 
+/// Minute rows fetched once over a stretch, for several views that read
+/// inside it. The dashboard's daily bars, heatmap, peak day and today's
+/// hours all lie in its last five weeks, and each fetching its own scanned
+/// the same rows four times. A view asking for rows outside the stretch
+/// fetches its own, so the stretch decides only how fast, never what. The
+/// rows are a copy of one database's, for the aggregator that fetched them.
+public struct FetchedMinutes {
+    public let range: MinuteRange
+    /// In minute order, one per minute, as `minuteRows` returns them.
+    let rows: [MinuteRow]
+
+    /// The rows inside `wanted`, the same rows `minuteRows(wanted)` would
+    /// return, or nil when `wanted` reaches outside what was fetched.
+    func rows(in wanted: MinuteRange) -> ArraySlice<MinuteRow>? {
+        guard wanted.start >= range.start, wanted.end <= range.end else { return nil }
+        return rows[firstIndex(atOrAfter: wanted.start)..<firstIndex(atOrAfter: wanted.end)]
+    }
+
+    private func firstIndex(atOrAfter minute: Int64) -> Int {
+        var low = 0
+        var high = rows.count
+        while low < high {
+            let mid = (low + high) / 2
+            if rows[mid].minute < minute { low = mid + 1 } else { high = mid }
+        }
+        return low
+    }
+}
+
 /// Everything counted since counting began, for the fourth menu bar position
 /// and the dashboard. "All time" means since the earliest minute on record,
 /// not since the Mac was new: what an interface had carried before it was
@@ -127,6 +156,18 @@ public struct Aggregator {
         return rows
     }
 
+    /// The minute rows of `range`, fetched once for the views that read inside it.
+    public func fetchMinutes(_ range: MinuteRange) -> FetchedMinutes {
+        FetchedMinutes(range: range, rows: minuteRows(range))
+    }
+
+    /// The minute rows of `range`: from `fetched` where it holds them all,
+    /// otherwise from the database, as without it.
+    private func minuteRows(_ range: MinuteRange, from fetched: FetchedMinutes?) -> ArraySlice<MinuteRow> {
+        if let rows = fetched?.rows(in: range) { return rows }
+        return ArraySlice(minuteRows(range))
+    }
+
     public func earliestMinute() -> Int64? {
         earliestMinute(in: MinuteRange(start: 1, end: Int64.max))
     }
@@ -157,12 +198,13 @@ public struct Aggregator {
     /// clocks go back, 01:00 happens twice and both land in the 01:00 slot,
     /// and on the day they go forward the skipped hour's slot is empty.
     /// Nothing after `now` is counted, so a page drawn as of an earlier moment
-    /// shows that moment's day, not the rest of it.
-    public func hourly(day: Date, now: Date) -> [Totals] {
+    /// shows that moment's day, not the rest of it. Rows come from
+    /// `fetched` where it holds them, as for every view that takes it.
+    public func hourly(day: Date, now: Date, from fetched: FetchedMinutes? = nil) -> [Totals] {
         let dayRange = cal.range(from: cal.startOfDay(day), to: cal.startOfDay(day, offsetBy: 1))
         let end = min(dayRange.end, BytemeterCalendar.endMinute(after: now))
         var buckets = [Totals](repeating: Totals(), count: 24)
-        for row in minuteRows(MinuteRange(start: dayRange.start, end: end)) {
+        for row in minuteRows(MinuteRange(start: dayRange.start, end: end), from: fetched) {
             let index = min(max(cal.hour(ofMinute: row.minute), 0), 23)
             buckets[index] = buckets[index] + row.totals
         }
@@ -170,12 +212,12 @@ public struct Aggregator {
     }
 
     /// Daily totals for the last `count` days, oldest first, today last.
-    public func daily(lastDays count: Int, now: Date) -> [LabelledTotals] {
+    public func daily(lastDays count: Int, now: Date, from fetched: FetchedMinutes? = nil) -> [LabelledTotals] {
         guard count > 0 else { return [] }
         let starts = cal.dayStarts(from: cal.startOfDay(now, offsetBy: -(count - 1)), dayCount: count)
         var buckets = [Totals](repeating: Totals(), count: count)
 
-        for row in minuteRows(MinuteRange(start: starts[0], end: BytemeterCalendar.endMinute(after: now))) {
+        for row in minuteRows(MinuteRange(start: starts[0], end: BytemeterCalendar.endMinute(after: now)), from: fetched) {
             guard let index = dayIndex(for: row.minute, in: starts) else { continue }
             buckets[index] = buckets[index] + row.totals
         }
@@ -195,7 +237,7 @@ public struct Aggregator {
     /// not over. A day counts only if counting had begun by its start, so a
     /// new install's average is over the days it measured, not diluted by
     /// days it never saw; rows in a day that does not count are ignored.
-    public func heatmap(weeks: Int = 4, now: Date) -> [HeatCell] {
+    public func heatmap(weeks: Int = 4, now: Date, from fetched: FetchedMinutes? = nil) -> [HeatCell] {
         var grid = [Totals](repeating: Totals(), count: 7 * 24)
         var counted = [Int](repeating: 0, count: 7)
         let dayCount = 7 * max(0, weeks)
@@ -208,7 +250,7 @@ public struct Aggregator {
                 counted[mondayIndex(BytemeterCalendar.date(fromMinute: start))] += 1
             }
             let today = BytemeterCalendar.minute(from: cal.startOfDay(now))
-            for row in minuteRows(MinuteRange(start: starts[firstCounted], end: today)) {
+            for row in minuteRows(MinuteRange(start: starts[firstCounted], end: today), from: fetched) {
                 guard let index = dayIndex(for: row.minute, in: starts) else { continue }
                 let weekday = mondayIndex(BytemeterCalendar.date(fromMinute: starts[index]))
                 let hour = min(max(cal.hour(ofMinute: row.minute), 0), 23)   // the wall clock hour, as in `hourly`
@@ -412,9 +454,10 @@ public struct Aggregator {
     /// seven-day average. The averages are worked out over six more days
     /// than are returned, so the first day shown has a point once a whole
     /// week ending on it has been counted, as every later day does.
-    public func dailyWithAverage(lastDays count: Int, now: Date) -> (days: [LabelledTotals], averages: [Double?]) {
+    public func dailyWithAverage(lastDays count: Int, now: Date,
+                                 from fetched: FetchedMinutes? = nil) -> (days: [LabelledTotals], averages: [Double?]) {
         guard count > 0 else { return ([], []) }
-        let longer = daily(lastDays: count + 6, now: now)
+        let longer = daily(lastDays: count + 6, now: now, from: fetched)
         return (Array(longer.suffix(count)), Array(sevenDayAverage(longer, now: now).suffix(count)))
     }
 
@@ -438,18 +481,23 @@ public struct Aggregator {
     /// every headline uses, so a heavy upload cannot make an hour the peak
     /// and then be shown as a download figure it never had.
     public func peakDownloadHourToday(now: Date) -> (hour: Int, totals: Totals)? {
-        let buckets = hourly(day: now, now: now)
+        Self.peakDownloadHour(in: hourly(day: now, now: now))
+    }
+
+    /// The same, from today's hours already worked out by `hourly`, for a
+    /// page that shows those hours as well and need not work them out twice.
+    public static func peakDownloadHour(in buckets: [Totals]) -> (hour: Int, totals: Totals)? {
         guard let best = buckets.enumerated().max(by: { $0.element.bytesIn < $1.element.bytesIn }),
               best.element.bytesIn > 0 else { return nil }
         return (best.offset, best.element)
     }
 
     /// The day so far this month, or this billing cycle, with the most downloaded.
-    public func peakDownloadDayThisCycle(now: Date) -> LabelledTotals? {
+    public func peakDownloadDayThisCycle(now: Date, from fetched: FetchedMinutes? = nil) -> LabelledTotals? {
         // Calendar days, counted noon to noon, so a cycle that began on a
         // skipped midnight (01:00) still counts its first day.
         let days = max(1, cal.daysBetween(cal.startOfCycle(now), now) + 1)
-        let series = daily(lastDays: days, now: now)
+        let series = daily(lastDays: days, now: now, from: fetched)
         guard let best = series.max(by: { $0.totals.bytesIn < $1.totals.bytesIn }),
               best.totals.bytesIn > 0 else { return nil }
         return best

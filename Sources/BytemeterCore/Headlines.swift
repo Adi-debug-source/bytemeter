@@ -29,7 +29,12 @@ public struct Headlines {
 
     /// `now` is the moment the figures describe: the clock for the real app,
     /// or a fixed moment for a page drawn as of a time, a demo or a test.
-    public init(aggregator: Aggregator, now: Date) {
+    ///
+    /// The dashboard, which shows today's hours and reads the last five
+    /// weeks of minute rows anyway, passes both in: `hourlyToday` is
+    /// `hourly(day: now, now: now)`, and the peak day reads its rows from
+    /// `fetched`. The menu passes neither, and each is worked out here.
+    public init(aggregator: Aggregator, now: Date, hourlyToday: [Totals]? = nil, from fetched: FetchedMinutes? = nil) {
         let cal = aggregator.cal
         today = aggregator.totals(cal.today(now))
         yesterday = aggregator.totals(cal.yesterday(now))
@@ -40,8 +45,12 @@ public struct Headlines {
         allTime = aggregator.allTime(now: now)
         projected = aggregator.projection(now: now).projected
         projection = ProjectionWording(projected: projected, now: now, cal: cal)
-        peakHour = aggregator.peakDownloadHourToday(now: now)
-        peakDay = aggregator.peakDownloadDayThisCycle(now: now)
+        if let hourlyToday {
+            peakHour = Aggregator.peakDownloadHour(in: hourlyToday)
+        } else {
+            peakHour = aggregator.peakDownloadHourToday(now: now)
+        }
+        peakDay = aggregator.peakDownloadDayThisCycle(now: now, from: fetched)
     }
 
     /// The figure the menu bar shows in `mode`, with the start date its

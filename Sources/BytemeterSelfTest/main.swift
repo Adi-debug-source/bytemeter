@@ -66,6 +66,7 @@ checkMenuSaysWhenRecordingStops()
 checkMenuSaysCountingHasJustStarted()
 checkEventsReadInPlainWords()
 checkKeptFormattersLabelAsAFreshOne()
+checkOneFetchGivesTheSameViews()
 runAppChecks()
 runDashboardChecks()
 

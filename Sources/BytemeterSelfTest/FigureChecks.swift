@@ -560,6 +560,78 @@ func checkHeadlinesAreOneSet() {
           "with nothing counted, all time has no start date")
 }
 
+// MARK: - One fetch of minute rows gives the views each fetching its own would
+
+/// A series as text, label, date and figures, so two can be compared whole.
+private func seriesText(_ series: [LabelledTotals]) -> [String] {
+    series.map { "\($0.label) \($0.date.timeIntervalSince1970) \($0.totals)" }
+}
+
+private func peakText(_ peak: (hour: Int, totals: Totals)?) -> String {
+    peak.map { "\($0.hour) \($0.totals)" } ?? "none"
+}
+
+func checkOneFetchGivesTheSameViews() {
+    // Six weeks of traffic every 37 minutes, upload, idle and spread minutes
+    // among it, over London's clock change on 25 Oct, with rows after every
+    // moment asked below as well as before it.
+    let db = makeDatabase()
+    let first = londonMinute("2026-09-20T19:10")
+    var minute = first
+    while minute < londonMinute("2026-11-04T00:00") {
+        let amount = UInt64((minute % 9_973) * 1_000 + 1)
+        db.addBuckets([BucketDelta(minute: minute, iface: "en0", bytesIn: amount, bytesOut: amount / 7,
+                                   estimated: minute % 11 == 0)],
+                      ssid: ssidPlaceholder, idle: minute % 5 == 0)
+        minute += 37
+    }
+    let newYork = BytemeterCalendar(timeZone: TimeZone(identifier: "America/New_York")!, cycleStartDay: 15)
+    let cycle28 = BytemeterCalendar(timeZone: TimeZone(identifier: "Europe/London")!, cycleStartDay: 28)
+    let moments: [(BytemeterCalendar, String)] = [
+        (london, "2026-10-31T23:50"),   // a 31 day month, its clock change inside it
+        (london, "2026-10-25T12:00"),   // the day the clocks go back
+        (london, "2026-10-26T01:30"),   // the day after, at a time that happened twice the night before
+        (london, "2026-11-01T00:00"),   // the first minute of a month
+        (london, "2026-09-21T10:00"),   // the morning after counting began
+        (london, "2026-09-20T18:00"),   // before anything was counted
+        (cycle28, "2026-10-27T21:30"),  // the last day of a billing cycle
+        (newYork, "2026-11-01T12:00"),  // New York's clock change, on a cycle from the 15th
+    ]
+    for (cal, text) in moments {
+        let now = cal.parseLocal(text)!
+        let zone = "\(cal.calendar.timeZone.identifier) at \(text), cycle from \(cal.cycleStartDay)"
+        let aggregator = Aggregator(db: db, cal: cal)
+        // The stretch the dashboard fetches, and a day too short for most views.
+        for (fetched, what) in [(aggregator.fetchMinutes(cal.rollingDays(36, now: now)), "the dashboard's five weeks"),
+                                (aggregator.fetchMinutes(cal.today(now)), "today alone")] {
+            let hours = aggregator.hourly(day: now, now: now, from: fetched)
+            expect(hours, aggregator.hourly(day: now, now: now), "\(zone), from \(what): today's hours")
+            expect(seriesText(aggregator.daily(lastDays: 36, now: now, from: fetched)),
+                   seriesText(aggregator.daily(lastDays: 36, now: now)), "\(zone), from \(what): the daily series")
+            let shared = aggregator.dailyWithAverage(lastDays: 30, now: now, from: fetched)
+            let alone = aggregator.dailyWithAverage(lastDays: 30, now: now)
+            check(seriesText(shared.days) == seriesText(alone.days) && shared.averages == alone.averages,
+                  "\(zone), from \(what): the 30 days and their seven-day average")
+            expect(aggregator.heatmap(weeks: 4, now: now, from: fetched), aggregator.heatmap(weeks: 4, now: now),
+                   "\(zone), from \(what): the heatmap")
+            expect(seriesText(aggregator.peakDownloadDayThisCycle(now: now, from: fetched).map { [$0] } ?? []),
+                   seriesText(aggregator.peakDownloadDayThisCycle(now: now).map { [$0] } ?? []),
+                   "\(zone), from \(what): the peak day this cycle")
+            let passed = Headlines(aggregator: aggregator, now: now, hourlyToday: hours, from: fetched)
+            let worked = Headlines(aggregator: aggregator, now: now)
+            expect(peakText(passed.peakHour), peakText(worked.peakHour), "\(zone), from \(what): the headline peak hour")
+            expect(seriesText(passed.peakDay.map { [$0] } ?? []), seriesText(worked.peakDay.map { [$0] } ?? []),
+                   "\(zone), from \(what): the headline peak day")
+        }
+    }
+    // The fixture is not empty where it matters, or the checks above prove little.
+    let busy = Aggregator(db: db, cal: london)
+    let late = london.parseLocal("2026-10-31T23:50")!
+    check(busy.peakDownloadDayThisCycle(now: late) != nil && busy.peakDownloadHourToday(now: late) != nil
+          && busy.heatmap(weeks: 4, now: late).allSatisfy { $0.days == 4 && !$0.totals.isEmpty },
+          "the fixture has a peak day, a peak hour and four counted weeks in every heatmap cell")
+}
+
 // MARK: - The cap shows the real percentage, and what is left or over
 
 func checkCapSaysWhatIsLeftOrOver() {

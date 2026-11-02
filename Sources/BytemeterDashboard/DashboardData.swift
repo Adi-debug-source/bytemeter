@@ -70,8 +70,15 @@ public struct DashboardData {
         generatedAt = now
         cal = aggregator.cal
 
+        // One fetch of the minute rows for the days the daily bars read, 30
+        // and the six before them for the average, which hold the heatmap's
+        // four whole weeks, this cycle's days and today's hours as well.
+        // Today's hours are worked out once, for the chart and the peak hour.
+        let minutes = aggregator.fetchMinutes(cal.rollingDays(30 + 6, now: now))
+        let hoursToday = aggregator.hourly(day: now, now: now, from: minutes)
+
         // The same figures the menu and the menu bar show, from one place.
-        let headlines = Headlines(aggregator: aggregator, now: now)
+        let headlines = Headlines(aggregator: aggregator, now: now, hourlyToday: hoursToday, from: minutes)
         today = headlines.today
         yesterday = headlines.yesterday
         yesterdaySoFar = aggregator.totals(cal.yesterdayUntil(now))
@@ -81,12 +88,12 @@ public struct DashboardData {
         last30 = headlines.last30
         allTime = headlines.allTime
 
-        hourly = aggregator.hourly(day: now, now: now)
+        hourly = hoursToday
         // A seven-day rolling mean over the download figures, drawn over the
         // bars so a single heavy day does not read as a trend.
-        (daily, rollingAverage) = aggregator.dailyWithAverage(lastDays: 30, now: now)
+        (daily, rollingAverage) = aggregator.dailyWithAverage(lastDays: 30, now: now, from: minutes)
 
-        heat = aggregator.heatmap(weeks: 4, now: now)
+        heat = aggregator.heatmap(weeks: 4, now: now, from: minutes)
         monthly = aggregator.monthly(now: now)
 
         topTalkersToday = aggregator.topTalkers(cal.today(now), limit: 10)
