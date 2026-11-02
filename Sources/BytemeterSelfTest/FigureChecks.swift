@@ -597,6 +597,21 @@ func checkOneFetchGivesTheSameViews() {
         (cycle28, "2026-10-27T21:30"),  // the last day of a billing cycle
         (newYork, "2026-11-01T12:00"),  // New York's clock change, on a cycle from the 15th
     ]
+    // A row on every edge each view cuts at: the first minute of the five
+    // weeks, of today and of the cycle, the minute asked at and the one after
+    // it. Every 37 minutes lands on almost none of them, and a slice of the
+    // shared rows that is a minute out would show only here.
+    for (cal, text) in moments {
+        let now = cal.parseLocal(text)!
+        let at = BytemeterCalendar.minute(from: now)
+        let edges = [cal.rollingDays(36, now: now).start, cal.today(now).start, cal.thisCycle(now).start,
+                     cal.rollingDays(36, now: now).end - 1, at, at + 1]
+        for edge in Set(edges) {
+            db.addBuckets([BucketDelta(minute: edge, iface: "en0", bytesIn: 3_000_000_000 + UInt64(edge % 977),
+                                       bytesOut: 1_000, estimated: false)],
+                          ssid: ssidPlaceholder, idle: false)
+        }
+    }
     for (cal, text) in moments {
         let now = cal.parseLocal(text)!
         let zone = "\(cal.calendar.timeZone.identifier) at \(text), cycle from \(cal.cycleStartDay)"
@@ -606,6 +621,13 @@ func checkOneFetchGivesTheSameViews() {
                                 (aggregator.fetchMinutes(cal.today(now)), "today alone")] {
             let hours = aggregator.hourly(day: now, now: now, from: fetched)
             expect(hours, aggregator.hourly(day: now, now: now), "\(zone), from \(what): today's hours")
+            // Yesterday's hours as of three days ago, a range that would end
+            // before it starts. MinuteRange closes it up, so the shared rows
+            // can never be sliced backwards; this holds that to the database.
+            let yesterday = now.addingTimeInterval(-86_400)
+            let before = now.addingTimeInterval(-3 * 86_400)
+            expect(aggregator.hourly(day: yesterday, now: before, from: fetched), aggregator.hourly(day: yesterday, now: before),
+                   "\(zone), from \(what): a day after the moment asked holds nothing, rather than trapping")
             expect(seriesText(aggregator.daily(lastDays: 36, now: now, from: fetched)),
                    seriesText(aggregator.daily(lastDays: 36, now: now)), "\(zone), from \(what): the daily series")
             let shared = aggregator.dailyWithAverage(lastDays: 30, now: now, from: fetched)
