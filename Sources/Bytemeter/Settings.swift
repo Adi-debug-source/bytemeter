@@ -1,5 +1,6 @@
 import Foundation
 import BytemeterCore
+import BytemeterDashboard
 
 /// Preferences, cached in memory so the 5 second sampler is not querying
 /// SQLite for a handful of flags on every tick. Writes go to both.
@@ -80,5 +81,12 @@ final class Settings {
     var cycleStartDay: Int {
         get { get { _cycleStartDay } }
         set { set({ _cycleStartDay = newValue }, persist: StateKey.cycleStartDay, value: String(newValue)) }
+    }
+
+    /// The preferences the dashboard reads, built in one place for the menu's
+    /// Open dashboard and for `--dashboard`, so the two pages cannot differ.
+    var dashboardOptions: DashboardData.Options {
+        DashboardData.Options(ssidCapture: ssidCapture, perAppSampling: perAppSampling,
+                              capEnabled: capEnabled, capBytes: UInt64(max(0, capBytes)))
     }
 }

@@ -29,10 +29,7 @@ enum DashboardCLI {
             let settings = Settings(db: db, write: { work in work() })
             let cal = BytemeterCalendar(cycleStartDay: settings.cycleStartDay)
             let aggregator = Aggregator(db: db, cal: cal)
-            let options = DashboardData.Options(ssidCapture: settings.ssidCapture,
-                                                perAppSampling: settings.perAppSampling,
-                                                capEnabled: settings.capEnabled,
-                                                capBytes: UInt64(max(0, settings.capBytes)))
+            let options = settings.dashboardOptions
             let data = DashboardData(aggregator: aggregator, options: options, now: asOf ?? Date())
             let url = try DashboardGenerator.write(data: data, folder: folder)
             print(url.path)
