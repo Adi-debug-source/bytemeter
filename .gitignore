@@ -17,3 +17,5 @@ dist/
 
 # Worktrees made by claude -w
 .claude/worktrees/
+# Session handoff notes, kept on the Mac only
+.claude/handoffs/
