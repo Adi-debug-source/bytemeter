@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.3, not yet released
+## 1.2.3, 2 November 2026
 
 The menu bar tooltip, which 1.2.2 did not fully fix, and some tidying. The self-test runs 957 checks, up from 951.
 
