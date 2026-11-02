@@ -30,7 +30,7 @@ The table in MAINTENANCE.md, "How it fits together", names every part. In short:
 - A published tag never moves: the formula pins the checksum of its tarball.
 - A copy of the app opened by hand is not launchd's and is not restarted after a crash, which is why the crash check in the release checks comes first.
 - A clock set ahead and then corrected files readings at the last reading's minute until real time catches up. Known limit, not a bug; the 32 bit fallback's 200 MB wrap limit is another.
-- No database files in the repository: `Scripts/make_demo_db.py` writes into a folder you name, and `.gitignore` refuses `*.db` and its companions.
+- No database files in the repository: `Scripts/make_demo_db.py` writes into a folder you name and refuses the app's own data folder, and `.gitignore` refuses `*.db` and its companions.
 
 ## Working here
 

@@ -30,6 +30,17 @@ jobs:
           test -s "$RUNNER_TEMP/demo/dashboard.html"
           test -s "$RUNNER_TEMP/demo/bytemeter_export.csv"
           if grep -Eiq '<script|https?:' "$RUNNER_TEMP/demo/dashboard.html"; then exit 1; fi
+      - name: The demo script refuses the real data folder
+        # --force deletes the database it finds, so the script must never
+        # write where the app keeps its data. Run under a home of its own, so
+        # a script that failed this would only write into that.
+        run: |
+          home="$RUNNER_TEMP/home"
+          mkdir -p "$home/Library/Application Support/Bytemeter"
+          for folder in "Library/Application Support/Bytemeter" "library/application support/BYTEMETER"; do
+            if HOME="$home" python3 Scripts/make_demo_db.py "$home/$folder" --force; then exit 1; fi
+          done
+          test -z "$(ls -A "$home/Library/Application Support/Bytemeter")"
       - name: Install script parses
         run: bash -n install.sh
       - name: Homebrew formula parses

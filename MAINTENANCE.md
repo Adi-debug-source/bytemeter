@@ -38,7 +38,7 @@ for each product linked.
 | `docs/` | the README images (see Screenshots) |
 | `install.sh` | builds the app, and installs, updates or removes it |
 | `Formula/bytemeter.rb` | the Homebrew formula, pointed at the latest tag (see Homebrew) |
-| `.github/workflows/test.yml` | CI: the fonts check, the build, the self-test, the demo dashboard, the script and formula parse, and the bundle from a clean clone |
+| `.github/workflows/test.yml` | CI: the fonts check, the build, the self-test, the demo dashboard, the demo script's refusal of the real data folder, the script and formula parse, and the bundle from a clean clone |
 | `CHANGELOG.md` | what each release changed |
 
 `./install.sh --help` lists its options. `--dry-run` works with all of them and

@@ -845,6 +845,20 @@ def summarise(path: str, gaps: list) -> None:
               f"{parts} minutes, {delta_in} in, {delta_out} out")
 
 
+def is_live_folder(folder: str) -> bool:
+    """Whether `folder` is the app's own data folder, however it is spelt.
+
+    --force deletes the database it finds, so a demo must never be written
+    there. The home folder's disk usually ignores case, and a link can lead
+    there too, so the folder is compared as the file system sees it once it
+    exists, and by its resolved, lower-cased path before.
+    """
+    live = os.path.expanduser("~/Library/Application Support/Bytemeter")
+    if os.path.exists(folder) and os.path.exists(live):
+        return os.path.samefile(folder, live)
+    return os.path.realpath(folder).lower() == os.path.realpath(live).lower()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Write a synthetic Bytemeter database for screenshots and demos.")
@@ -857,6 +871,9 @@ def main() -> int:
     args = parser.parse_args()
 
     folder = os.path.abspath(os.path.expanduser(args.folder))
+    if is_live_folder(folder):
+        print(f"{folder} is where the app keeps its real data. Name another folder.", file=sys.stderr)
+        return 1
     path = os.path.join(folder, "bytemeter.db")
     # The write-ahead log files go too. A stale -wal beside a fresh database
     # would be replayed into it by SQLite on first open.
