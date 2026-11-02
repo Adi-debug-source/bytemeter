@@ -23,7 +23,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// When all time began, for the tooltip only. The menu bar text never
     /// carries a date.
     private var currentSince: Date?
-    /// Holds a new tooltip back until the pointer is on the item; see
+    /// Gives the item a tooltip only while the pointer is on it; see
     /// `StatusTooltip` for why.
     private var tooltip = StatusTooltip()
 
@@ -48,8 +48,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             button.action = #selector(statusItemClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.font = MenuRows.figureFont
-            // Tells the controller when the pointer comes onto the item, so a
-            // tooltip held back can go in before macOS shows the old one.
+            // Tells the controller when the pointer comes onto the item and
+            // leaves it, so the item carries a tooltip only in between.
             // `inVisibleRect` keeps the area the item's size as it changes.
             button.addTrackingArea(NSTrackingArea(
                 rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
@@ -84,6 +84,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         statusItem.menu = nil
+        // An open menu can swallow the exit, so the tooltip comes off here
+        // rather than at the next draw.
+        if !pointerIsOnItem { apply(tooltip.pointerLeft()) }
     }
 
     func updateRate(inBytes: Double, outBytes: Double) {
@@ -113,12 +116,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if settings.liveSpeed {
             text += " · " + Units.rate(rateIn)
         }
-        button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.figureFont])
         let tip = StatusTooltip.text(mode: settings.statusMode, totals: currentTotal, since: currentSince,
                                      calendar: BytemeterCalendar(cycleStartDay: settings.cycleStartDay))
         button.setAccessibilityHelp(tip)
-        if let ready = tooltip.offer(tip, pointerOnItem: pointerIsOnItem) {
-            button.toolTip = ready
+        // Before the title, whose change of width is the likely trigger, so a
+        // tooltip a missed exit left is off the item by the time it resizes.
+        apply(tooltip.offer(tip, pointerOnItem: pointerIsOnItem))
+        button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.figureFont])
+    }
+
+    /// The only place the item's tooltip is set: from what `StatusTooltip`
+    /// returns, so the item never carries one while the pointer is away.
+    private func apply(_ change: StatusTooltip.Change?) {
+        guard let change, let button = statusItem.button else { return }
+        switch change {
+        case .show(let text): button.toolTip = text
+        case .clear: button.toolTip = nil
         }
     }
 
@@ -135,14 +148,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// export them as `mouseEnteredWith:` and `mouseExitedWith:`, which the
     /// tracking area never sends.
     @objc(mouseEntered:) func mouseEntered(with event: NSEvent) {
-        if let ready = tooltip.pointerArrived() {
-            statusItem.button?.toolTip = ready
-        }
+        apply(tooltip.pointerArrived())
     }
 
-    /// The tracking area sends exits too, and this is not a responder, so
-    /// without this an exit would be an unrecognised selector.
-    @objc(mouseExited:) func mouseExited(with event: NSEvent) {}
+    @objc(mouseExited:) func mouseExited(with event: NSEvent) {
+        apply(tooltip.pointerLeft())
+    }
 
     // MARK: - Menu
 

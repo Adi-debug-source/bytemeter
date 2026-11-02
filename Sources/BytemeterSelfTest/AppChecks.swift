@@ -13,7 +13,7 @@ func runAppChecks() {
     checkCSVCells()
     checkCapInput()
     checkNetworkNameRules()
-    checkStatusTooltipWaitsForThePointer()
+    checkStatusTooltipOnlyUnderThePointer()
 }
 
 // MARK: - Peaks, by download, as the dashboard has them
@@ -274,9 +274,9 @@ private func checkNetworkNameRules() {
            ["Harbour Cafe", "Quay"], "equal totals keep the order they came in")
 }
 
-// MARK: - The menu bar tooltip changes only under the pointer
+// MARK: - The menu bar item carries a tooltip only under the pointer
 
-private func checkStatusTooltipWaitsForThePointer() {
+private func checkStatusTooltipOnlyUnderThePointer() {
     // Found on 2 November 2026: the item set a new tooltip every second, and
     // macOS showed each one at the pointer, wherever it was on the desktop.
     let gb: UInt64 = 1_000_000_000
@@ -302,25 +302,39 @@ private func checkStatusTooltipWaitsForThePointer() {
           "and a month otherwise")
 
     var tooltip = StatusTooltip()
-    expect(tooltip.offer(first, pointerOnItem: false), first, "the first tooltip goes in wherever the pointer is")
-    expect(tooltip.offer(first, pointerOnItem: true), nil, "the same text is never set again")
-    expect(tooltip.offer(second, pointerOnItem: false), nil, "a new text is held back while the pointer is away")
-    expect(tooltip.shown, first, "so the item keeps the old one")
-    expect(tooltip.pointerArrived(), second, "and gets the new one the moment the pointer comes onto it")
+    expect(tooltip.pointerArrived(), nil, "before the first figures there is nothing to show")
+    expect(tooltip.offer(first, pointerOnItem: false), nil, "the item has no tooltip while the pointer is away")
+    expect(tooltip.shown, nil, "not even the first")
+    expect(tooltip.pointerArrived(), .show(first), "it gets one the moment the pointer comes onto it")
     expect(tooltip.pointerArrived(), nil, "once only")
-    expect(tooltip.offer(first, pointerOnItem: true), first, "under the pointer a new text goes in at once")
-    _ = tooltip.offer(second, pointerOnItem: false)
-    expect(tooltip.offer(first, pointerOnItem: false), nil, "a held text that turns out unchanged is dropped")
-    expect(tooltip.pointerArrived(), nil, "so nothing is set on arrival")
+    expect(tooltip.offer(first, pointerOnItem: true), nil, "the same text is never set again")
+    expect(tooltip.offer(second, pointerOnItem: true), .show(second), "under the pointer a new text goes in at once")
+    expect(tooltip.pointerLeft(), .clear, "and comes off when the pointer leaves")
+    expect(tooltip.pointerLeft(), nil, "once only")
+    expect(tooltip.offer(first, pointerOnItem: false), nil, "a new text with the pointer away sets nothing")
+    expect(tooltip.pointerArrived(), .show(first), "the latest text is what the pointer finds")
+    // Found on 2 November 2026 too, in 1.2.2: a tooltip left on the item
+    // popped up, unchanged, when the figure changed width. An exit macOS
+    // never sends must not leave one there, so drawing with the pointer
+    // away takes it off.
+    expect(tooltip.offer(second, pointerOnItem: false), .clear, "drawing with the pointer away clears a tooltip a missed exit left")
+    expect(tooltip.shown, nil, "so none is left on the item")
 
     // The rule only helps if the app goes through it: the status item must set
-    // its tooltip from what the rule returns and nowhere else.
+    // its tooltip from what the rule returns and nowhere else, and must hear
+    // the pointer leave.
     let controller = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("../Bytemeter/StatusItemController.swift").standardized
     let source = (try? String(contentsOf: controller, encoding: .utf8)) ?? ""
     let assignments = source.components(separatedBy: "\n").filter { $0.contains(".toolTip = ") }
-    check(!assignments.isEmpty && assignments.allSatisfy { $0.trimmingCharacters(in: .whitespaces).hasSuffix("toolTip = ready") },
-          "the status item sets its tooltip only from StatusTooltip, found \(assignments.count) assignments")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+    expect(assignments, ["case .show(let text): button.toolTip = text", "case .clear: button.toolTip = nil"],
+           "the status item sets its tooltip only from a StatusTooltip change")
     check(source.contains("@objc(mouseEntered:)") && source.contains("@objc(mouseExited:)"),
-          "the status item's mouse handlers carry the names AppKit sends, or the waiting text never goes in")
+          "the status item's mouse handlers carry the names AppKit sends")
+    check(source.contains("apply(tooltip.pointerLeft())"), "and the exit takes the tooltip off")
+    let offered = source.range(of: "apply(tooltip.offer(")?.lowerBound
+    let titled = source.range(of: "button.attributedTitle = ")?.lowerBound
+    check(offered != nil && titled != nil && offered! < titled!,
+          "a drawing takes the tooltip off before the title changes width")
 }
