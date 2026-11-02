@@ -4,6 +4,7 @@
 
 - The menu bar item's tooltip no longer pops up across the desktop. The item set a new tooltip every time its figure changed, up to once a second, and once its tooltip had been seen, macOS could show each new one at the pointer, wherever it was. A new tooltip now waits until the pointer is on the item and goes in then, so it shows where it belongs and with the current figures.
 - On a billing cycle, the menu bar item's tooltip calls the month figure This cycle, as the menu does, rather than This month.
+- A monthly cap typed with a decimal comma, as much of Europe writes one, is read as a decimal: 1,5 is 1.5 GB, where it was stored as 15 GB. 1,000 is still a thousand.
 
 ## 1.2.1, 16 October 2026
 

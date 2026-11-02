@@ -18,6 +18,9 @@ public enum CapInput {
     /// Typed text to a cap in bytes, never above `largestBytes` and never
     /// below zero, and never a trap whatever is typed. Whole or decimal
     /// gigabytes, with an optional "GB" after and commas between thousands.
+    /// A comma that cannot be a thousands one is a decimal comma, as much of
+    /// Europe writes it: "1,5" is 1.5 GB and "1.000,5" is 1000.5 GB, while
+    /// "1,000" stays a thousand.
     /// A number too long to hold is simply above the largest, so it becomes
     /// the largest. Anything else, a sign, an exponent, "inf", is no cap at all.
     ///
@@ -29,6 +32,16 @@ public enum CapInput {
         var digits = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if digits.lowercased().hasSuffix("gb") {
             digits = String(digits.dropLast(2)).trimmingCharacters(in: .whitespaces)
+        }
+        // The last comma is a decimal one when no point follows it and either
+        // a point comes before it, so the points group thousands, or it is
+        // the only comma and the digits after it are not a group of three.
+        if let comma = digits.lastIndex(of: ","), !digits[comma...].contains(".") {
+            let before = digits[..<comma]
+            let after = digits[digits.index(after: comma)...]
+            if before.contains(".") || (!before.contains(",") && after.count != 3) {
+                digits = before.replacingOccurrences(of: ".", with: "") + "." + after
+            }
         }
         digits = digits.replacingOccurrences(of: ",", with: "")
         let parts = digits.split(separator: ".", omittingEmptySubsequences: false)

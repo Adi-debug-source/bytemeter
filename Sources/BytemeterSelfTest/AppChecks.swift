@@ -148,6 +148,10 @@ private func checkCapInput() {
         ("1.5", 1_500_000_000), ("1,000", 1_000_000_000_000), ("0", 0), ("", 0),
         ("-5", 0), ("+5", 0), ("abc", 0), ("inf", 0), ("nan", 0), ("1e5", 0), (".", 0), ("1.2.3", 0),
         ("GB", 0), ("١٠٠", 0),
+        // A decimal comma, found read as a thousands one on 2 November 2026:
+        // "1,5" was stored as 15 GB.
+        ("1,5", 1_500_000_000), ("0,25", 250_000_000), ("2,50 GB", 2_500_000_000), (",5", 500_000_000),
+        ("1.000,5", 1_000_500_000_000), ("1,000.5", 1_000_500_000_000), ("1,000,000", largest), ("1,0,0", 100_000_000_000),
     ]
     for (typed, bytes) in cases {
         expect(CapInput.bytes(fromText: typed), bytes, "the cap typed as \(typed.debugDescription)")
