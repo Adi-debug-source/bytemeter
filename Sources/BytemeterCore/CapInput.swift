@@ -35,11 +35,13 @@ public enum CapInput {
         }
         // The last comma is a decimal one when no point follows it and either
         // a point comes before it, so the points group thousands, or it is
-        // the only comma and the digits after it are not a group of three.
+        // the only comma and the digits after it are not a group of three
+        // following a real figure: "0,250" and ",500" are decimals.
         if let comma = digits.lastIndex(of: ","), !digits[comma...].contains(".") {
             let before = digits[..<comma]
             let after = digits[digits.index(after: comma)...]
-            if before.contains(".") || (!before.contains(",") && after.count != 3) {
+            let thousands = after.count == 3 && !before.allSatisfy { $0 == "0" }
+            if before.contains(".") || (!before.contains(",") && !thousands) {
                 digits = before.replacingOccurrences(of: ".", with: "") + "." + after
             }
         }

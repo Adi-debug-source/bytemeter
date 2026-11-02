@@ -2,11 +2,11 @@
 
 ## 1.2.2, not yet released
 
-An audit of 2 November 2026: the menu bar tooltip that popped up across the desktop, the cap typed with a decimal comma, and a guard on the demo script. The self-test runs 947 checks, up from 919.
+An audit of 2 November 2026: the menu bar tooltip that popped up across the desktop, the cap typed with a decimal comma, and a guard on the demo script. The self-test runs 951 checks, up from 919.
 
 - The menu bar item's tooltip no longer pops up across the desktop. The item set a new tooltip every time its figure changed, up to once a second, and once its tooltip had been seen, macOS could show each new one at the pointer, wherever it was. A new tooltip now waits until the pointer is on the item and goes in then, so it shows where it belongs and with the current figures.
 - On a billing cycle, the menu bar item's tooltip calls the month figure This cycle, as the menu does, rather than This month.
-- A monthly cap typed with a decimal comma, as much of Europe writes one, is read as a decimal: 1,5 is 1.5 GB, where it was stored as 15 GB. 1,000 is still a thousand.
+- A monthly cap typed with a decimal comma, as much of Europe writes one, is read as a decimal: 1,5 is 1.5 GB, where it was stored as 15 GB. So are 0,250 and ,500, since no thousands group follows a lone 0. 1,000 is still a thousand.
 - `Scripts/make_demo_db.py` refuses the folder where the app keeps its real data, however it is spelt, so `--force` can never delete a real database. CI checks it.
 - On the dashboard a figure stays on the same line as its unit, so a sentence no longer breaks between 2.11 and GB. The README's dashboard image, which showed that break, is made again from the same demo.
 - The README and MAINTENANCE say what an adapter, dock or tethered phone unplugged and plugged back in while Bytemeter is not running can cost, where the README said quitting lost nothing.
