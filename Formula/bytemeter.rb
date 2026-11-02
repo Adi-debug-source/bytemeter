@@ -1,8 +1,8 @@
 class Bytemeter < Formula
   desc "Menu bar app that counts every byte your Mac sends and receives"
   homepage "https://github.com/Adi-debug-source/bytemeter"
-  url "https://github.com/Adi-debug-source/bytemeter/archive/refs/tags/v1.2.3.tar.gz"
-  sha256 "a471a4dd183dccf38979bab7c4d8e686ce7b8999ad1a6d1fc92d5d4a6c3db983"
+  url "https://github.com/Adi-debug-source/bytemeter/archive/refs/tags/v1.2.4.tar.gz"
+  sha256 "6ba3f0eca5276c7e95d0dc6c7963e107914a3cb755925d2317b1a95368d6e613"
   license "MIT"
 
   depends_on macos: :ventura
