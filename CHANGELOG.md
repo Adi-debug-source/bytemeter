@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.4, not yet released
+## 1.2.4, 2 November 2026
 
 Leaner, with no change to any figure. The dashboard builds about a quarter faster, and the database drops two indexes that repeated what its keys already do. The self-test runs 1,166 checks, up from 957.
 
