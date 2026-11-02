@@ -305,8 +305,10 @@ swift Scripts/snapshot.swift --strip docs/icon.png
   kernel starts an interface's counter from zero each time it is attached.
   While Bytemeter runs it reads every 5 seconds, so a replug costs at most one
   reading. With the app quit, or the Mac asleep, there is no reading in
-  between, and Bytemeter misses the smaller of what the interface carried
-  before it was unplugged and what it carried after it came back. Remembering
+  between, and Bytemeter misses what the interface carried between its last
+  reading and the unplug, and then either everything since the replug, if
+  the new count in either direction is below the old one, or as much as the
+  old count, if neither is. Remembering
   that an interface was seen absent would let the next reading count all of
   the new figure, and is left for a later version, because a wrong absence
   would then count a whole boot's traffic twice.
