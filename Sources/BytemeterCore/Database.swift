@@ -108,7 +108,7 @@ public final class Database {
 
     /// The schema version this build writes and reads. Raise it with each new
     /// step in `migrate()`.
-    public static let schemaVersion: Int64 = 3
+    public static let schemaVersion: Int64 = 4
 
     /// Open an existing database for reading only, for `--demo`, which must
     /// leave its folder exactly as it found it.
@@ -320,8 +320,6 @@ public final class Database {
                 kind   TEXT    NOT NULL,
                 detail TEXT    NOT NULL DEFAULT ''
             );
-            CREATE INDEX IF NOT EXISTS idx_samples_minute ON samples(minute);
-            CREATE INDEX IF NOT EXISTS idx_proc_minute    ON proc_samples(minute);
             CREATE INDEX IF NOT EXISTS idx_events_ts      ON events(ts);
             """)
         }
@@ -363,6 +361,25 @@ public final class Database {
             ALTER TABLE samples ADD COLUMN est_in INTEGER NOT NULL DEFAULT 0;
             ALTER TABLE samples ADD COLUMN est_out INTEGER NOT NULL DEFAULT 0;
             UPDATE samples SET est_in=bytes_in, est_out=bytes_out WHERE estimated!=0;
+            """)
+        }
+
+        if version < 4 {
+            // Version 4 drops the two indexes on minute alone. Each table's
+            // primary key already starts with minute, so every range the
+            // engine reads, sums, marks or prunes is searched on the primary
+            // key's index instead, never scanned, and the extra indexes only
+            // cost space, about a fifth of the file, and a second index to
+            // write for every row the sampler adds. A new database is made
+            // without them.
+            //
+            // An older build opens this file as before: it only migrates a
+            // file older than it is, never makes these indexes again, and its
+            // queries search the primary key here too. Its --demo refuses the
+            // file, because it reads only its own version.
+            try exec("""
+            DROP INDEX IF EXISTS idx_samples_minute;
+            DROP INDEX IF EXISTS idx_proc_minute;
             """)
         }
     }

@@ -124,8 +124,6 @@ CREATE TABLE IF NOT EXISTS events(
     kind   TEXT    NOT NULL,
     detail TEXT    NOT NULL DEFAULT ''
 );
-CREATE INDEX IF NOT EXISTS idx_samples_minute ON samples(minute);
-CREATE INDEX IF NOT EXISTS idx_proc_minute    ON proc_samples(minute);
 CREATE INDEX IF NOT EXISTS idx_events_ts      ON events(ts);
 PRAGMA user_version=1;
 """
