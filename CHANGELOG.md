@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.2, not yet released
+## 1.2.2, 2 November 2026
 
 An audit of 2 November 2026: the menu bar tooltip that popped up across the desktop, the cap typed with a decimal comma, and a guard on the demo script. The self-test runs 951 checks, up from 919.
 
