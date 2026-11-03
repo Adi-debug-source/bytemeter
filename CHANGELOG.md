@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.5, not yet released
+## 1.2.5, 3 November 2026
 
 Three gaps the reviews of 1.2.4 found, with no change to any figure. The self-test runs 1,193 checks, up from 1,166.
 
