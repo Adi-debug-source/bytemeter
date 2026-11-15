@@ -2,6 +2,12 @@
 
 A macOS menu bar app in Swift that counts the bytes the Mac's network interfaces carry, with a dashboard and a CSV export. Its only claim is that its figures match what the interfaces carried, so every rule below protects that.
 
+## The worst mistakes here
+
+- Touching the live data in `~/Library/Application Support/Bytemeter/`: it is the only record of what the Mac carried. Work on a demo folder: `Scripts/make_demo_db.py` writes one, and the app reads it with `--demo <folder>`.
+- Real data in anything that goes online, a README image or pull request evidence: it shows someone's usage and app list. Use the synthetic month (MAINTENANCE.md, "Screenshots").
+- Stopping or reloading the installed app with `kill` or `kickstart`: launchd starts a killed copy again as a crash, and the kernel kills a new build under the old signature. Use `bootout` and `bootstrap` (MAINTENANCE.md, "The login item").
+
 ## Commands
 
 - Test: `swift run -c release BytemeterSelfTest` (the gate: a Stop hook runs it at the end of every turn; builds first, then prints how many checks ran and exits non-zero if any failed; needs only the Command Line Tools)
@@ -32,12 +38,32 @@ The table in MAINTENANCE.md, "How it fits together", names every part. In short:
 - A clock set ahead and then corrected files readings at the last reading's minute until real time catches up. Known limit, not a bug; the 32 bit fallback's 200 MB wrap limit is another.
 - No database files in the repository: `Scripts/make_demo_db.py` writes into a folder you name and refuses the app's own data folder, and `.gitignore` refuses `*.db` and its companions.
 
+## Tests and code
+
+- Test what can break, not what types guarantee, trivial logic or copy. Extend an existing check first, at one layer: the lowest that fails without the fix, usually `BytemeterCore`.
+- No sleep, timeout or retry in a new check; a flaky check is fixed, not retried.
+- Proof follows the bug: a logic bug gets a failing check first, then the fix; a purely visual one in the menu or the dashboard gets before and after captures and no check.
+- Builds run from your own shell, so they end with the session. Stop what you started by the process id you kept; never kill by matching a name, which hits the installed app. The release checks' crash step is the one exception.
+- No comment unless it records a constraint, an outside quirk or a fact the code cannot show.
+
 ## Working here
 
 - One task per session, with the check that proves it named at the start. Plan first only when the change touches several files; a session that has gone wrong is rewound or abandoned, not argued with.
 - The test command above is the gate. It runs before anything is called done, and its output is the evidence: a report names the command that passed and the count. A failing run is reported with its output, never worked around, and a check is never weakened to make it pass.
 - The task's scope is the task. No refactors, features, renames or tidying beyond what was asked; a bug found nearby is reported as a follow-up, not fixed in the same change.
+- State what a change assumes before writing it. Where the ask reads two ways, or a simpler route exists, ask; never pick silently.
+- Understand the real constraint first, then choose the smallest design that makes the right behaviour unsurprising. Inside the task, do not keep complexity only because it is already there. This is for logic and backend code; for the interface, be generous with features and polish.
+- The least code that does the job: no option, layer or abstraction nobody asked for, nothing generalised for one caller, no handling for a state that cannot happen. Cut an over-long diff before calling it done.
+- Every changed line traces to the task, in the existing style. Remove what your change left unused; older dead code is mentioned, not deleted.
+- A correction made twice becomes a check, in the self-test or a CI step, shown to fail on the old code. A line here only when nothing stronger fits.
 - Parallel work runs one task per worktree (`claude -w <name>`; `.claude/worktrees/` is ignored by git). Each agent is given the list of files it owns and touches nothing outside it. Two agents never share a file.
 - Before a commit: the diff is reviewed in a fresh context (`/code-review`, or `/simplify` for cleanups), then the gate runs again.
-- Commits carry the repository's own git identity and say what changed and why. No AI attribution lines or trailers, ever.
+- Commits carry the repository's own git identity and say what changed and why. Claude Code's standard co-author line is left on.
 - Nothing is pushed, tagged or released without the maintainer's yes, given in chat for that push. Force-pushes and a bare `git push` are denied in `.claude/settings.json`; a push names its remote and branch, `git push origin main`.
+
+## Pull requests
+
+- The title is in the conventional form, in plain words saying what changed for the person using it: `fix(menu): the counter no longer resets after sleep`. The body gives the problem in a sentence or two, then the fix.
+- One request is one pull request.
+- A pull request description ends with Claude Code's standard line and always names the model that did the work; the effort level is added only when the session knows it, never guessed.
+- A visible change carries before and after images; motion or timing, a short video or GIF. They are made from the synthetic month, uploaded to the pull request on GitHub and never committed.
