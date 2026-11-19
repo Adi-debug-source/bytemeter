@@ -79,21 +79,33 @@ public enum InterfaceMonitor {
         return !suffix.isEmpty && suffix.allSatisfy { $0.isNumber }
     }
 
-    /// Every interface name the kernel currently reports at the link layer.
-    public static func allLinkInterfaceNames() -> [String] {
-        var names: [String] = []
+    /// Every interface the kernel currently reports at the link layer, by
+    /// name, each with its index, the number the interface MIB is asked by.
+    ///
+    /// The index comes from the same list as the name: a link-layer address
+    /// is a `sockaddr_dl`, which carries it. `if_nametoindex` gives the same
+    /// number, but finds it by fetching this whole list again, so asking it
+    /// for each interface made one reading fetch the list six times on a Mac
+    /// with five ports, and fetching the list was most of what Bytemeter
+    /// spent while sitting in the menu bar. An index of 0 means the list did
+    /// not say, and `read` asks `if_nametoindex` for that one.
+    public static func linkInterfaces() -> [(name: String, index: UInt32)] {
+        var found: [(name: String, index: UInt32)] = []
         var head: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&head) == 0, let first = head else { return names }
+        guard getifaddrs(&head) == 0, let first = head else { return found }
         defer { freeifaddrs(head) }
         var cursor: UnsafeMutablePointer<ifaddrs>? = first
         while let entry = cursor {
             if let addr = entry.pointee.ifa_addr, addr.pointee.sa_family == UInt8(AF_LINK) {
                 let name = String(cString: entry.pointee.ifa_name)
-                if !names.contains(name) { names.append(name) }
+                if !found.contains(where: { $0.name == name }) {
+                    let index = addr.withMemoryRebound(to: sockaddr_dl.self, capacity: 1) { $0.pointee.sdl_index }
+                    found.append((name, UInt32(index)))
+                }
             }
             cursor = entry.pointee.ifa_next
         }
-        return names
+        return found
     }
 
     /// The 64 bit counter for one interface, via the interface MIB.
@@ -141,10 +153,11 @@ public enum InterfaceMonitor {
     /// Read every physical interface. Prefers the 64 bit MIB and only falls back
     /// to the 32 bit counters if the MIB is unavailable.
     public static func read() -> InterfaceSnapshot {
-        let names = allLinkInterfaceNames().filter(isPhysical)
-        return assemble(names: names,
+        let interfaces = linkInterfaces().filter { isPhysical($0.name) }
+        return assemble(names: interfaces.map(\.name),
                         mib: { name in
-                            let index = name.withCString { if_nametoindex($0) }
+                            var index = interfaces.first { $0.name == name }?.index ?? 0
+                            if index == 0 { index = name.withCString { if_nametoindex($0) } }
                             return index == 0 ? nil : mibReading(index: index)
                         },
                         fallback: ifdataReadings)

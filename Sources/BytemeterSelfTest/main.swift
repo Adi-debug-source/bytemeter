@@ -8,6 +8,14 @@ import Foundation
 // DatabaseChecks.swift and the rest), and the helpers they share are in
 // Harness.swift. They run here in the order they were written.
 
+// `--measure` times the engine's repeated work and exits; see Measure.swift.
+// It checks nothing, so it runs in place of the checks, never with them.
+if CommandLine.arguments.contains("--measure") {
+    runMeasurements()
+    try? FileManager.default.removeItem(atPath: scratchFolder)
+    exit(0)
+}
+
 checkOrdinaryReadingBooksItsDelta()
 checkFirstSightIsABaseline()
 checkResetBooksNoSpike()
@@ -59,6 +67,7 @@ checkWriteReadingCounterSourceAndRollback()
 checkAllTimeIsTheSumOfSamples()
 checkAsOfAMomentMatchesThatMoment()
 checkHeadlinesAreOneSet()
+checkMenuBarFigureIsARunningTotal()
 checkRecentEventsStopAtTheMoment()
 checkReadOnlyOpenChangesNothing()
 checkOpenWaitsOutAnotherUpgrade()

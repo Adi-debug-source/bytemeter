@@ -26,6 +26,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// Gives the item a tooltip only while the pointer is on it; see
     /// `StatusTooltip` for why.
     private var tooltip = StatusTooltip()
+    /// What the item was last drawn with, so a reading that changes nothing
+    /// it shows redraws nothing.
+    private var drawn: (text: String, tip: String)?
 
     var onOpenDashboard: (() -> Void)?
     var onOpenPreferences: (() -> Void)?
@@ -118,11 +121,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
         let tip = StatusTooltip.text(mode: settings.statusMode, totals: currentTotal, since: currentSince,
                                      calendar: BytemeterCalendar(cycleStartDay: settings.cycleStartDay))
-        button.setAccessibilityHelp(tip)
         // Before the title, whose change of width is the likely trigger, so a
         // tooltip a missed exit left is off the item by the time it resizes.
+        // Every time, changed or not, because it also takes off one a missed
+        // exit left behind.
         apply(tooltip.offer(tip, pointerOnItem: pointerIsOnItem))
-        button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.figureFont])
+        // The figure in the menu bar is short, so most readings leave it as
+        // it was: 1.2 GB stays 1.2 GB until another 100 MB has gone by. The
+        // item is drawn again only when its words change.
+        if drawn?.tip != tip { button.setAccessibilityHelp(tip) }
+        if drawn?.text != text {
+            button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.figureFont])
+        }
+        drawn = (text, tip)
     }
 
     /// The only place the item's tooltip is set: from what `StatusTooltip`

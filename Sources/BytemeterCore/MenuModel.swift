@@ -56,9 +56,10 @@ public struct MenuSnapshot {
         last7 = headlines.last7
         thisMonth = headlines.thisMonth
         last30 = headlines.last30
-        perHourToday = aggregator.averagePerHourToday(now: now)
-        perDayWeek = aggregator.averagePerDay(cal.thisWeek(now), now: now)
-        perDayMonth = aggregator.averagePerDay(cal.thisCycle(now), now: now)
+        // Each average divides a total the headlines have just read.
+        perHourToday = aggregator.averagePerHourToday(now: now, totals: today)
+        perDayWeek = aggregator.averagePerDay(cal.thisWeek(now), now: now, totals: thisWeek)
+        perDayMonth = aggregator.averagePerDay(cal.thisCycle(now), now: now, totals: thisMonth)
 
         projection = headlines.projection
         allTime = headlines.allTime

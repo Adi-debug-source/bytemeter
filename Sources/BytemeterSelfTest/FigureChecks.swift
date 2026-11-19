@@ -560,6 +560,154 @@ func checkHeadlinesAreOneSet() {
           "with nothing counted, all time has no start date")
 }
 
+// MARK: - The menu bar's running total is the headline, through every kind of write
+
+/// The menu bar figure keeps the sum of the hours that are over and reads
+/// only the current hour each time (`Aggregator.runningTotals`). The headline
+/// it must equal is read whole from `samples` every time, so each step below
+/// compares the two in all four modes, after each way a row can change, and
+/// counts how often the kept sum had to be read again.
+func checkMenuBarFigureIsARunningTotal() {
+    let db = makeDatabase()
+    addTraffic(db, at: "2026-08-20T10:17", 7_000_000_000, 700_000_000)    // off the hour, for the tidy up to move
+    addTraffic(db, at: "2026-10-02T09:00", 3_000_000_000, 300_000_000)
+    addTraffic(db, at: "2026-10-06T14:00", 2_000_000_000, 200_000_000)
+    addTraffic(db, at: "2026-10-08T08:30", 1_000_000_000, 100_000_000)
+    addTraffic(db, at: "2026-10-08T12:10", 40_000_000, 4_000_000)
+    let aggregator = Aggregator(db: db, cal: london)
+    var now = london.parseLocal("2026-10-08T12:20")!
+
+    /// Every mode's running figure against the headline read whole. One
+    /// sum is kept at a time, so all time is asked first, while its sum from
+    /// the step before is still the one kept, and again last, to leave it
+    /// kept for the step after.
+    func agrees(_ step: String) {
+        let headlines = Headlines(aggregator: aggregator, now: now)
+        for mode in [StatusMode.allTime] + StatusMode.allCases {
+            let running = Headlines.figure(for: mode, aggregator: aggregator, now: now)
+            let whole = headlines.figure(for: mode)
+            check(running.totals == whole.totals && running.since == whole.since,
+                  "\(step): the menu bar's \(mode.label) is the headline read whole")
+        }
+    }
+    /// All time alone, and how many times its kept sum has been read from the table.
+    func allTime(_ step: String, reads expected: Int) {
+        let running = Headlines.figure(for: .allTime, aggregator: aggregator, now: now)
+        expect(running.totals, aggregator.allTime(now: now).totals, "\(step): all time is the sum of samples")
+        expect(db.settledSumsRead, expected, "\(step): the earlier hours have been summed this many times")
+    }
+
+    allTime("first asked", reads: 1)
+    allTime("asked again", reads: 1)
+
+    // What the sampler does all day: a reading into the current minute.
+    addTraffic(db, at: "2026-10-08T12:20", 5_000_000, 500_000)
+    allTime("after an ordinary reading", reads: 1)
+
+    // The hour turns. The hour just ended is added to the kept sum.
+    now = london.parseLocal("2026-10-08T13:05")!
+    addTraffic(db, at: "2026-10-08T13:05", 6_000_000, 600_000)
+    allTime("in the next hour", reads: 1)
+    expect(Headlines.figure(for: .allTime, aggregator: aggregator, now: now).totals.bytesIn, 13_051_000_000,
+           "in the next hour: and it holds every byte so far")
+
+    // Waking fills in the minutes of the sleep, which are in hours already summed.
+    addTraffic(db, at: "2026-10-07T03:00", 800_000, 80_000)
+    allTime("after a sleep is filled in", reads: 2)
+
+    // A row changed without `writeBuckets`, three ways, each of which SQLite reports.
+    let past = londonMinute("2026-10-06T14:00")
+    try? db.run("UPDATE samples SET bytes_in=bytes_in+5 WHERE minute=?;", [.int(past)])
+    allTime("after an update", reads: 3)
+    try? db.run("""
+        INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out) VALUES(?,?,?,?,?)
+        ON CONFLICT(minute,iface,ssid) DO UPDATE SET bytes_in=bytes_in+excluded.bytes_in;
+        """, [.int(past), .text("en0"), .text(ssidPlaceholder), .int(11), .int(0)])
+    allTime("after an insert that lands on a row", reads: 4)
+    try? db.run("INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out) VALUES(?,?,?,?,?);",
+                [.int(past + 1), .text("en1"), .text(ssidPlaceholder), .int(13), .int(1)])
+    allTime("after a new row", reads: 5)
+    try? db.run("DELETE FROM samples WHERE minute=?;", [.int(past + 1)])
+    allTime("after a delete", reads: 6)
+
+    // Free-form SQL, which can empty a table without a row being reported.
+    try? db.exec("DELETE FROM samples WHERE minute=\(londonMinute("2026-10-07T03:00"));")
+    allTime("after exec", reads: 7)
+
+    // A past bucket in a transaction that rolls back changes nothing.
+    struct Stop: Error {}
+    let silenced = db.log
+    db.log = { _ in }
+    db.transaction {
+        try db.writeBuckets([BucketDelta(minute: past, iface: "en0", bytesIn: 999, bytesOut: 9)],
+                            ssid: ssidPlaceholder, idle: false)
+        throw Stop()
+    }
+    db.log = silenced
+    agrees("after a write that was rolled back")
+
+    // Another connection, as another process would be.
+    check(rawExec(db.path, "UPDATE samples SET bytes_in=bytes_in+17 WHERE minute=\(past);"),
+          "the fixture is written by a second connection")
+    allTime("after another connection wrote", reads: db.settledSumsRead + 1)
+
+    // The clock put back an hour: the kept sum reaches past the hour asked for.
+    now = london.parseLocal("2026-10-08T12:30")!
+    agrees("with the clock put back")
+    now = london.parseLocal("2026-10-08T13:10")!
+    agrees("with the clock put right")
+
+    // A week on, in a new week: every mode has a new start.
+    addTraffic(db, at: "2026-10-15T09:00", 70_000_000, 7_000_000)
+    now = london.parseLocal("2026-10-15T09:30")!
+    agrees("a week later")
+
+    // The tidy up collapses minutes into hours, moving the start of all time
+    // to the top of its hour.
+    now = london.parseLocal("2026-12-20T09:30")!
+    agrees("before the tidy up")
+    let collapsed = (try? Maintenance.prune(db: db, now: now, timeZone: TimeZone(identifier: "Europe/London")!)) ?? 0
+    check(collapsed > 0, "the tidy up collapses the fixture's oldest rows")
+    agrees("after the tidy up")
+
+    // Emptying a table outright is the one change SQLite makes without
+    // reporting a row, so `exec`, and `run` for a delete, end the kept sum
+    // themselves. This month keeps its start whatever the table holds, so
+    // only that can end its sum.
+    func month() -> Totals { Headlines.figure(for: .month, aggregator: aggregator, now: now).totals }
+    addTraffic(db, at: "2026-12-05T10:00", 9_000, 900)
+    expect(month(), Totals(bytesIn: 9_000, bytesOut: 900), "the month has traffic before the table is emptied")
+    try? db.exec("DELETE FROM samples;")
+    addTraffic(db, at: "2026-12-20T09:30", 4_321, 432)
+    expect(month(), Totals(bytesIn: 4_321, bytesOut: 432), "after the table is emptied: the month holds only what came after")
+    addTraffic(db, at: "2026-12-06T10:00", 7_000, 700)
+    expect(month(), Totals(bytesIn: 11_321, bytesOut: 1_132), "the month has traffic before the table is emptied again")
+    try? db.run("DELETE FROM samples;")
+    addTraffic(db, at: "2026-12-20T09:30", 55, 5)
+    expect(month(), Totals(bytesIn: 55, bytesOut: 5), "after a delete of every row: the month holds only what came after")
+
+    // A sum whose read failed is not kept, so the next one is read afresh
+    // rather than built on it.
+    let stretch = MinuteRange(start: londonMinute("2026-12-02T00:00"), end: londonMinute("2026-12-20T09:00"))
+    let reads = db.settledSumsRead
+    check(db.settledTotals(stretch, sum: { _ in nil }) == nil, "a sum that could not be read comes back as no sum")
+    expect(db.settledTotals(stretch, sum: { _ in Totals(bytesIn: 7) }), Totals(bytesIn: 7), "and the next is read, not taken from it")
+    expect(db.settledTotals(stretch, sum: { _ in Totals(bytesIn: 8) }), Totals(bytesIn: 7), "a sum that was read is the one kept")
+    expect(db.settledSumsRead, reads + 2, "so the failed read and the one after it each went to the table")
+    let longer = MinuteRange(start: stretch.start, end: stretch.end + 60)
+    check(db.settledTotals(longer, sum: { _ in nil }) == nil, "an hour that could not be added leaves no sum")
+    expect(db.settledTotals(longer, sum: { _ in Totals(bytesIn: 9) }), Totals(bytesIn: 9), "and the whole stretch is read again")
+
+    // A figure within the current hour has nothing to keep and is read whole.
+    let fresh = makeDatabase()
+    addTraffic(fresh, at: "2026-10-08T12:10", 1_000, 100)
+    let young = Aggregator(db: fresh, cal: london)
+    let early = london.parseLocal("2026-10-08T12:20")!
+    expect(Headlines.figure(for: .allTime, aggregator: young, now: early).totals.bytesIn, 1_000,
+           "a figure that began this hour is read whole")
+    expect(fresh.settledSumsRead, 0, "and keeps nothing")
+}
+
 // MARK: - One fetch of minute rows gives the views each fetching its own would
 
 /// A series as text, label, date and figures, so two can be compared whole.

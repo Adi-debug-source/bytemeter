@@ -169,6 +169,17 @@ extension Database {
     func saveBaselines(_ baselines: [String: RawCounter]) {
         try? writeBaselines(baselines)
     }
+
+    /// `writeBuckets`, forgiving in the same way: most fixtures fill a
+    /// database with it.
+    func addBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool, estimatedIdle: Bool? = nil) {
+        try? writeBuckets(buckets, ssid: ssid, idle: idle, estimatedIdle: estimatedIdle)
+    }
+
+    /// `writeEvents`, forgiving in the same way.
+    func addEvents(_ events: [LedgerEvent]) {
+        try? writeEvents(events)
+    }
 }
 
 extension Headlines {
