@@ -85,8 +85,11 @@ final class Settings {
 
     /// The preferences the dashboard reads, built in one place for the menu's
     /// Open dashboard and for `--dashboard`, so the two pages cannot differ.
-    var dashboardOptions: DashboardData.Options {
+    /// `interfaceNames` is this Mac's ports by name (`HardwarePorts.names`),
+    /// or empty for a database that may have come from another Mac.
+    func dashboardOptions(interfaceNames: [String: String]) -> DashboardData.Options {
         DashboardData.Options(ssidCapture: ssidCapture, perAppSampling: perAppSampling,
-                              capEnabled: capEnabled, capBytes: UInt64(max(0, capBytes)))
+                              capEnabled: capEnabled, capBytes: UInt64(max(0, capBytes)),
+                              interfaceNames: interfaceNames)
     }
 }

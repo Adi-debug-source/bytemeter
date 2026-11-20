@@ -131,16 +131,46 @@ public struct Aggregator {
     // MARK: - Raw fetches
 
     public func totals(_ range: MinuteRange) -> Totals {
-        var result = Totals()
-        try? db.query("""
-            SELECT COALESCE(SUM(bytes_in),0), COALESCE(SUM(bytes_out),0),
-                   COALESCE(SUM(est_in),0), COALESCE(SUM(est_out),0)
-            FROM samples WHERE minute>=? AND minute<?;
-            """, [.int(range.start), .int(range.end)]) { row in
-            result = Totals(bytesIn: row.uint(0), bytesOut: row.uint(1),
-                            estimatedIn: row.uint(2), estimatedOut: row.uint(3))
+        readTotals(range) ?? Totals()
+    }
+
+    /// The sum of a range, or nil if it could not be read. `totals` shows a
+    /// failed read as nothing, for one figure, once; a sum that will be kept
+    /// has to know the difference.
+    private func readTotals(_ range: MinuteRange) -> Totals? {
+        var result: Totals?
+        do {
+            try db.query("""
+                SELECT COALESCE(SUM(bytes_in),0), COALESCE(SUM(bytes_out),0),
+                       COALESCE(SUM(est_in),0), COALESCE(SUM(est_out),0)
+                FROM samples WHERE minute>=? AND minute<?;
+                """, [.int(range.start), .int(range.end)]) { row in
+                result = Totals(bytesIn: row.uint(0), bytesOut: row.uint(1),
+                                estimatedIn: row.uint(2), estimatedOut: row.uint(3))
+            }
+        } catch {
+            return nil
         }
         return result
+    }
+
+    /// The same sum as `totals(range)`, for a figure that is asked for again
+    /// and again while time moves on, as the menu bar's is after every
+    /// reading. The range is split at the start of the hour `now` is in: the
+    /// hours before it are over, so their sum is read once and kept by the
+    /// database, which throws it away the moment a row in them changes (see
+    /// `Database.settledTotals`), and only the current hour is read each
+    /// time. A range that lies within the current hour is read whole.
+    ///
+    /// Still worked out from `samples`, and the self-test holds it to
+    /// `totals` through every kind of write.
+    public func runningTotals(_ range: MinuteRange, now: Date) -> Totals {
+        let hour = Ledger.floorDiv(BytemeterCalendar.minute(from: now), 60) * 60
+        guard range.start < hour, hour < range.end else { return totals(range) }
+        guard let settled = db.settledTotals(MinuteRange(start: range.start, end: hour), sum: readTotals) else {
+            return totals(range)
+        }
+        return settled + totals(MinuteRange(start: hour, end: range.end))
     }
 
     public func minuteRows(_ range: MinuteRange) -> [MinuteRow] {
@@ -370,20 +400,22 @@ public struct Aggregator {
 
     /// Average per hour so far today, over the hours counted: since midnight,
     /// or since counting began if that was later today. Not a flat 24, so the
-    /// figure means something at 09:00 as well as at 23:00.
-    public func averagePerHourToday(now: Date) -> Totals {
+    /// figure means something at 09:00 as well as at 23:00. A caller that
+    /// already holds today's total passes it in as `known`, rather than have
+    /// the same rows summed twice; so do the two functions below.
+    public func averagePerHourToday(now: Date, totals known: Totals? = nil) -> Totals {
         let elapsed = max(1.0, now.timeIntervalSince(countingStart(from: cal.startOfDay(now), now: now)) / 3600.0)
-        return divide(totals(cal.today(now)), by: elapsed)
+        return divide(known ?? totals(cal.today(now)), by: elapsed)
     }
 
     /// Average per day over a range ending now, such as this week or this
     /// month, over the days counted: from the range's start, or from when
     /// counting began if that was later.
-    public func averagePerDay(_ range: MinuteRange, now: Date) -> Totals {
+    public func averagePerDay(_ range: MinuteRange, now: Date, totals known: Totals? = nil) -> Totals {
         let start = BytemeterCalendar.minute(from: countingStart(from: BytemeterCalendar.date(fromMinute: range.start),
                                                                  now: now))
         let days = max(1.0, Double(max(0, range.end - start)) / (60.0 * 24.0))
-        return divide(totals(range), by: days)
+        return divide(known ?? totals(range), by: days)
     }
 
     /// Where this cycle lands if the rest of it goes on as it has, or nil
@@ -403,11 +435,11 @@ public struct Aggregator {
     ///    hours of one day say too little about a month.
     ///
     /// Rows after `now` are ignored, so it can be asked as of an earlier moment.
-    public func projection(now: Date) -> (projected: Totals?, cycleEnd: Date) {
+    public func projection(now: Date, soFar known: Totals? = nil) -> (projected: Totals?, cycleEnd: Date) {
         let end = cal.endOfCycle(now)
         guard let first = earliestMinute(upTo: now) else { return (nil, end) }
         let start = countingStart(from: cal.startOfCycle(now), now: now)
-        let soFar = totals(cal.thisCycle(now))
+        let soFar = known ?? totals(cal.thisCycle(now))
         let elapsed = now.timeIntervalSince(start)
 
         if elapsed >= 86_400 {
@@ -461,16 +493,24 @@ public struct Aggregator {
         return (Array(longer.suffix(count)), Array(sevenDayAverage(longer, now: now).suffix(count)))
     }
 
+    /// The minutes all time covers as of `now`: from the earliest on record
+    /// up to and including the current one, or nil if nothing is on record
+    /// by then.
+    public func allTimeRange(now: Date) -> MinuteRange? {
+        let end = BytemeterCalendar.endMinute(after: now)
+        guard let earliest = earliestMinute(), earliest < end else { return nil }
+        return MinuteRange(start: earliest, end: end)
+    }
+
     /// Every byte on record from the earliest minute up to and including the
     /// current one, so that, like every other figure, it can be asked as of
     /// an earlier moment.
     public func allTime(now: Date) -> AllTimeSummary {
-        let end = BytemeterCalendar.endMinute(after: now)
-        guard let earliest = earliestMinute(), earliest < end else {
+        guard let range = allTimeRange(now: now) else {
             return AllTimeSummary(totals: Totals(), since: nil, days: 0, perDay: Totals())
         }
-        let totals = totals(MinuteRange(start: earliest, end: end))
-        let since = BytemeterCalendar.date(fromMinute: earliest)
+        let totals = totals(range)
+        let since = BytemeterCalendar.date(fromMinute: range.start)
         let days = max(0, now.timeIntervalSince(since)) / 86_400.0
         // Under a day, the figure so far stands as the day's figure, the same
         // floor the other per day averages use.

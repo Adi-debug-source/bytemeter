@@ -182,7 +182,7 @@ public enum DashboardGenerator {
               \(miniRow("Idle", data.idleTotals.total, of: data.activeTotals.total &+ data.idleTotals.total))
             </dl>
             <div class="panel-head tight"><h2>Per interface, last 30 days</h2></div>
-            \(breakdownList(data.byInterface))
+            \(breakdownList(data.byInterfaceNamed))
             <div class="panel-head tight"><h2>Per network, last 30 days</h2></div>
             \(networkSection(data))
           </section>

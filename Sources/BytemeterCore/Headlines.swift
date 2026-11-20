@@ -43,7 +43,7 @@ public struct Headlines {
         thisMonth = aggregator.totals(cal.thisCycle(now))
         last30 = aggregator.totals(cal.rollingDays(30, now: now))
         allTime = aggregator.allTime(now: now)
-        projected = aggregator.projection(now: now).projected
+        projected = aggregator.projection(now: now, soFar: thisMonth).projected
         projection = ProjectionWording(projected: projected, now: now, cal: cal)
         if let hourlyToday {
             peakHour = Aggregator.peakDownloadHour(in: hourlyToday)
@@ -57,19 +57,21 @@ public struct Headlines {
     /// tooltip names for all time, worked out on its own rather than as one
     /// of the headlines. The menu bar asks for its one figure every five
     /// seconds, on the main thread, and every headline at once costs far more
-    /// than the one: on 90 days of minute rows, about a fifth of a second
-    /// against under a millisecond for today. The self-test holds it to the
-    /// matching headline.
+    /// than the one. Even the one, read whole, was 20 milliseconds for all
+    /// time on 90 days of minute rows, so it is a running total: the hours
+    /// that are over are summed once and only the current hour is read each
+    /// time (`Aggregator.runningTotals`). The self-test holds it to the
+    /// matching headline, which is always read whole.
     public static func figure(for mode: StatusMode, aggregator: Aggregator,
                               now: Date) -> (totals: Totals, since: Date?) {
         let cal = aggregator.cal
         switch mode {
-        case .today: return (aggregator.totals(cal.today(now)), nil)
-        case .week: return (aggregator.totals(cal.thisWeek(now)), nil)
-        case .month: return (aggregator.totals(cal.thisCycle(now)), nil)
+        case .today: return (aggregator.runningTotals(cal.today(now), now: now), nil)
+        case .week: return (aggregator.runningTotals(cal.thisWeek(now), now: now), nil)
+        case .month: return (aggregator.runningTotals(cal.thisCycle(now), now: now), nil)
         case .allTime:
-            let summary = aggregator.allTime(now: now)
-            return (summary.totals, summary.since)
+            guard let range = aggregator.allTimeRange(now: now) else { return (Totals(), nil) }
+            return (aggregator.runningTotals(range, now: now), BytemeterCalendar.date(fromMinute: range.start))
         }
     }
 }

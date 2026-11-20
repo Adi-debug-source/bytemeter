@@ -398,6 +398,18 @@ func checkCounterSourceIsPerReading() {
     check(allMIB.source == .mib64 && fallbackCalls == 1, "with the MIB answering for everything the fallback is never asked")
     check(InterfaceMonitor.read().readings.allSatisfy { $0.source == .mib64 }, "on this Mac every interface reads from the 64 bit MIB")
 
+    // The index each interface is read by comes from the list of interfaces
+    // itself, and must be the number the system gives for that name.
+    let listed = InterfaceMonitor.linkInterfaces()
+    check(!listed.isEmpty, "this Mac lists its interfaces")
+    expect(Set(listed.map(\.name)).count, listed.count, "each interface is listed once")
+    // One check however many interfaces this Mac has, so the count of checks
+    // is the same on every machine.
+    let wrong = listed.filter { $0.index == 0 || $0.index != $0.name.withCString { if_nametoindex($0) } }
+    expect(wrong.map(\.name), [], "the index in the list is the one the system gives for each name")
+    expect(InterfaceMonitor.read().readings.map(\.name), listed.map(\.name).filter(InterfaceMonitor.isPhysical).sorted(),
+           "a reading covers every physical interface listed, in name order")
+
     // No input can trap: random and extreme counters, times, sessions and sources.
     var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
     func next() -> UInt64 { seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407; return seed >> 1 }

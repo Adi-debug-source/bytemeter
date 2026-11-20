@@ -12,12 +12,17 @@ public struct DashboardData {
         var perAppSampling: Bool
         var capEnabled: Bool
         var capBytes: UInt64
+        /// What macOS calls each port, by kernel name, or empty to show the
+        /// kernel names alone; see `InterfaceNames`.
+        var interfaceNames: [String: String]
 
-        public init(ssidCapture: Bool, perAppSampling: Bool, capEnabled: Bool, capBytes: UInt64) {
+        public init(ssidCapture: Bool, perAppSampling: Bool, capEnabled: Bool, capBytes: UInt64,
+                    interfaceNames: [String: String] = [:]) {
             self.ssidCapture = ssidCapture
             self.perAppSampling = perAppSampling
             self.capEnabled = capEnabled
             self.capBytes = capBytes
+            self.interfaceNames = interfaceNames
         }
     }
 
@@ -44,7 +49,13 @@ public struct DashboardData {
     let topTalkersMonth: [TopTalker]
     let idleTotals: Totals
     let activeTotals: Totals
+    /// By kernel name, as the export has them.
     let byInterface: [(String, Totals)]
+    /// The same, under the names the page shows; see `InterfaceNames`.
+    var byInterfaceNamed: [(String, Totals)] {
+        byInterface.map { (InterfaceNames.label($0.0, names: interfaceNames), $0.1) }
+    }
+    let interfaceNames: [String: String]
     /// Each network under the name the page shows, as `NetworkNames.displayed` gives it.
     let bySSID: [(String, Totals)]
 
@@ -111,6 +122,7 @@ public struct DashboardData {
         peakDay = headlines.peakDay
 
         ssidCapture = options.ssidCapture
+        interfaceNames = options.interfaceNames
         self.networkNames = networkNames
             ?? NetworkNames.status(boxTicked: options.ssidCapture, permission: nil, asking: false)
         perAppSampling = options.perAppSampling

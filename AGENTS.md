@@ -13,6 +13,7 @@ A macOS menu bar app in Swift that counts the bytes the Mac's network interfaces
 - Test: `swift run -c release BytemeterSelfTest` (the gate: a Stop hook runs it at the end of every turn; builds first, then prints how many checks ran and exits non-zero if any failed; needs only the Command Line Tools)
 - Build: `swift build -c release`
 - Fonts check: `python3 Scripts/make_fonts.py --check` (the embedded fonts must match their files; CI runs it first)
+- Measure: `swift run -c release BytemeterSelfTest --measure` for the engine and `Scripts/measure_idle.sh` for the running app (MAINTENANCE.md, "Measuring"; a change that claims to be faster shows both, before and after)
 - Install locally: `./install.sh` (`--dry-run` says exactly what would happen; `--help` lists the options)
 - Version, icon, release, Homebrew and screenshots: MAINTENANCE.md is the authority. Read the section the task needs; nothing from it is copied here.
 

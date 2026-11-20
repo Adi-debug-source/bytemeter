@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.0, 20 November 2026
+
+Leaner while it sits in the menu bar, with two small additions. No figure changes: the CSV is byte for byte as before for the same database, and so is the dashboard page apart from the port names below. The self-test runs 1,278 checks, up from 1,193.
+
+- Bytemeter takes far less of the processor while idle. Watched for two minutes on the Mac it was developed on, it used 0.05% of one core with all time in the menu bar, where 1.2.5 used 0.46%; 0.07% with today, where it used 0.22%; and 0.66% with the live speed on, where it used 1.37%. Memory is unchanged at about 12 MB. Three things did it:
+  - A reading asks the kernel for its list of interfaces once. It used to ask once for the names and again for every interface's index, six times on a Mac with five ports, and fetching that list was most of what the app spent. The counters themselves are read exactly as before, from the 64 bit interface MIB.
+  - The menu bar figure is a running total. It was added up whole after every reading, 15.7 milliseconds for all time on 90 days of minute rows. The hours that are over are now added up once and kept, and only the current hour is read each time, 22 microseconds. The kept sum is thrown away by anything that can change a row in it, and the self-test holds the figure to the total read whole through every kind of write.
+  - The menu bar item is drawn again only when its words change, and a per-app sample is written as one commit, where it was one for every app.
+- The menu has Menu bar shows, with Today, This week, This month and All time and a tick on the one showing, so the total in the menu bar can be seen and chosen from the keyboard or with VoiceOver. The right-click still steps through them.
+- The dashboard names each interface as macOS names its port, such as Wi-Fi (en0) or iPhone USB (en7), so a phone sharing its connection over a cable is told apart from the Wi-Fi. The CSV keeps the kernel's names, and so does `--dashboard` on a folder given on the command line.
+- A read of the database that ends on an error is reported as one, where it passed for the end of its rows.
+- `swift run -c release BytemeterSelfTest --measure` times the engine's repeated work on 90 days of rows, and `Scripts/measure_idle.sh` measures the running app's processor time and memory against a demo database in a home folder of its own, so the installed app and its data are never touched.
+- `--demo` takes `--open-menu`, and `Scripts/menu_shots.swift` uses it to take the README's picture of the menu, which was a capture by hand.
+- The README is rewritten: what Bytemeter does and how to install it come first, with a section for anyone reading the code.
+
 ## 1.2.5, 3 November 2026
 
 Three gaps the reviews of 1.2.4 found, with no change to any figure. The self-test runs 1,193 checks, up from 1,166.

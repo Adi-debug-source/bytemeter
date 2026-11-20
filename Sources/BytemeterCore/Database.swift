@@ -94,6 +94,15 @@ public final class Database {
     /// Set after `init`, so the migration's statements are never seen.
     public var statementObserver: ((String) -> Void)?
 
+    /// One sum over a stretch of `samples` that is over, kept between the
+    /// menu bar's readings; see `settledTotals`.
+    private var settled: (range: MinuteRange, totals: Totals, dataVersion: Int64)?
+    /// True while `writeBuckets` runs, whose rows it accounts for itself.
+    private var writingBuckets = false
+    /// How many times `settledTotals` summed a whole stretch from the table
+    /// rather than use the sum it kept. For the self-test and the measurements.
+    public private(set) var settledSumsRead = 0
+
     public init(path: String) throws {
         self.path = path
         let folder = (path as NSString).deletingLastPathComponent
@@ -107,6 +116,7 @@ public final class Database {
         }
         handle = db
         sqlite3_busy_timeout(handle, Self.busyWait)
+        watchSampleRows()
         try exec("PRAGMA journal_mode=WAL;")
         try exec("PRAGMA synchronous=NORMAL;")
         try migrate()
@@ -181,11 +191,18 @@ public final class Database {
 
     public func exec(_ sql: String) throws {
         try guardOpenTransaction(sql)
+        // Free-form SQL can drop or empty a table without changing a row
+        // SQLite reports, so a kept sum never outlives one.
+        settled = nil
         do { try rawExec(sql) } catch { noteFault(error); throw error }
     }
 
     public func run(_ sql: String, _ binds: [Binding] = []) throws {
         try guardOpenTransaction(sql)
+        // An insert or an update is always reported row by row, and ends a
+        // kept sum only if it touches `samples`. Anything else might be a
+        // delete of a whole table, which is not reported; see `settledTotals`.
+        if !(sql.hasPrefix("INSERT") || sql.hasPrefix("UPDATE")) { settled = nil }
         do {
             let statement = try prepare(sql)
             statement.bind(binds)
@@ -237,10 +254,20 @@ public final class Database {
         if transactionOpen && transactionFault == nil { transactionFault = error }
     }
 
+    /// Throws if the statement cannot be prepared, and also if it stops
+    /// part way: a read that ends on an error is reported, never passed off
+    /// as the end of its rows.
     public func query(_ sql: String, _ binds: [Binding] = [], each: (Statement) -> Void) throws {
         let statement = try prepare(sql)
         statement.bind(binds)
-        while sqlite3_step(statement.handle) == SQLITE_ROW { each(statement) }
+        while true {
+            let result = sqlite3_step(statement.handle)
+            if result == SQLITE_ROW { each(statement); continue }
+            guard result == SQLITE_DONE else {
+                throw BytemeterError.sql(sql, String(cString: sqlite3_errmsg(handle)))
+            }
+            return
+        }
     }
 
     /// Run `body` as one transaction: all of it commits, or none of it does.
@@ -375,8 +402,8 @@ public final class Database {
                     + "whose traffic was spread evenly rather than measured minute by minute. "
                     + "\(result.skipped) gap events could not be read and were left unmarked. "
                     + "No byte moved: totals are unchanged, only the timing of those rows is uncertain."
-                // Not addEvents, which forgives a failure: the record of the
-                // backfill commits with the backfill or not at all.
+                // With `run`, which throws: the record of the backfill
+                // commits with the backfill or not at all.
                 try run("INSERT INTO events(ts,kind,detail) VALUES(?,?,?);",
                         [.int(Int64(Date().timeIntervalSince1970)), .text("estimated_backfill"), .text(detail)])
             }
@@ -459,6 +486,82 @@ public final class Database {
         return (gaps, rows, skipped)
     }
 
+    // MARK: - A sum that is kept
+
+    /// The sum of `range`, a stretch of `samples` that is over, read from the
+    /// table once and then kept for as long as nothing in it can have changed.
+    /// `sum` is the query; this only decides whether it has to run.
+    ///
+    /// It exists for the menu bar figure, which is asked for after every
+    /// reading. On 90 days of minute rows the all time figure took 20
+    /// milliseconds every 5 seconds, nearly all of it adding up hours that
+    /// ended long ago. `Aggregator.runningTotals` splits its range at the
+    /// start of the current hour, keeps the earlier part here and reads the
+    /// current hour fresh each time.
+    ///
+    /// The kept sum is thrown away by anything that could change a row in
+    /// its stretch:
+    /// 1. `writeBuckets`, when a bucket falls inside the stretch, as the
+    ///    minutes of a sleep do when they are filled in on waking;
+    /// 2. any other change to a row of `samples` on this connection, whatever
+    ///    made it, such as the 90-day tidy up. SQLite reports each through
+    ///    its update hook; see `watchSampleRows`;
+    /// 3. anything run through `exec`, and anything through `run` but an
+    ///    insert or an update, because emptying or dropping a table outright
+    ///    is the one change SQLite makes without reporting a row;
+    /// 4. a commit by another connection or process, which moves
+    ///    `PRAGMA data_version`.
+    /// One sum is kept, for one start. Asked for a stretch with the same
+    /// start and a later end, as each new hour does, the minutes between are
+    /// added to it rather than the whole stretch read again.
+    ///
+    /// Only a sum that was really read is kept. `sum` answers nil when its
+    /// read failed, and then nothing is kept and nil comes back, so a read
+    /// that failed once is not carried into every later figure. The same
+    /// goes for a `data_version` that cannot be read: with no way to tell
+    /// whether another connection has written, nothing is kept or trusted.
+    public func settledTotals(_ range: MinuteRange, sum: (MinuteRange) -> Totals?) -> Totals? {
+        guard let version = dataVersion() else {
+            settled = nil
+            return sum(range)
+        }
+        if let kept = settled, kept.dataVersion == version, kept.range.start == range.start,
+           kept.range.end <= range.end {
+            if kept.range.end == range.end { return kept.totals }
+            settled = nil
+            guard let added = sum(MinuteRange(start: kept.range.end, end: range.end)) else { return nil }
+            settled = (range, kept.totals + added, version)
+            return kept.totals + added
+        }
+        settled = nil
+        settledSumsRead += 1
+        guard let totals = sum(range) else { return nil }
+        settled = (range, totals, version)
+        return totals
+    }
+
+    /// Changes each time another connection commits to the file, and never
+    /// for this connection's own writes. Nil if it cannot be read.
+    private func dataVersion() -> Int64? {
+        var version: Int64?
+        try? query("PRAGMA data_version;") { version = $0.int(0) }
+        return version
+    }
+
+    /// Has SQLite say whenever a row of `samples` is inserted, updated or
+    /// deleted on this connection. `writeBuckets` knows which minutes it
+    /// writes and settles those itself; every other change ends the kept
+    /// sum, so a new way of writing the table cannot leave it stale. The hook
+    /// only clears a value: it runs inside the statement making the change,
+    /// where nothing may be asked of the connection.
+    private func watchSampleRows() {
+        sqlite3_update_hook(handle, { context, _, _, table, _ in
+            guard let context, let table, strcmp(table, "samples") == 0 else { return }
+            let database = Unmanaged<Database>.fromOpaque(context).takeUnretainedValue()
+            if !database.writingBuckets { database.settled = nil }
+        }, Unmanaged.passUnretained(self).toOpaque())
+    }
+
     // MARK: - State
 
     public func state(_ key: String) -> String? {
@@ -536,17 +639,12 @@ public final class Database {
 
     // MARK: - Writes
     //
-    // Each write comes in two forms. The throwing one (`writeBuckets`,
-    // `writeEvents`) is for a transaction that must stop at the first
-    // failure, which is what `writeReading` builds on for the sampler. The
-    // forgiving one (`addBuckets`, `addEvents`) drops the error, for callers
-    // with nothing to do about it. Inside a transaction even the forgiving
-    // form cannot let a commit through without its rows: the failure is
-    // remembered and the transaction rolls back.
-
-    public func addEvents(_ events: [LedgerEvent]) {
-        try? writeEvents(events)
-    }
+    // The writes throw, for a transaction that must stop at the first
+    // failure, which is what `writeReading` builds on for the sampler. A
+    // forgiving write, such as `setState` or `addProcBuckets`, drops the
+    // error, for callers with nothing to do about it. Inside a transaction
+    // even a forgiving write cannot let a commit through without its rows:
+    // the failure is remembered and the transaction rolls back.
 
     public func writeEvents(_ events: [LedgerEvent]) throws {
         for event in events {
@@ -568,12 +666,13 @@ public final class Database {
     ///
     /// `estimatedIdle`, when given, is the flag for the estimated buckets in
     /// place of `idle`; measured buckets always take `idle`. See `writeReading`.
-    public func addBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool, estimatedIdle: Bool? = nil) {
-        try? writeBuckets(buckets, ssid: ssid, idle: idle, estimatedIdle: estimatedIdle)
-    }
-
     public func writeBuckets(_ buckets: [BucketDelta], ssid: String, idle: Bool, estimatedIdle: Bool? = nil) throws {
         guard !buckets.isEmpty else { return }
+        // A bucket in a stretch whose sum is kept ends that sum; a bucket
+        // after it, which is every ordinary reading, leaves it standing.
+        if let kept = settled, buckets.contains(where: { $0.minute < kept.range.end }) { settled = nil }
+        writingBuckets = true
+        defer { writingBuckets = false }
         let sql = """
         INSERT INTO samples(minute,iface,ssid,bytes_in,bytes_out,idle,estimated,est_in,est_out)
         VALUES(?,?,?,?,?,?,?,?,?)
@@ -620,18 +719,27 @@ public final class Database {
         }
     }
 
+    /// One per-app sample, forgiving: a failure is dropped. Outside a
+    /// transaction it makes its own, so a sample of 25 apps is one commit
+    /// where it was 25, each its own write to the log, and it lands whole or
+    /// not at all. A failure here is dropped without touching
+    /// `failingSince`, which speaks for the interface readings alone.
     public func addProcBuckets(minute: Int64, deltas: [String: (bytesIn: UInt64, bytesOut: UInt64)]) {
-        guard !deltas.isEmpty else { return }
+        let moved = deltas.filter { $0.value.bytesIn > 0 || $0.value.bytesOut > 0 }
+        guard !moved.isEmpty else { return }
         let sql = """
         INSERT INTO proc_samples(minute,proc,bytes_in,bytes_out) VALUES(?,?,?,?)
         ON CONFLICT(minute,proc) DO UPDATE SET
             bytes_in  = bytes_in  + excluded.bytes_in,
             bytes_out = bytes_out + excluded.bytes_out;
         """
-        for (name, delta) in deltas where delta.bytesIn > 0 || delta.bytesOut > 0 {
-            try? run(sql, [.int(minute), .text(name),
-                           .int(Int64(bitPattern: delta.bytesIn)),
-                           .int(Int64(bitPattern: delta.bytesOut))])
+        func write() {
+            for (name, delta) in moved {
+                try? run(sql, [.int(minute), .text(name),
+                               .int(Int64(bitPattern: delta.bytesIn)),
+                               .int(Int64(bitPattern: delta.bytesOut))])
+            }
         }
+        if transactionOpen { write() } else { try? inTransaction(write) }
     }
 }

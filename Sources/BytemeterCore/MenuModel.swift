@@ -56,9 +56,10 @@ public struct MenuSnapshot {
         last7 = headlines.last7
         thisMonth = headlines.thisMonth
         last30 = headlines.last30
-        perHourToday = aggregator.averagePerHourToday(now: now)
-        perDayWeek = aggregator.averagePerDay(cal.thisWeek(now), now: now)
-        perDayMonth = aggregator.averagePerDay(cal.thisCycle(now), now: now)
+        // Each average divides a total the headlines have just read.
+        perHourToday = aggregator.averagePerHourToday(now: now, totals: today)
+        perDayWeek = aggregator.averagePerDay(cal.thisWeek(now), now: now, totals: thisWeek)
+        perDayMonth = aggregator.averagePerDay(cal.thisCycle(now), now: now, totals: thisMonth)
 
         projection = headlines.projection
         allTime = headlines.allTime
@@ -102,6 +103,22 @@ public enum MenuModel {
             self.capEnabled = capEnabled
             self.capBytes = capBytes
             self.perAppSampling = perAppSampling
+        }
+    }
+
+    /// The title of the menu's item for choosing what the menu bar shows.
+    public static let periodsTitle = "Menu bar shows"
+
+    /// The four totals the menu bar can show, in the order a right-click
+    /// cycles through them, each as the menu offers it, with the one showing
+    /// now marked. The menu lists them so the choice can be seen, and made
+    /// from the keyboard or with VoiceOver, which a right-click cannot be.
+    /// On a billing cycle the month is called the cycle, as its row is.
+    public static func periods(current: StatusMode, cal: BytemeterCalendar)
+        -> [(mode: StatusMode, title: String, chosen: Bool)] {
+        StatusMode.allCases.map { mode in
+            let title = mode == .month && cal.cycleStartDay != 1 ? "This cycle" : mode.label
+            return (mode, title, mode == current)
         }
     }
 

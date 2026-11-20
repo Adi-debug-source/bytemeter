@@ -35,6 +35,8 @@ for each product linked.
 | `Scripts/make_fonts.py` | writes `Sources/BytemeterDashboard/DashboardFonts.swift` from those fonts |
 | `Scripts/make_demo_db.py` | makes the synthetic database the README images come from |
 | `Scripts/snapshot.swift` | renders the dashboard to a PNG for the README images |
+| `Scripts/menu_shots.swift` | takes the README's picture of the menu from the real app in demo mode |
+| `Scripts/measure_idle.sh` | measures the running app's processor time and memory while idle (see Measuring) |
 | `docs/` | the README images (see Screenshots) |
 | `install.sh` | builds the app, and installs, updates or removes it |
 | `Formula/bytemeter.rb` | the Homebrew formula, pointed at the latest tag (see Homebrew) |
@@ -43,6 +45,18 @@ for each product linked.
 
 `./install.sh --help` lists its options. `--dry-run` works with all of them and
 says exactly what would happen, with full paths, without changing anything.
+
+## Measuring
+
+A change that claims to make Bytemeter faster or lighter shows it with these two, run before and after:
+
+    swift run -c release BytemeterSelfTest --measure
+    Scripts/measure_idle.sh
+
+1. `--measure` times the engine's repeated work on 90 days of minute rows: a reading, reading the interface counters, the menu bar figure in each of its four modes, a per-app write, the menu, the dashboard and opening the database. Each line is a median. It checks nothing and is no part of the gate.
+2. `Scripts/measure_idle.sh` starts the built app with a home folder of its own, holding a demo database, watches it for two minutes and prints its processor time and memory. A second Bytemeter item shows in the menu bar while it runs. It takes its own lock and counts into its own file, so the installed app and its data are left alone, and it removes what it made. `--mode` picks the menu bar figure, `--live-speed` switches the live speed on, and `--binary` points it at another build, which is how an older version is measured for comparison.
+
+For the figures to be comparable, run both on a quiet Mac. The idle figures of each release are in the CHANGELOG.
 
 ## The version
 
@@ -281,12 +295,15 @@ swift Scripts/snapshot.swift --strip docs/icon.png
 1. `Scripts/snapshot.swift` renders the page in WebKit, the engine Safari uses, 1400 CSS pixels wide and twice that in pixels. It needs no browser and fetches nothing. It takes the screen's scale, so it needs a Retina screen, and it stops with an error rather than write a blurry image.
 2. It prints where each part of the page sits in `page.png`, in pixels, and the crops follow those boxes. The first runs the width of the page body, from 32 pixels down to the bottom of Today by hour less the 2 pixel rule under it. Last 30 days runs from its top to its bottom less its rule. The heatmap takes its panel's own, wider box. If the dashboard's layout changes, run it and take the numbers again.
 3. `sips` swaps the PNG's sRGB mark for gAMA, cHRM and EXIF chunks while it crops. `--strip` takes them out and puts the sRGB mark back, and leaves the pixels alone.
-4. The menu image comes from the real menu running read-only against the same database: `.build/release/Bytemeter --demo /tmp/bytemeter-demo --as-of 2026-09-29T21:30`. Open the menu, capture it (Cmd+Shift+4, then drag a box just inside the menu's edge, so there is no shadow), save it as `docs/menu.png`, and choose Quit Bytemeter from that menu to end it. The demo never writes and leaves a running Bytemeter alone. A screen capture is tagged with the display's own colour profile, Display P3 on a recent Mac, so convert it to sRGB and strip it, as the icon is:
+4. The menu image comes from the real menu running read-only against the same database, after the `--dashboard` line above has brought that database up to date. `Scripts/menu_shots.swift` starts `Bytemeter --demo` with `--open-menu`, which opens the menu without a click, has `screencapture` take the menu's window, trims it to the menu's edge, so there is no shadow, and ends the demo. The demo never writes and leaves a running Bytemeter alone. Take it in dark mode, and allow the terminal to record the screen when macOS asks. A screen capture is tagged with the display's own colour profile, Display P3 on a recent Mac, so convert it to sRGB and strip it, as the icon is:
 
    ```bash
+   swift Scripts/menu_shots.swift /tmp/bytemeter-demo 2026-09-29T21:30 docs/menu.png
    sips --matchTo '/System/Library/ColorSync/Profiles/sRGB Profile.icc' docs/menu.png --out docs/menu.png
    swift Scripts/snapshot.swift --strip docs/menu.png
    ```
+
+   The menu bar item itself cannot be taken this way: macOS draws it in a window of its own, not the app's.
 
 5. The icon's 256 pixel copy is converted to sRGB the same way, which changes nothing now that `AppIcon.icns` is sRGB itself, and `--strip` then leaves each image with nothing but its pixels and an sRGB mark.
 

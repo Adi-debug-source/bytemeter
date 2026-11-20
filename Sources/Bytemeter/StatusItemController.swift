@@ -26,6 +26,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// Gives the item a tooltip only while the pointer is on it; see
     /// `StatusTooltip` for why.
     private var tooltip = StatusTooltip()
+    /// What the item was last drawn with, so a reading that changes nothing
+    /// it shows redraws nothing.
+    private var drawn: (text: String, tip: String)?
 
     var onOpenDashboard: (() -> Void)?
     var onOpenPreferences: (() -> Void)?
@@ -118,11 +121,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
         let tip = StatusTooltip.text(mode: settings.statusMode, totals: currentTotal, since: currentSince,
                                      calendar: BytemeterCalendar(cycleStartDay: settings.cycleStartDay))
-        button.setAccessibilityHelp(tip)
         // Before the title, whose change of width is the likely trigger, so a
         // tooltip a missed exit left is off the item by the time it resizes.
+        // Every time, changed or not, because it also takes off one a missed
+        // exit left behind.
         apply(tooltip.offer(tip, pointerOnItem: pointerIsOnItem))
-        button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.figureFont])
+        // The figure in the menu bar is short, so most readings leave it as
+        // it was: 1.2 GB stays 1.2 GB until another 100 MB has gone by. The
+        // item is drawn again only when its words change.
+        if drawn?.tip != tip { button.setAccessibilityHelp(tip) }
+        if drawn?.text != text {
+            button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.figureFont])
+        }
+        drawn = (text, tip)
     }
 
     /// The only place the item's tooltip is set: from what `StatusTooltip`
@@ -179,6 +190,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        // The same choice a right-click on the figure cycles through, where
+        // it can be seen and reached from the keyboard. Its ticks are in the
+        // submenu, so they add no tick column to this menu.
+        let period = NSMenuItem(title: MenuModel.periodsTitle, action: nil, keyEquivalent: "")
+        let periods = NSMenu()
+        for choice in MenuModel.periods(current: settings.statusMode,
+                                        cal: BytemeterCalendar(cycleStartDay: settings.cycleStartDay)) {
+            let item = NSMenuItem(title: choice.title, action: #selector(choosePeriod(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = choice.mode.rawValue
+            item.state = choice.chosen ? .on : .off
+            periods.addItem(item)
+        }
+        period.submenu = periods
+        menu.addItem(period)
+
         let live = NSMenuItem(title: "Live speed in the menu bar", action: #selector(toggleLiveSpeed), keyEquivalent: "")
         live.target = self
         live.state = settings.liveSpeed ? .on : .off
@@ -229,6 +256,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         settings.liveSpeed.toggle()
         onLiveSpeedChanged?()
         render()
+    }
+
+    @objc private func choosePeriod(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = StatusMode(rawValue: raw) else { return }
+        settings.statusMode = mode
+        refresh()
     }
 
     @objc private func openDashboard() { onOpenDashboard?() }

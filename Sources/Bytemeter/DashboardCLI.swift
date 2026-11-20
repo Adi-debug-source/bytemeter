@@ -31,7 +31,12 @@ enum DashboardCLI {
             let settings = Settings(db: db, write: { work in work() })
             let cal = BytemeterCalendar(cycleStartDay: settings.cycleStartDay)
             let aggregator = Aggregator(db: db, cal: cal)
-            let options = settings.dashboardOptions
+            // The app's own data was counted on this Mac, so its ports can
+            // be named. A folder given on the command line may hold a copy
+            // from anywhere, or a demo, and is shown by kernel name alone, so
+            // the same database gives the same page on every Mac.
+            let options = settings.dashboardOptions(
+                interfaceNames: folderArgument == nil ? HardwarePorts.names() : [:])
             let data = DashboardData(aggregator: aggregator, options: options, now: asOf ?? Date())
             let url = try DashboardGenerator.write(data: data, folder: folder)
             print(url.path)

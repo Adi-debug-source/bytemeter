@@ -21,21 +21,25 @@ import BytemeterCore
 /// 6. Its menu bar item has its own autosave name, so where macOS remembers the
 ///    real item sitting is left alone. Run it from the build folder rather than
 ///    the installed app, so it does not share the app's preferences either.
-/// Quit ends it, as it ends the app.
+/// Quit ends it, as it ends the app. With `--open-menu` the menu opens by
+/// itself a moment after launch, for `Scripts/menu_shots.swift`, which takes
+/// the README's pictures of it and cannot click.
 final class DemoDelegate: NSObject, NSApplicationDelegate {
 
     private let db: Database
     private let asOf: Date?
+    private let openMenu: Bool
     private var settings: Settings?
     private var statusController: StatusItemController?
 
-    private init(db: Database, asOf: Date?) {
+    private init(db: Database, asOf: Date?, openMenu: Bool) {
         self.db = db
         self.asOf = asOf
+        self.openMenu = openMenu
     }
 
     /// Opens the demo database, or says on standard error why it will not.
-    static func make(folder: String, asOf: Date?) -> DemoDelegate? {
+    static func make(folder: String, asOf: Date?, openMenu: Bool = false) -> DemoDelegate? {
         let url = URL(fileURLWithPath: folder, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
         let real = DataFolder.url.standardizedFileURL.resolvingSymlinksInPath()
         guard url.path != real.path else {
@@ -45,7 +49,7 @@ final class DemoDelegate: NSObject, NSApplicationDelegate {
         }
         do {
             let db = try Database(readOnlyPath: DataFolder.database(in: url).path)
-            return DemoDelegate(db: db, asOf: asOf)
+            return DemoDelegate(db: db, asOf: asOf, openMenu: openMenu)
         } catch {
             logError("--demo could not open the demo database: \(error).")
             return nil
@@ -69,5 +73,8 @@ final class DemoDelegate: NSObject, NSApplicationDelegate {
         let moment = asOf.map { "as of " + BytemeterCalendar().timestampLabel($0) } ?? "as of now"
         logError("Bytemeter demo: showing \(database.path), \(moment). Read only. "
                  + "Choose Quit from its menu to end it.")
+        if openMenu {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak controller] in controller?.showMenu() }
+        }
     }
 }
