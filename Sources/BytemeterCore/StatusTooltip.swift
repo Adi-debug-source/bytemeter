@@ -30,7 +30,7 @@ public struct StatusTooltip {
                             calendar: BytemeterCalendar = BytemeterCalendar()) -> String {
         // The month figure is the billing cycle's when one is set, so it is
         // called a cycle, as the menu calls it.
-        var label = mode == .month && calendar.cycleStartDay != 1 ? "This cycle" : mode.label
+        var label = mode == .month ? calendar.cycleName : mode.label
         if mode == .allTime, let since {
             label += ", since " + calendar.dateLabel(since)
         }

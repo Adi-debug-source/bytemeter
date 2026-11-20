@@ -54,11 +54,11 @@ final class Sampler {
         }
         sampleNow()
 
-        let sampler = DispatchSource.makeTimerSource(queue: queue)
-        sampler.schedule(deadline: .now() + Self.sampleInterval, repeating: Self.sampleInterval, leeway: .milliseconds(500))
-        sampler.setEventHandler { [weak self] in self?.takeSample() }
-        sampler.resume()
-        sampleTimer = sampler
+        let samples = DispatchSource.makeTimerSource(queue: queue)
+        samples.schedule(deadline: .now() + Self.sampleInterval, repeating: Self.sampleInterval, leeway: .milliseconds(500))
+        samples.setEventHandler { [weak self] in self?.takeSample() }
+        samples.resume()
+        sampleTimer = samples
 
         let processes = DispatchSource.makeTimerSource(queue: processQueue)
         processes.schedule(deadline: .now() + 3, repeating: Self.processInterval, leeway: .seconds(2))

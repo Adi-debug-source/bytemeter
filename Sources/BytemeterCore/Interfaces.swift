@@ -113,10 +113,10 @@ public enum InterfaceMonitor {
     /// This is deliberately not getifaddrs. On macOS getifaddrs returns a
     /// `struct if_data`, whose ifi_ibytes is a u_int32_t, so once an interface
     /// passes 4.29 GB since boot, which a busy day easily does, that field has
-    /// wrapped and reads about 4.29 GB low. The route socket NET_RT_IFLIST2 path returns the same
-    /// truncated value. `net.link.generic.ifdata.<index>.general` fills a
-    /// `struct ifmibdata`, whose ifmd_data really is an `if_data64`, and its
-    /// value matches netstat -ib exactly. Verified 20 September 2026.
+    /// wrapped and reads about 4.29 GB low. The route socket NET_RT_IFLIST2
+    /// path returns the same truncated value. `net.link.generic.ifdata.<index>.general`
+    /// fills a `struct ifmibdata`, whose ifmd_data really is an `if_data64`,
+    /// and its value matches netstat -ib exactly. Verified 20 September 2026.
     private static func mibReading(index: UInt32) -> (UInt64, UInt64)? {
         var mib: [Int32] = [CTL_NET, pfLink, netlinkGeneric, ifmibIfdata, Int32(bitPattern: index), ifdataGeneral]
         var data = ifmibdata()

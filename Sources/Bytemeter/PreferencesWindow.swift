@@ -18,6 +18,9 @@ final class PreferencesWindow: NSWindowController {
     private var cycleField: NSTextField!
     private var stack: NSStackView!
 
+    private static let textWidth: CGFloat = 400
+    private static let fieldWidth: CGFloat = 140
+
     init(settings: Settings, networkNames: NetworkNameAccess, onChange: @escaping () -> Void) {
         self.settings = settings
         self.networkNames = networkNames
@@ -78,14 +81,14 @@ final class PreferencesWindow: NSWindowController {
         capField.target = self
         capField.action = #selector(capValueChanged)
         capField.translatesAutoresizingMaskIntoConstraints = false
-        capField.widthAnchor.constraint(equalToConstant: 140).isActive = true
+        capField.widthAnchor.constraint(equalToConstant: Self.fieldWidth).isActive = true
         stack.addArrangedSubview(labelled("Cap", capField))
 
         cycleField = NSTextField(string: String(settings.cycleStartDay))
         cycleField.target = self
         cycleField.action = #selector(cycleValueChanged)
         cycleField.translatesAutoresizingMaskIntoConstraints = false
-        cycleField.widthAnchor.constraint(equalToConstant: 140).isActive = true
+        cycleField.widthAnchor.constraint(equalToConstant: Self.fieldWidth).isActive = true
         stack.addArrangedSubview(labelled("Cycle starts on day", cycleField))
         stack.addArrangedSubview(caption("From 1 to 28. 1 means calendar months, the usual case. Change it only if your provider bills from a different day of the month."))
 
@@ -148,7 +151,7 @@ final class PreferencesWindow: NSWindowController {
         field.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         field.textColor = .secondaryLabelColor
         field.translatesAutoresizingMaskIntoConstraints = false
-        field.widthAnchor.constraint(equalToConstant: 400).isActive = true
+        field.widthAnchor.constraint(equalToConstant: Self.textWidth).isActive = true
         return field
     }
 
@@ -156,7 +159,7 @@ final class PreferencesWindow: NSWindowController {
         let line = NSBox()
         line.boxType = .separator
         line.translatesAutoresizingMaskIntoConstraints = false
-        line.widthAnchor.constraint(equalToConstant: 400).isActive = true
+        line.widthAnchor.constraint(equalToConstant: Self.textWidth).isActive = true
         return line
     }
 

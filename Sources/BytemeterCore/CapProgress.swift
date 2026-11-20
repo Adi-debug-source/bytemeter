@@ -25,12 +25,14 @@ public struct CapProgress: Equatable {
     /// "8.00 GB left, 16 days to go", "Cap reached" or "37.1 GB over the cap".
     public let remainingText: String
 
+    private static let barCells = 12
+
     public init(used: UInt64, cap: UInt64, now: Date, cal: BytemeterCalendar) {
         fraction = cap == 0 ? 0 : Double(used) / Double(cap)
         percent = Self.wholePercent(used, of: cap)
 
-        let filled = Int((min(1.0, fraction) * 12).rounded(.down))
-        barText = String(repeating: "▰", count: filled) + String(repeating: "▱", count: 12 - filled)
+        let filled = Int((min(1.0, fraction) * Double(Self.barCells)).rounded(.down))
+        barText = String(repeating: "▰", count: filled) + String(repeating: "▱", count: Self.barCells - filled)
         menuText = "\(barText)  \(percent)% of \(Units.bytes(cap))"
 
         if used < cap {

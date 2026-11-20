@@ -43,7 +43,7 @@ public struct Headlines {
         thisMonth = aggregator.totals(cal.thisCycle(now))
         last30 = aggregator.totals(cal.rollingDays(30, now: now))
         allTime = aggregator.allTime(now: now)
-        projected = aggregator.projection(now: now, soFar: thisMonth).projected
+        projected = aggregator.projection(now: now, soFar: thisMonth)
         projection = ProjectionWording(projected: projected, now: now, cal: cal)
         if let hourlyToday {
             peakHour = Aggregator.peakDownloadHour(in: hourlyToday)

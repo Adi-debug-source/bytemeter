@@ -435,9 +435,9 @@ public struct Aggregator {
     ///    hours of one day say too little about a month.
     ///
     /// Rows after `now` are ignored, so it can be asked as of an earlier moment.
-    public func projection(now: Date, soFar known: Totals? = nil) -> (projected: Totals?, cycleEnd: Date) {
+    public func projection(now: Date, soFar known: Totals? = nil) -> Totals? {
         let end = cal.endOfCycle(now)
-        guard let first = earliestMinute(upTo: now) else { return (nil, end) }
+        guard let first = earliestMinute(upTo: now) else { return nil }
         let start = countingStart(from: cal.startOfCycle(now), now: now)
         let soFar = known ?? totals(cal.thisCycle(now))
         let elapsed = now.timeIntervalSince(start)
@@ -446,19 +446,19 @@ public struct Aggregator {
             let elapsedDays = elapsed / 86_400.0
             let totalDays = max(elapsedDays, end.timeIntervalSince(start) / 86_400.0)
             let factor = totalDays / elapsedDays
-            return (Totals(bytesIn: Self.clampedBytes(Double(soFar.bytesIn) * factor),
-                           bytesOut: Self.clampedBytes(Double(soFar.bytesOut) * factor)), end)
+            return Totals(bytesIn: Self.clampedBytes(Double(soFar.bytesIn) * factor),
+                          bytesOut: Self.clampedBytes(Double(soFar.bytesOut) * factor))
         }
 
         let current = BytemeterCalendar.minute(from: now)
-        guard first <= current - 1_439 else { return (nil, end) }
+        guard first <= current - 1_439 else { return nil }
         let lastDay = totals(MinuteRange(start: current - 1_439, end: current + 1))
         let remaining = Double(max(0, BytemeterCalendar.minute(from: end) - (current + 1)))
         func run(_ soFar: UInt64, _ lastDay: UInt64) -> UInt64 {
             Self.clampedBytes(Double(soFar) + Double(lastDay) / 1_440.0 * remaining)
         }
-        return (Totals(bytesIn: run(soFar.bytesIn, lastDay.bytesIn),
-                       bytesOut: run(soFar.bytesOut, lastDay.bytesOut)), end)
+        return Totals(bytesIn: run(soFar.bytesIn, lastDay.bytesIn),
+                      bytesOut: run(soFar.bytesOut, lastDay.bytesOut))
     }
 
     /// The seven-day average of download for each day of a `daily` series,

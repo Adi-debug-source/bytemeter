@@ -168,7 +168,7 @@ func checkAveragesCountFromWhenCountingBegan() {
          "so in the first month it agrees with per day, all time")
     let soFar = Double(month.totals(london.thisCycle(monthNow)).bytesIn)
     let runway = london.endOfCycle(monthNow).timeIntervalSince(began) / monthNow.timeIntervalSince(began)
-    near(month.projection(now: monthNow).projected?.bytesIn ?? 0, soFar * runway,
+    near(month.projection(now: monthNow)?.bytesIn ?? 0, soFar * runway,
          "the projection runs the rate since counting began to the end of the month")
 
     // The start of a week: counting began at 09:00 on Wednesday 30 September, asked at 21:00 on Friday 2 October.
@@ -190,7 +190,7 @@ func checkAveragesCountFromWhenCountingBegan() {
     expect(snapshot.perDayMonth, month.averagePerDay(london.thisCycle(monthNow), now: monthNow), "the menu's per day this month")
     expect(snapshot.perDayWeek, month.averagePerDay(london.thisWeek(monthNow), now: monthNow), "the menu's per day this week")
     expect(snapshot.perHourToday, month.averagePerHourToday(now: monthNow), "the menu's per hour today")
-    expect(snapshot.projection, ProjectionWording(projected: month.projection(now: monthNow).projected, now: monthNow, cal: london),
+    expect(snapshot.projection, ProjectionWording(projected: month.projection(now: monthNow), now: monthNow, cal: london),
            "the menu's projection is worded from the same figure the dashboard uses")
 }
 
@@ -229,20 +229,20 @@ func checkProjectionOnACyclesFirstDay() {
     let month = Aggregator(db: db, cal: london)
     for at in ["2026-10-01T06:00", "2026-10-01T23:59", "2026-10-02T00:00"] {
         let now = london.parseLocal(at)!
-        within(month.projection(now: now).projected, cycleMB(london, now),
+        within(month.projection(now: now), cycleMB(london, now),
                "at \(at) the projection runs the real rate to the end of the month")
     }
     let cycle15 = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
     let cycleNow = cycle15.parseLocal("2026-10-15T06:00")!
-    within(Aggregator(db: db, cal: cycle15).projection(now: cycleNow).projected, cycleMB(cycle15, cycleNow),
+    within(Aggregator(db: db, cal: cycle15).projection(now: cycleNow), cycleMB(cycle15, cycleNow),
            "and so it does on the first morning of a billing cycle")
 
     // A new install with under a day counted has nothing to run on.
     let fresh = steadyTraffic(from: "2026-10-02T10:00", to: "2026-10-02T16:00", down: 1_000_000)
     let freshNow = london.parseLocal("2026-10-02T16:00")!
     let early = Aggregator(db: fresh, cal: london).projection(now: freshNow)
-    check(early.projected == nil, "six hours after counting began, it is too early to project")
-    let wording = ProjectionWording(projected: early.projected, now: freshNow, cal: london)
+    check(early == nil, "six hours after counting began, it is too early to project")
+    let wording = ProjectionWording(projected: early, now: freshNow, cal: london)
     check(wording.isTooEarly, "the wording knows it is too early")
     expect(wording.figure, "Too early", "the tile's figure says too early")
     expect(wording.headline, "Too early to project October", "the menu's line names the month in full")
@@ -264,8 +264,8 @@ func checkProjectionOnACyclesFirstDay() {
     }
 
     let nothing = Aggregator(db: makeDatabase(), cal: london).projection(now: freshNow)
-    check(nothing.projected == nil, "with nothing counted at all, it is too early")
-    expect(ProjectionWording(projected: nothing.projected, now: freshNow, cal: london).figure, "Too early",
+    check(nothing == nil, "with nothing counted at all, it is too early")
+    expect(ProjectionWording(projected: nothing, now: freshNow, cal: london).figure, "Too early",
            "and the figure says so")
 }
 
@@ -478,7 +478,7 @@ func checkAsOfAMomentMatchesThatMoment() {
           "all time's start, day count and average match")
     check(a.allTime(now: asOf.addingTimeInterval(3 * 86_400)).totals.bytesIn > allA.totals.bytesIn,
           "and the later rows are really there to be left out")
-    expect(a.projection(now: asOf).projected, b.projection(now: asOf).projected, "the projection matches")
+    expect(a.projection(now: asOf), b.projection(now: asOf), "the projection matches")
     let peakHourA = a.peakDownloadHourToday(now: asOf), peakHourB = b.peakDownloadHourToday(now: asOf)
     check(peakHourA?.hour == peakHourB?.hour && peakHourA?.totals == peakHourB?.totals, "the peak hour matches")
     check(a.peakDownloadDayThisCycle(now: asOf)?.totals == b.peakDownloadDayThisCycle(now: asOf)?.totals, "the peak day matches")

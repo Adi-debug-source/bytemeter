@@ -73,7 +73,7 @@ public struct MenuSnapshot {
         } else {
             peakHourText = "Peak hour today: nothing yet"
         }
-        let period = cal.cycleStartDay == 1 ? "this month" : "this cycle"
+        let period = cal.cycleName.lowercased()
         if let peak = headlines.peakDay {
             peakDayText = "Peak day \(period): \(peak.label), ↓ \(Units.bytes(peak.totals.bytesIn))"
         } else {
@@ -117,7 +117,7 @@ public enum MenuModel {
     public static func periods(current: StatusMode, cal: BytemeterCalendar)
         -> [(mode: StatusMode, title: String, chosen: Bool)] {
         StatusMode.allCases.map { mode in
-            let title = mode == .month && cal.cycleStartDay != 1 ? "This cycle" : mode.label
+            let title = mode == .month ? cal.cycleName : mode.label
             return (mode, title, mode == current)
         }
     }
@@ -175,7 +175,7 @@ public enum MenuModel {
         lines.append(.header("Averages"))
         lines.append(figure("Per hour today", data.perHourToday))
         lines.append(figure("Per day this week", data.perDayWeek))
-        lines.append(figure(data.cal.cycleStartDay == 1 ? "Per day this month" : "Per day this cycle", data.perDayMonth))
+        lines.append(figure("Per day " + data.cal.cycleName.lowercased(), data.perDayMonth))
         if data.allTime.since != nil {
             lines.append(figure("Per day, all time", data.allTime.perDay))
         }
