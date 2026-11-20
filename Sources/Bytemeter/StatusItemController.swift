@@ -190,6 +190,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        // The same choice a right-click on the figure cycles through, where
+        // it can be seen and reached from the keyboard. Its ticks are in the
+        // submenu, so they add no tick column to this menu.
+        let period = NSMenuItem(title: MenuModel.periodsTitle, action: nil, keyEquivalent: "")
+        let periods = NSMenu()
+        for choice in MenuModel.periods(current: settings.statusMode,
+                                        cal: BytemeterCalendar(cycleStartDay: settings.cycleStartDay)) {
+            let item = NSMenuItem(title: choice.title, action: #selector(choosePeriod(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = choice.mode.rawValue
+            item.state = choice.chosen ? .on : .off
+            periods.addItem(item)
+        }
+        period.submenu = periods
+        menu.addItem(period)
+
         let live = NSMenuItem(title: "Live speed in the menu bar", action: #selector(toggleLiveSpeed), keyEquivalent: "")
         live.target = self
         live.state = settings.liveSpeed ? .on : .off
@@ -240,6 +256,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         settings.liveSpeed.toggle()
         onLiveSpeedChanged?()
         render()
+    }
+
+    @objc private func choosePeriod(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = StatusMode(rawValue: raw) else { return }
+        settings.statusMode = mode
+        refresh()
     }
 
     @objc private func openDashboard() { onOpenDashboard?() }

@@ -106,6 +106,22 @@ public enum MenuModel {
         }
     }
 
+    /// The title of the menu's item for choosing what the menu bar shows.
+    public static let periodsTitle = "Menu bar shows"
+
+    /// The four totals the menu bar can show, in the order a right-click
+    /// cycles through them, each as the menu offers it, with the one showing
+    /// now marked. The menu lists them so the choice can be seen, and made
+    /// from the keyboard or with VoiceOver, which a right-click cannot be.
+    /// On a billing cycle the month is called the cycle, as its row is.
+    public static func periods(current: StatusMode, cal: BytemeterCalendar)
+        -> [(mode: StatusMode, title: String, chosen: Bool)] {
+        StatusMode.allCases.map { mode in
+            let title = mode == .month && cal.cycleStartDay != 1 ? "This cycle" : mode.label
+            return (mode, title, mode == current)
+        }
+    }
+
     /// Shown under the actions, wrapped to the width of the figures.
     public static let hint = "Right-click, two-finger click or Control-click the figure to cycle today, week, month and all time."
 

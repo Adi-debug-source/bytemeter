@@ -560,6 +560,18 @@ func checkHeadlinesAreOneSet() {
           "with nothing counted, all time has no start date")
 }
 
+// MARK: - The menu offers the four periods the menu bar cycles through
+
+func checkMenuOffersThePeriods() {
+    let offered = MenuModel.periods(current: .week, cal: london)
+    expect(offered.map(\.mode), StatusMode.allCases, "the menu offers the periods in the order a right-click cycles them")
+    expect(offered.map(\.title), ["Today", "This week", "This month", "All time"], "each under the menu bar's own name for it")
+    expect(offered.map(\.chosen), [false, true, false, false], "and marks the one showing now, and only that")
+    let onACycle = MenuModel.periods(current: .month, cal: BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15))
+    expect(onACycle.map(\.title), ["Today", "This week", "This cycle", "All time"], "on a billing cycle the month is offered as the cycle")
+    expect(onACycle.filter(\.chosen).map(\.mode), [.month], "and is the one marked when it is showing")
+}
+
 // MARK: - The menu bar's running total is the headline, through every kind of write
 
 /// The menu bar figure keeps the sum of the hours that are over and reads
