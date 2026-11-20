@@ -133,6 +133,8 @@ private func checkPageFetchesNothing(_ pages: [String: BuiltPage]) {
         for banned in ["<script", "http:", "https:", "<link", "@import"] {
             check(!text.contains(banned), "the \(name) page holds no \(banned), in any case")
         }
+        check(built.html.contains("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:\">"),
+              "the \(name) page carries the policy that refuses scripts and anything fetched")
         let urls = text.components(separatedBy: "url(").dropFirst()
         check(!urls.isEmpty && urls.allSatisfy { $0.hasPrefix("data:") || $0.hasPrefix("#") },
               "every url( on the \(name) page is a data: URL or a fragment on the page")

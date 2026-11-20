@@ -11,7 +11,10 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
+      # Pinned to a commit, not a tag that can move; Dependabot keeps it current.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: The embedded fonts match their files
         # DashboardFonts.swift is generated from Resources/Fonts and committed,
         # so the build never needs Python. This fails if the two disagree.
@@ -42,8 +45,8 @@ jobs:
             grep -q "where the app keeps its real data" "$RUNNER_TEMP/refusal"
           done
           test -z "$(ls -A "$home/Library/Application Support/Bytemeter")"
-      - name: Install script parses
-        run: bash -n install.sh
+      - name: The shell scripts parse
+        run: for script in install.sh Scripts/*.sh; do bash -n "$script"; done
       - name: Homebrew formula parses
         run: ruby -c Formula/bytemeter.rb
       - name: The app builds from a clean clone

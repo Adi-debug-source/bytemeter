@@ -1,0 +1,8 @@
+# Bytemeter has no package dependencies. This keeps the one action CI uses,
+# pinned by commit in .github/workflows/test.yml, up to date.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
