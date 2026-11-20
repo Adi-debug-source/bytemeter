@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0, 20 November 2026
 
 Leaner while it sits in the menu bar, with two small additions. No figure changes: the CSV is byte for byte as before for the same database, and so is the dashboard page apart from the port names below. The self-test runs 1,278 checks, up from 1,193.
 
