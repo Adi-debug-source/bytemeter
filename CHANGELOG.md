@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.1, not yet released
+## 1.3.1, 20 November 2026
 
 A security review, a tidy of the code and a new front page. No figure changes, and the CSV is byte for byte as before for the same database. The dashboard page differs by one line in its head, below, and draws the same pixels. The self-test runs 1,280 checks, up from 1,278.
 
