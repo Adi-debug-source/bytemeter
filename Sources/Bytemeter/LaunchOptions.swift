@@ -15,8 +15,9 @@ struct LaunchOptions {
         /// Build the dashboard from a database and exit. Nil means the app's
         /// own data folder.
         case dashboard(folder: String?)
-        /// Show the real menu bar item and menu for a demo database.
-        case demo(folder: String)
+        /// Show the real menu bar item and menu for a demo database, and
+        /// with `openMenu` open that menu without waiting for a click.
+        case demo(folder: String, openMenu: Bool)
     }
 
     struct UsageError: Error {
@@ -38,14 +39,16 @@ struct LaunchOptions {
           Build dashboard.html and bytemeter_export.csv from the database in the
           folder, then exit. The folder defaults to Bytemeter's own data folder.
 
-      Bytemeter --demo <folder> [--as-of TIME]
+      Bytemeter --demo <folder> [--as-of TIME] [--open-menu]
           Show the real menu bar item and its real menu, drawn from the database
           in the folder, until you choose Quit from that menu. It exists for
           screenshots: pointed at a database made by Scripts/make_demo_db.py, it
           shows the app's actual menu without anyone's real figures or app names.
           It is read only. It never writes, never samples, never touches the real
           data folder, and leaves a running Bytemeter undisturbed. Open dashboard
-          and Preferences do nothing in it, because both would write.
+          and Preferences do nothing in it, because both would write. With
+          --open-menu the menu opens by itself a moment after launch, so a script
+          can take its picture.
 
     TIME is a local date and time, for example 2026-10-02T21:30. Everything is
     worked out as if it were that moment: today, the week and the month, the
@@ -53,7 +56,7 @@ struct LaunchOptions {
     recorded after it is ignored.
     """
 
-    private static let flags: Set<String> = ["--dashboard", "--demo", "--as-of", "--help", "-h"]
+    private static let flags: Set<String> = ["--dashboard", "--demo", "--as-of", "--open-menu", "--help", "-h"]
 
     static func parse(_ arguments: [String], calendar: BytemeterCalendar = BytemeterCalendar())
         -> Result<LaunchOptions, UsageError> {
@@ -64,7 +67,8 @@ struct LaunchOptions {
         let dashboard = args.firstIndex(of: "--dashboard")
         let demo = args.firstIndex(of: "--demo")
         let asOfFlag = args.firstIndex(of: "--as-of")
-        guard dashboard != nil || demo != nil || asOfFlag != nil else {
+        let openMenu = args.firstIndex(of: "--open-menu")
+        guard dashboard != nil || demo != nil || asOfFlag != nil || openMenu != nil else {
             return .success(LaunchOptions(mode: .app, asOf: nil))
         }
 
@@ -77,7 +81,10 @@ struct LaunchOptions {
         if dashboard != nil && demo != nil {
             return .failure(UsageError(message: "Use --dashboard or --demo, not both."))
         }
-        var consumed = Set([dashboard, demo, asOfFlag].compactMap { $0 })
+        if openMenu != nil && demo == nil {
+            return .failure(UsageError(message: "--open-menu goes with --demo."))
+        }
+        var consumed = Set([dashboard, demo, asOfFlag, openMenu].compactMap { $0 })
 
         var asOf: Date?
         if let index = asOfFlag {
@@ -101,7 +108,7 @@ struct LaunchOptions {
                 return .failure(UsageError(message: "--demo needs the folder that holds the demo database."))
             }
             consumed.insert(index + 1)
-            mode = .demo(folder: folder)
+            mode = .demo(folder: folder, openMenu: openMenu != nil)
         } else {
             return .failure(UsageError(message: "--as-of goes with --dashboard or --demo."))
         }

@@ -7,7 +7,7 @@
 #   --binary PATH   the Bytemeter binary to run (default .build/release/Bytemeter)
 #   --seconds N     how long to watch it for, after a 10 second settle (default 120)
 #   --mode MODE     the menu bar figure: today, week, month or all_time (default all_time,
-#                   the dearest, because it reads every row)
+#                   which covers the most rows)
 #   --live-speed    switch the live speed on, which redraws the item every second
 #
 # It never touches the installed app or its data. The copy it starts is given a
@@ -32,7 +32,7 @@ while [ $# -gt 0 ]; do
         --seconds) seconds="$2"; shift 2 ;;
         --mode) mode="$2"; shift 2 ;;
         --live-speed) live=1; shift ;;
-        -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Did not expect \"$1\". Try --help." >&2; exit 2 ;;
     esac
 done

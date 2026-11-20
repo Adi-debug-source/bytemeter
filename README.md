@@ -2,67 +2,76 @@
 
 # Bytemeter
 
-A macOS menu bar app that counts every byte your Mac sends and receives.
+**A macOS menu bar app that counts every byte your Mac sends and receives, and never sends one itself.**
 
-Bytemeter is a native Swift menu bar app for macOS 13.5 and later that counts every byte in and out of your Mac's physical network interfaces and reports it in detail. It shows today, this week, this month and all time in the menu bar, and opens a dashboard with an hourly chart, a 30-day trend, a day-against-hour heatmap, per-app and per-interface breakdowns and a CSV export. It makes no network requests of any kind: a tool that measures data use should not spend data, so everything stays on your machine.
+[![test](https://github.com/Adi-debug-source/bytemeter/actions/workflows/test.yml/badge.svg)](https://github.com/Adi-debug-source/bytemeter/actions/workflows/test.yml)
 
-It began as a way to make sense of a shared connection that could not tell one machine's traffic from another's.
+Bytemeter sits in the menu bar and shows how much data your Mac has used today, this week, this month or since it started counting. Click it for the detail, or open a dashboard with charts and a CSV export. It is written in Swift, needs macOS 13.5 or later, and makes no network requests of any kind: a tool that measures data use should not spend data.
 
-![The Bytemeter dashboard](docs/dashboard.png)
+<p align="center">
+  <img src="docs/menu.png" alt="The Bytemeter menu: totals, averages, a month-end projection and the apps that used the most today" width="250" align="top">
+  &nbsp;
+  <img src="docs/dashboard.png" alt="The Bytemeter dashboard: today's download, the headline totals and a chart of today by hour" width="550" align="top">
+</p>
 
-The screenshots on this page use generated demo data (`Scripts/make_demo_db.py`), not real usage.
-
-## Requirements
-
-- macOS 13.5 or later. That is the first release that runs Swift 5.9, which builds Bytemeter.
-- The Xcode Command Line Tools, version 15 or later (`xcode-select --install`), not full Xcode. Both install routes build on your Mac.
+The pictures on this page are the real app showing generated demo data (`Scripts/make_demo_db.py`), not anyone's usage.
 
 ## Install
 
-With [Homebrew](https://brew.sh):
-
-```bash
-brew tap adi-debug-source/bytemeter https://github.com/Adi-debug-source/bytemeter
-brew install adi-debug-source/bytemeter/bytemeter
-bytemeter-setup
-```
-
-The formula lives in this repository, so the first line points Homebrew at it once. The second fetches and builds Bytemeter. The third copies the app to `~/Applications` and adds the login item, because Homebrew cannot write to your home folder itself. After `brew upgrade bytemeter`, run `bytemeter-setup` again. To remove it, run `bytemeter-setup --uninstall`, then `brew uninstall bytemeter`; your usage history is kept.
-
-Or from a clone:
-
 ```bash
 git clone https://github.com/Adi-debug-source/bytemeter.git
-cd bytemeter
-./install.sh
+./bytemeter/install.sh
 ```
 
-`install.sh` builds the app with `swift build -c release`, ad-hoc signs `Bytemeter.app`, copies it to `~/Applications`, and adds a login item so it starts at login. The login item restarts the app after a crash, but if you quit it, it stays quit until the next login. It is safe to run again after `git pull` to update. The options are:
+That builds the app on your Mac, puts it in `~/Applications` and starts it at login. You need macOS 13.5 or later and the Xcode Command Line Tools (`xcode-select --install`), not full Xcode. Run the second line again after a `git pull` to update. More, including Homebrew, is under [Install and remove](#install-and-remove).
 
-- `--uninstall`: removes the app and the login item, and keeps your data.
-- `--dry-run`: says what it would do and changes nothing.
-- `--bundle-only DIR`: builds the app without installing it.
-- `--app PATH`: installs an app that is already built.
+## What it does
 
-Bytemeter is not notarised, and it does not need to be. Both routes build it on your own Mac, so there is no downloaded app for macOS to quarantine, and it opens without a warning.
+- **A total in the menu bar.** Today, this week, this month or all time. Choose which from the menu, or right-click the figure to step through them. A live speed can sit beside it.
+- **A menu with the detail.** Seven totals, the averages per hour and per day, where the month is heading, the busiest hour and day, and the apps that used the most today.
+- **A monthly cap.** Set your allowance in GB and the day your billing cycle starts, and the menu shows a bar with what is used, what is left and how many days are to go.
+- **A dashboard.** One dark page with today by hour, the last 30 days with a seven-day average, a heatmap of when your data goes, a breakdown by app, by interface and by Wi-Fi network, idle against active, and month by month. It comes with a CSV export.
+- **Exact figures.** Bytemeter records what the kernel's own interface counters say, to the byte, and picks up where it left off after a sleep, a restart, a crash or a quit.
+- **Private by design.** Nothing leaves your Mac. There are no accounts, no analytics and no update checks, and the dashboard page loads nothing from the internet.
+- **Light.** While it sits in the menu bar it uses about 12 MB of memory and under a tenth of one per cent of a processor core.
+
+## For anyone reading the code
+
+Bytemeter is a small project with one claim: its figures match what the network interfaces carried. Most of the work is in keeping that claim true.
+
+- **It found a trap in the usual way of counting.** `getifaddrs`, which most examples use, returns 32-bit byte counters on macOS, so they wrap every 4.29 GB and quietly lose it. Bytemeter reads the 64-bit counters from the interface MIB through `sysctl` instead, and its figures match `netstat -ib` exactly. See [Where the counters come from](#where-the-counters-come-from).
+- **It is tested where it matters.** The self-test runs 1,278 checks on the counting rules: restarts, interface resets, counter wraps, sleep, a clock set backwards, clock changes in every time zone, database upgrades from every earlier version, and a failed write that must move nothing. CI runs it on every push, builds the app from a clean clone and checks that the dashboard page fetches nothing.
+- **Every figure comes from one table.** Totals, averages, the projection and the charts are all worked out from the same minute rows when they are asked for, so no two figures on screen can disagree.
+- **It has no dependencies.** Swift, AppKit, SQLite and `nettop`, all of which ship with macOS. The dashboard is hand-written HTML and inline SVG with no JavaScript. It builds with the Command Line Tools alone.
+- **Its cost is measured, not guessed.** Sitting in the menu bar it takes 0.05% to 0.07% of one processor core and about 12 MB of memory on the Mac it was developed on, or 0.7% with the live speed redrawing every second. `Scripts/measure_idle.sh` and `swift run -c release BytemeterSelfTest --measure` repeat the measurement.
+- **It says what it does not know.** Per-app figures are a guide, traffic across a sleep has its timing estimated and is drawn hatched, and the limits are written down under [How accurate it is](#how-accurate-it-is).
+
+The code is in four parts, split on purpose:
+
+| Part | What it is |
+|---|---|
+| `Sources/BytemeterCore` | The engine: reading the counters, spotting resets, minute buckets, the SQLite schema, every total and the menu's wording. Nothing macOS-only, so an iOS version could use it untouched |
+| `Sources/BytemeterDashboard` | The dashboard page and the CSV export, built from the engine with Foundation alone |
+| `Sources/Bytemeter` | The macOS app: the menu bar item, per-app sampling, the Wi-Fi network name, Preferences, sleep and wake |
+| `Sources/BytemeterSelfTest` | The checks, one file per subject |
+
+[MAINTENANCE.md](MAINTENANCE.md) covers building, releasing and the decisions behind the login item, and [CHANGELOG.md](CHANGELOG.md) says what each version changed and why.
 
 ## The menu bar
 
 The menu bar item shows one total, with monospaced digits so its width does not jitter as the figure changes.
 
 - Left-click opens the menu.
-- Right-click, a two-finger click or a Control-click cycles the figure through Today, This week, This month and All time. The choice persists across restarts.
-- Live speed is a separate toggle in the menu. When it is on, the current rate appears beside the total; it never replaces it.
-
-![The menu](docs/menu.png)
+- **Menu bar shows**, in the menu, chooses the total: Today, This week, This month or All time. Right-click, a two-finger click or a Control-click on the figure steps through the same four. The choice is kept across restarts.
+- Live speed is a separate switch in the menu. When it is on, the current rate appears beside the total; it never replaces it.
 
 The menu holds:
 
-- **Totals:** today, yesterday, this week (from Monday), the last 7 days, this month (from the 1st), the last 30 days, and all time since counting began. The four totals the menu bar can cycle through (today, this week, this month and all time) are drawn at full contrast; the rest are grey. All time shows its start date and day count beneath it, for example "since 1 Jan 2026 · 90.0 days counted".
+- **Totals:** today, yesterday, this week (from Monday), the last 7 days, this month (from the 1st), the last 30 days, and all time since counting began. The four totals the menu bar can show are drawn at full contrast; the rest are grey. All time shows its start date and day count beneath it, for example "since 1 Jan 2026 · 90.0 days counted".
 - **Averages:** per hour today, per day this week, per day this month, and per day across all time.
 - A **month-end projection** (download and upload combined, as a provider counts them), the **peak hour** and the **peak day**, and the **cap** when one is set. Every other headline figure is download; the projection and the cap are the figures that add the two together, and the projection says so beside its figure. The projection carries the month's rate so far on to its end. On the first day of a month it runs the last 24 hours on instead, and with under a day counted at all it says it is too early to project.
 - **Top talkers** today, per app.
-- **Open dashboard** (⌘D), **Preferences** (⌘,) and **Quit Bytemeter** (⌘Q).
+- **Menu bar shows**, **Live speed in the menu bar**, **Open dashboard** (⌘D), **Preferences** (⌘,) and **Quit Bytemeter** (⌘Q).
 
 If recording stops because the database cannot be written, for example on a full disk, a line at the top of the menu says so and since when, and on a new install, until the first figures arrive, it says counting has started.
 
@@ -78,7 +87,7 @@ Preferences, from the menu, has five settings:
 
 ## The dashboard
 
-Open dashboard writes one dark, self-contained HTML page and opens it. It is regenerated each time, with hand-rolled inline SVG and native SVG tooltips: zero JavaScript, zero network requests. A CSV export sits beside it as a real file.
+Open dashboard writes one dark, self-contained HTML page and opens it. It is made again each time, with hand-rolled inline SVG and native SVG tooltips: zero JavaScript, zero network requests. A CSV export sits beside it as a real file.
 
 The top of the page gives today's download, compared with yesterday at the same time of day, beside this week, the last 7 days, this month, the last 30 days, the projection and all time, then a Monthly cap panel when a cap is set.
 
@@ -89,7 +98,7 @@ Seven sections, and an eighth once a second month begins:
 3. A day-of-week against hour-of-day heatmap, an average over the last four whole weeks, so every weekday counts the same.
 4. Top talkers, per app.
 5. Idle against active.
-6. Per interface.
+6. Per interface, each under the name macOS gives its port, such as Wi-Fi (en0) or iPhone USB (en7), so a phone sharing its connection over a cable is told apart from the Wi-Fi.
 7. Per network.
 8. Month by month, once a second month begins.
 
@@ -98,6 +107,36 @@ The footer says how the figures are made and lists recent events in plain words,
 ![The last 30 days, with a seven-day average](docs/thirty-days.png)
 
 ![The day-against-hour heatmap](docs/heatmap.png)
+
+## Install and remove
+
+Both routes build Bytemeter on your own Mac. They need macOS 13.5 or later, the first release that runs Swift 5.9, and the Xcode Command Line Tools, version 15 or later (`xcode-select --install`), not full Xcode.
+
+From a clone:
+
+```bash
+git clone https://github.com/Adi-debug-source/bytemeter.git
+./bytemeter/install.sh
+```
+
+`install.sh` builds the app with `swift build -c release`, ad-hoc signs `Bytemeter.app`, copies it to `~/Applications`, and adds a login item so it starts at login. The login item restarts the app after a crash, but if you quit it, it stays quit until the next login. It is safe to run again after `git pull` to update. The options are:
+
+- `--uninstall`: removes the app and the login item, and keeps your data.
+- `--dry-run`: says what it would do and changes nothing.
+- `--bundle-only DIR`: builds the app without installing it.
+- `--app PATH`: installs an app that is already built.
+
+With [Homebrew](https://brew.sh):
+
+```bash
+brew tap adi-debug-source/bytemeter https://github.com/Adi-debug-source/bytemeter
+brew install adi-debug-source/bytemeter/bytemeter
+bytemeter-setup
+```
+
+The formula lives in this repository, so the first line points Homebrew at it once. The second fetches and builds Bytemeter. The third copies the app to `~/Applications` and adds the login item, because Homebrew cannot write to your home folder itself. After `brew upgrade bytemeter`, run `bytemeter-setup` again. To remove it, run `bytemeter-setup --uninstall`, then `brew uninstall bytemeter`; your usage history is kept.
+
+Bytemeter is not notarised, and it does not need to be. Both routes build it on your own Mac, so there is no downloaded app for macOS to quarantine, and it opens without a warning.
 
 ## What it collects, and where it stays
 
@@ -140,6 +179,7 @@ Bytemeter is careful about saying what it knows and what it does not.
 - **"All time" means since Bytemeter started counting**, not since the Mac was new. Traffic already on the counter when Bytemeter first runs has no timestamps, so it is left out rather than folded in to flatter the figure.
 - **Reboots are told from interface resets.** Bytemeter uses the kernel's boot session id, which changes only at a reboot. After a genuine reboot, everything on the counter since boot is counted. After an interface reset without a reboot, the baseline moves and nothing is booked, because there is no start time to measure from.
 - **Weeks start on Monday, dates read day first, and the clock is yours.** Bytemeter uses ISO 8601 weeks and writes dates day first whatever your Mac's region is set to, by choice, so a figure means the same thing on every machine. Daily, hourly and heatmap figures track local time correctly across clock changes, including half-hour time zones.
+- **It is not the first of its kind.** Other menu bar data meters exist, some with alerts and per-app limits. Bytemeter's part is being exact, open and private.
 
 ## How it works, and why
 
@@ -157,23 +197,25 @@ Not `getifaddrs`. On macOS `getifaddrs` returns a `struct if_data` whose `ifi_ib
 
 Bytemeter reads `net.link.generic.ifdata.<index>.general` through `sysctl` instead, which fills a `struct ifmibdata` whose `ifmd_data` really is an `if_data64`. Its value matches `netstat -ib` exactly. The 32-bit counters are kept as a wrap-aware fallback for the rare case where the MIB is unavailable, and the app records which source is live.
 
-### How it is put together
+### Staying light
 
-Four targets, and the split is deliberate:
-
-1. **BytemeterCore** is the engine: reading the interface counters, working out deltas, spotting resets, bucketing by minute, the SQLite schema, every aggregation query and the menu's wording. It imports nothing macOS-only, so an iOS version could use it untouched.
-2. **BytemeterDashboard** builds the dashboard page and its CSV export from the engine: the figures, the HTML, the inline SVG charts and the embedded fonts. It uses Foundation and the engine alone, so the self-test can check the page itself, and another platform could show the same page.
-3. **Bytemeter** is the macOS app: the menu bar item, `nettop` sampling, the Wi-Fi network name, preferences, and sleep and wake handling.
-4. **BytemeterSelfTest** holds the checks, one file per subject. It is a plain executable, not an XCTest target, for the reason in the next section.
+The menu bar figure is asked for after every reading, so it is a running total: the hours that are over are added up once and kept, and only the current hour is read each time. The kept sum is thrown away the moment anything could have changed a row in it, and the self-test holds the figure to the same total read whole from the table, through every kind of write. A reading itself asks the kernel for its list of interfaces once.
 
 ## Build from source and testing
 
 ```bash
 swift build -c release                     # build
-swift run -c release BytemeterSelfTest     # run the self-test, 1,193 checks
+swift run -c release BytemeterSelfTest     # run the self-test, 1,278 checks
 ```
 
 The self-test is a plain executable rather than an XCTest target because XCTest is not part of the Command Line Tools, and this project does not assume full Xcode. Swift Testing does run under the Command Line Tools, but it needs Swift 6, which would raise the minimum macOS. CI runs the self-test on every push, builds the app bundle from a clean clone, builds the demo dashboard and checks it fetches nothing, and verifies the bundle's signature.
+
+Two commands measure what Bytemeter costs, so a change that claims to be faster can show it:
+
+```bash
+swift run -c release BytemeterSelfTest --measure   # the engine: a reading, the menu bar figure, the menu, the dashboard
+Scripts/measure_idle.sh                            # the running app: processor time and memory while idle
+```
 
 ### Working with a database directly
 

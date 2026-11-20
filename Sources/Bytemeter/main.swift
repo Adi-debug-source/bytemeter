@@ -33,8 +33,8 @@ case .help:
     exit(0)
 case .dashboard(let folder):
     exit(DashboardCLI.run(folderArgument: folder, asOf: options.asOf))
-case .demo(let folder):
-    guard let demo = DemoDelegate.make(folder: folder, asOf: options.asOf) else { exit(1) }
+case .demo(let folder, let openMenu):
+    guard let demo = DemoDelegate.make(folder: folder, asOf: options.asOf, openMenu: openMenu) else { exit(1) }
     runMenuBar(with: demo)
 case .app:
     runMenuBar(with: AppDelegate())
