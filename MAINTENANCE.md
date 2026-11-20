@@ -5,10 +5,20 @@ its figures match what the network interfaces carried, so the self-test
 comes first and the release steps exist to make sure a stranger gets the same
 app you tested.
 
+| When you are | Read |
+|---|---|
+| changing the code | [Before anything else](#before-anything-else), [How it fits together](#how-it-fits-together), [Measuring](#measuring) |
+| releasing | [A release at a glance](#a-release-at-a-glance), then [The version](#the-version), [Checks before a release](#checks-before-a-release), [Cutting a release](#cutting-a-release), [After a release](#after-a-release), [Homebrew](#homebrew) |
+| touching the icon, the fonts or the README's pictures | [The icon](#the-icon), [The dashboard's fonts](#the-dashboards-fonts), [Screenshots and clips](#screenshots-and-clips) |
+| working on the installed app | [The login item](#the-login-item), [Where things live on an installed Mac](#where-things-live-on-an-installed-mac) |
+| wondering whether something is a bug | [Known limits](#known-limits) |
+
 ## Before anything else
 
-    swift build -c release
-    swift run -c release BytemeterSelfTest
+```bash
+swift build -c release
+swift run -c release BytemeterSelfTest
+```
 
 Both need only the Xcode command line tools, not full Xcode. The self-test is a
 plain executable rather than an XCTest target because XCTest cannot be resolved
@@ -34,13 +44,18 @@ for each product linked.
 | `Resources/Fonts/` | the dashboard's two fonts, their licences, and a README on where they came from |
 | `Scripts/make_fonts.py` | writes `Sources/BytemeterDashboard/DashboardFonts.swift` from those fonts |
 | `Scripts/make_demo_db.py` | makes the synthetic database the README images come from |
-| `Scripts/snapshot.swift` | renders the dashboard to a PNG for the README images |
+| `Scripts/snapshot.swift` | renders a page to a PNG: the dashboard for the README images, and the pages in `docs/art` |
 | `Scripts/menu_shots.swift` | takes the README's picture of the menu from the real app in demo mode |
+| `Scripts/make_clips.sh` | makes the README's two clips from the synthetic month |
+| `Scripts/make_art.sh` | draws the README's hero and the social preview from the pages in `docs/art` |
 | `Scripts/measure_idle.sh` | measures the running app's processor time and memory while idle (see Measuring) |
-| `docs/` | the README images (see Screenshots) |
+| `docs/` | the guide, the accuracy and how-it-works pages the README links to, and the icon |
+| `docs/screenshots/` | the README's pictures and clips (see Screenshots and clips) |
+| `docs/art/` | the two pages the hero and the social preview are drawn from |
+| `docs/github/` | the social preview, uploaded by hand in the repository's settings |
 | `install.sh` | builds the app, and installs, updates or removes it |
 | `Formula/bytemeter.rb` | the Homebrew formula, pointed at the latest tag (see Homebrew) |
-| `.github/workflows/test.yml` | CI: the fonts check, the build, the self-test, the demo dashboard, the demo script's refusal of the real data folder, the script and formula parse, and the bundle from a clean clone |
+| `.github/workflows/test.yml` | CI: the fonts check, the build, the self-test, the demo dashboard, the demo script's refusal of the real data folder, the scripts and formula parse, and the bundle from a clean clone |
 | `CHANGELOG.md` | what each release changed |
 
 `./install.sh --help` lists its options. `--dry-run` works with all of them and
@@ -50,8 +65,10 @@ says exactly what would happen, with full paths, without changing anything.
 
 A change that claims to make Bytemeter faster or lighter shows it with these two, run before and after:
 
-    swift run -c release BytemeterSelfTest --measure
-    Scripts/measure_idle.sh
+```bash
+swift run -c release BytemeterSelfTest --measure
+Scripts/measure_idle.sh
+```
 
 1. `--measure` times the engine's repeated work on 90 days of minute rows: a reading, reading the interface counters, the menu bar figure in each of its four modes, a per-app write, the menu, the dashboard and opening the database. Each line is a median. It checks nothing and is no part of the gate.
 2. `Scripts/measure_idle.sh` starts the built app with a home folder of its own, holding a demo database, watches it for two minutes and prints its processor time and memory. A second Bytemeter item shows in the menu bar while it runs. It takes its own lock and counts into its own file, so the installed app and its data are left alone, and it removes what it made. `--mode` picks the menu bar figure, `--live-speed` switches the live speed on, and `--binary` points it at another build, which is how an older version is measured for comparison.
@@ -62,8 +79,10 @@ For the figures to be comparable, run both on a quiet Mac. The idle figures of e
 
 `VERSION` holds both numbers:
 
-    VERSION=1.2.5
-    BUILD=7
+```
+VERSION=1.3.0
+BUILD=8
+```
 
 `install.sh` writes them into `CFBundleShortVersionString` and
 `CFBundleVersion` when it builds the app. Nothing the build reads carries a
@@ -110,7 +129,9 @@ inside `@font-face` rules. The page carries them, so it still makes no network
 requests. That file is generated, never edited by hand, and committed, so
 building never needs Python. After changing a font:
 
-    python3 Scripts/make_fonts.py
+```bash
+python3 Scripts/make_fonts.py
+```
 
 then commit the Swift file with the font. `python3 Scripts/make_fonts.py
 --check` changes nothing and fails if the two disagree; CI runs it.
@@ -156,21 +177,35 @@ wrong:
 `./install.sh --uninstall` stops the app and moves the app and the login item
 to the Bin. It never touches the data or the log.
 
+## A release at a glance
+
+The order matters, and each step has its own section below.
+
+1. Bump `VERSION` and `BUILD`, and commit with the version as the message.
+2. Run the checks before a release.
+3. Date the CHANGELOG heading and commit that.
+4. Tag that last commit and push `main` and the tag.
+5. Create the GitHub release from the tag, with notes and no files.
+6. Point the formula at the new tag and its checksum, commit and push.
+7. Install it as a stranger would, through Homebrew, check the version and audit the formula.
+
 ## Checks before a release
 
 1. The self-test passes, and `python3 Scripts/make_fonts.py --check` says the
    fonts match.
-2. `bash -n install.sh` and `ruby -c Formula/bytemeter.rb` are clean, and so is
+2. `bash -n` on `install.sh` and each script in `Scripts/`, and `ruby -c Formula/bytemeter.rb`, are clean, and so is
    `shellcheck install.sh` if you have it.
 3. `./install.sh --dry-run` prints the paths you expect.
 4. A fresh clone builds the app from cold. This is the step that proves a
    stranger gets an app and not a bare binary:
 
-        dir="$(mktemp -d)"
-        git clone . "$dir/bytemeter"
-        "$dir/bytemeter/install.sh" --bundle-only "$dir/out"
-        codesign --verify --deep --strict "$dir/out/Bytemeter.app"
-        plutil -p "$dir/out/Bytemeter.app/Contents/Info.plist"
+   ```bash
+   dir="$(mktemp -d)"
+   git clone . "$dir/bytemeter"
+   "$dir/bytemeter/install.sh" --bundle-only "$dir/out"
+   codesign --verify --deep --strict "$dir/out/Bytemeter.app"
+   plutil -p "$dir/out/Bytemeter.app/Contents/Info.plist"
+   ```
 
    The last line should show the version in `VERSION`.
 5. `./install.sh` on your own Mac, then, in this order:
@@ -205,12 +240,16 @@ pointed at it.
 2. Run the checks above, date the CHANGELOG heading and commit that, then
    tag that last commit and push both:
 
-        git tag -a v1.0.1 -m "Bytemeter 1.0.1"
-        git push origin main v1.0.1
+   ```bash
+   git tag -a v1.0.1 -m "Bytemeter 1.0.1"
+   git push origin main v1.0.1
+   ```
 
 3. Create the release, with no files attached:
 
-        gh release create v1.0.1 --title "Bytemeter 1.0.1" --notes-file notes.md
+   ```bash
+   gh release create v1.0.1 --title "Bytemeter 1.0.1" --notes-file notes.md
+   ```
 
    Write the notes as prose: what changed and why, not a list of commits.
 
@@ -232,9 +271,11 @@ the formula is updated.
 The formula lives in this repository, at `Formula/bytemeter.rb`. There is no
 separate tap repository: Homebrew is pointed at this one once, by its address.
 
-    brew tap adi-debug-source/bytemeter https://github.com/Adi-debug-source/bytemeter
-    brew install adi-debug-source/bytemeter/bytemeter
-    bytemeter-setup
+```bash
+brew tap adi-debug-source/bytemeter https://github.com/Adi-debug-source/bytemeter
+brew install adi-debug-source/bytemeter/bytemeter
+bytemeter-setup
+```
 
 How it works:
 
@@ -257,7 +298,9 @@ After each release:
 
 1. Take the checksum of the new tag's tarball, as GitHub serves it:
 
-        curl -sL https://github.com/Adi-debug-source/bytemeter/archive/refs/tags/v1.0.1.tar.gz | shasum -a 256
+   ```bash
+   curl -sL https://github.com/Adi-debug-source/bytemeter/archive/refs/tags/v1.0.1.tar.gz | shasum -a 256
+   ```
 
 2. In `Formula/bytemeter.rb`, set `url` to the new tag and `sha256` to that
    checksum. Commit it to `main` and push. This commit comes after the tag, so
@@ -265,47 +308,70 @@ After each release:
    because Homebrew reads the formula from `main`, never from the tarball.
 3. Check it as a user would:
 
-        brew update
-        brew upgrade bytemeter
-        brew test bytemeter
-        bytemeter-setup
-        plutil -extract CFBundleShortVersionString raw -o - ~/Applications/Bytemeter.app/Contents/Info.plist
+   ```bash
+   brew update
+   brew upgrade bytemeter
+   brew test bytemeter
+   bytemeter-setup
+   plutil -extract CFBundleShortVersionString raw -o - ~/Applications/Bytemeter.app/Contents/Info.plist
+   ```
 
    The last line should print the new version, and Bytemeter should be back
    in the menu bar.
 4. `brew audit --strict adi-debug-source/bytemeter/bytemeter` should be clean.
 
-## Screenshots
+## Screenshots and clips
 
-The README images are made from a synthetic month, never from a real database, so they show nobody's usage or app list. They are reproducible byte for byte: the generator is deterministic for a given `--now`, and the dashboard renders as at `--as-of`.
+The README's pictures and clips are made from a synthetic month, never from a real database, so they show nobody's usage or app list. They are reproducible: the generator is deterministic for a given `--now`, and the dashboard renders as at `--as-of`. The stills come out byte for byte the same.
+
+| File in `docs/screenshots/` | Made by |
+|---|---|
+| `dashboard-today.png`, `dashboard-thirty-days.png`, `dashboard-heatmap.png`, `dashboard-apps.png` | the commands below |
+| `menu-totals.png` | `Scripts/menu_shots.swift`, step 4 |
+| `dashboard-day.gif`, `dashboard-tour.gif` | `Scripts/make_clips.sh`, step 6 |
+| `hero.png`, and `docs/github/social-preview.png` | `Scripts/make_art.sh`, step 7 |
 
 ```bash
 swift build -c release
 python3 Scripts/make_demo_db.py /tmp/bytemeter-demo --now 2026-09-29T21:30 --force
 .build/release/Bytemeter --dashboard /tmp/bytemeter-demo --as-of 2026-09-29T21:30
 swift Scripts/snapshot.swift /tmp/bytemeter-demo/dashboard.html /tmp/bytemeter-demo/page.png
-sips -c 2069 2360 --cropOffset 32 220   /tmp/bytemeter-demo/page.png --out docs/dashboard.png
-sips -c 920 2360  --cropOffset 2103 220 /tmp/bytemeter-demo/page.png --out docs/thirty-days.png
-sips -c 896 2336  --cropOffset 3025 232 /tmp/bytemeter-demo/page.png --out docs/heatmap.png
-swift Scripts/snapshot.swift --strip docs/dashboard.png docs/thirty-days.png docs/heatmap.png
+sips -c 2069 2360 --cropOffset 32 220   /tmp/bytemeter-demo/page.png --out docs/screenshots/dashboard-today.png
+sips -c 920 2360  --cropOffset 2103 220 /tmp/bytemeter-demo/page.png --out docs/screenshots/dashboard-thirty-days.png
+sips -c 896 2336  --cropOffset 3025 232 /tmp/bytemeter-demo/page.png --out docs/screenshots/dashboard-heatmap.png
+sips -c 1189 2360 --cropOffset 3921 220 /tmp/bytemeter-demo/page.png --out docs/screenshots/dashboard-apps.png
+swift Scripts/snapshot.swift --strip docs/screenshots/dashboard-*.png
 sips -s format png -Z 256 --matchTo '/System/Library/ColorSync/Profiles/sRGB Profile.icc' Resources/AppIcon.icns --out docs/icon.png
 swift Scripts/snapshot.swift --strip docs/icon.png
 ```
 
 1. `Scripts/snapshot.swift` renders the page in WebKit, the engine Safari uses, 1400 CSS pixels wide and twice that in pixels. It needs no browser and fetches nothing. It takes the screen's scale, so it needs a Retina screen, and it stops with an error rather than write a blurry image.
-2. It prints where each part of the page sits in `page.png`, in pixels, and the crops follow those boxes. The first runs the width of the page body, from 32 pixels down to the bottom of Today by hour less the 2 pixel rule under it. Last 30 days runs from its top to its bottom less its rule. The heatmap takes its panel's own, wider box. If the dashboard's layout changes, run it and take the numbers again.
+2. It prints where each part of the page sits in `page.png`, in pixels, and the crops follow those boxes. The first runs the width of the page body, from 32 pixels down to the bottom of Today by hour less the 2 pixel rule under it. Last 30 days runs from its top to its bottom less its rule. The heatmap takes its panel's own, wider box. The apps picture runs from the top of Top talkers to the bottom of its row. If the dashboard's layout changes, run it and take the numbers again.
 3. `sips` swaps the PNG's sRGB mark for gAMA, cHRM and EXIF chunks while it crops. `--strip` takes them out and puts the sRGB mark back, and leaves the pixels alone.
 4. The menu image comes from the real menu running read-only against the same database, after the `--dashboard` line above has brought that database up to date. `Scripts/menu_shots.swift` starts `Bytemeter --demo` with `--open-menu`, which opens the menu without a click, has `screencapture` take the menu's window, trims it to the menu's edge, so there is no shadow, and ends the demo. The demo never writes and leaves a running Bytemeter alone. Take it in dark mode, and allow the terminal to record the screen when macOS asks. A screen capture is tagged with the display's own colour profile, Display P3 on a recent Mac, so convert it to sRGB and strip it, as the icon is:
 
    ```bash
-   swift Scripts/menu_shots.swift /tmp/bytemeter-demo 2026-09-29T21:30 docs/menu.png
-   sips --matchTo '/System/Library/ColorSync/Profiles/sRGB Profile.icc' docs/menu.png --out docs/menu.png
-   swift Scripts/snapshot.swift --strip docs/menu.png
+   swift Scripts/menu_shots.swift /tmp/bytemeter-demo 2026-09-29T21:30 docs/screenshots/menu-totals.png
+   sips --matchTo '/System/Library/ColorSync/Profiles/sRGB Profile.icc' docs/screenshots/menu-totals.png --out docs/screenshots/menu-totals.png
+   swift Scripts/snapshot.swift --strip docs/screenshots/menu-totals.png
    ```
 
    The menu bar item itself cannot be taken this way: macOS draws it in a window of its own, not the app's.
 
 5. The icon's 256 pixel copy is converted to sRGB the same way, which changes nothing now that `AppIcon.icns` is sRGB itself, and `--strip` then leaves each image with nothing but its pixels and an sRGB mark.
+6. The clips need `ffmpeg` (`brew install ffmpeg`) and no screen capture. `Scripts/make_clips.sh` makes a demo database of its own that runs to the end of the same day, builds the dashboard as at every half hour of it, 48 pages in all, and joins the top of each into `dashboard-day.gif` at eight pages a second. `dashboard-tour.gif` shows the page as it stood at 21:30 in six stops, top to foot, each held for 1.8 seconds; the stops are pixel rows in the script, so take them again if the layout changes. Each clip is about half a megabyte.
+
+   ```bash
+   Scripts/make_clips.sh
+   ```
+
+7. The hero and the social preview are pages of their own, `docs/art/hero.html` and `docs/art/social-preview.html`, sharing `docs/art/art.css`. `Scripts/make_art.sh` copies them into a scratch folder with the two fonts, the icon and the menu and dashboard stills, and renders them with `snapshot.swift --width`. Run it last, after the stills. The figures on the social preview are typed into its page, from the same synthetic month; change them there if the stills change.
+
+   ```bash
+   Scripts/make_art.sh
+   ```
+
+   The social preview is 1280 by 640 pixels, with 80 pixels clear on every side. GitHub does not read it from the repository: upload `docs/github/social-preview.png` under Settings, General, Social preview.
 
 ## Known limits
 

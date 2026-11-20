@@ -176,5 +176,4 @@ public enum Maintenance {
         }
         return "(CASE " + branches.joined(separator: " ") + " ELSE minute END)"
     }
-
 }

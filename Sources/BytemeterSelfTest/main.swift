@@ -1,8 +1,8 @@
 import Foundation
 
 // A plain executable rather than XCTest: XCTest cannot be resolved with the
-// Command Line Tools alone, and this must run without full Xcode. The checks below are the
-// real ones, covering the counting rules that have to be right.
+// Command Line Tools alone, and this must run without full Xcode. The checks
+// below are the real ones, covering the counting rules that have to be right.
 //
 // Each check is a function in the file for its subject (LedgerChecks.swift,
 // DatabaseChecks.swift and the rest), and the helpers they share are in

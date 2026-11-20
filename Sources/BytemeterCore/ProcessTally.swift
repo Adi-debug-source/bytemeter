@@ -14,16 +14,19 @@ public struct ProcessTally {
     /// One run's output as cumulative totals keyed by "name.pid". Each row
     /// reads "name.pid,bytes_in,bytes_out,"; the header, whose first field
     /// is empty, and any line that does not hold a name and two numbers are
-    /// skipped.
+    /// skipped. nettop does not quote a name, and a name may hold commas, so
+    /// the two numbers are read from the end of the row: read from the start,
+    /// a process could name itself into another's row with figures of its own.
     public static func parse(_ output: String) -> [String: (bytesIn: UInt64, bytesOut: UInt64)] {
         var current: [String: (bytesIn: UInt64, bytesOut: UInt64)] = [:]
         for line in output.split(separator: "\n") {
-            let fields = line.split(separator: ",", omittingEmptySubsequences: false)
+            var fields = line.split(separator: ",", omittingEmptySubsequences: false)
+            if fields.last?.isEmpty == true { fields.removeLast() }
             guard fields.count >= 3 else { continue }
-            let key = String(fields[0])
+            let key = fields.dropLast(2).joined(separator: ",")
             guard !key.isEmpty,
-                  let bytesIn = UInt64(fields[1].trimmingCharacters(in: .whitespaces)),
-                  let bytesOut = UInt64(fields[2].trimmingCharacters(in: .whitespaces))
+                  let bytesIn = UInt64(fields[fields.count - 2].trimmingCharacters(in: .whitespaces)),
+                  let bytesOut = UInt64(fields[fields.count - 1].trimmingCharacters(in: .whitespaces))
             else { continue }
             current[key] = (bytesIn, bytesOut)
         }

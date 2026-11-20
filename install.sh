@@ -14,6 +14,13 @@
 # build, the Xcode command line tools 15 or later: xcode-select --install
 set -eu
 
+# An unset or empty HOME would turn every path below into one at the top of
+# the disk, and the install removes the old app before it copies the new one.
+if [ -z "${HOME:-}" ] || [ "$HOME" = / ] || [ ! -d "$HOME" ]; then
+    printf '  %s\n' "HOME is not set to a home folder, so nothing was done." >&2
+    exit 1
+fi
+
 SRC="$(cd "$(dirname "$0")" && pwd)"
 NAME="Bytemeter"
 LABEL="io.github.adi-debug-source.bytemeter"

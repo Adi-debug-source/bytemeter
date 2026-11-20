@@ -84,10 +84,13 @@ func checkProcessTallyDeltas() {
     Broken.10,lots,5,
     ,4,4,
     Short.11,7
+    Safari,5000,0,x.13,10,20,
+    NoComma.14,1,2
     """
     expect(flat(ProcessTally.parse(output)),
-           ["Example Helper.512": [1_000, 200], "com.example.agent.77": [5_000, 50], "Spaced.9": [300, 30]],
-           "parse keeps every process row, names with dots included, and skips the header and malformed lines")
+           ["Example Helper.512": [1_000, 200], "com.example.agent.77": [5_000, 50], "Spaced.9": [300, 30],
+            "Safari,5000,0,x.13": [10, 20], "NoComma.14": [1, 2]],
+           "parse keeps every process row, names with dots or commas included, and skips the header and malformed lines")
     expect(flat(ProcessTally.parse("")), [:], "an empty run parses to nothing")
 
     var tally = ProcessTally()

@@ -170,7 +170,7 @@ public enum DashboardGenerator {
               <p class="note">\(esc(topTalkerNote(data)))</p>
             </div>
             \(talkerTable(today: data.topTalkersToday, month: data.topTalkersMonth,
-                          monthCaption: data.cal.cycleStartDay == 1 ? "This month" : "This cycle"))
+                          monthCaption: data.cal.cycleName))
           </section>
           <section class="panel side">
             <div class="panel-head"><h2>Idle against active</h2>

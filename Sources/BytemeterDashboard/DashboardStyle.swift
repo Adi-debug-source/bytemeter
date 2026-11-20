@@ -20,6 +20,7 @@ extension DashboardGenerator {
         <html lang="en-GB">
         <head>
         <meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="color-scheme" content="dark">
         <title>Bytemeter</title>

@@ -250,8 +250,12 @@ public struct BytemeterCalendar {
     /// cycle. Saying where it starts is what tells it apart from the rolling
     /// "Last 30 days" figure beside it, the same way the week says "from Monday".
     public func cycleLabel(_ now: Date) -> String {
-        (cycleStartDay == 1 ? "This month" : "This cycle") + ", from " + dayLabel(startOfCycle(now))
+        cycleName + ", from " + dayLabel(startOfCycle(now))
     }
+
+    /// "This month", or "This cycle" when a billing cycle starts on another
+    /// day, so the menu, the tooltip and the dashboard name it alike.
+    public var cycleName: String { cycleStartDay == 1 ? "This month" : "This cycle" }
 
     /// A local date and time as typed on the command line: ISO 8601 with no
     /// zone, "2026-10-02T21:30", seconds optional, read in this calendar's

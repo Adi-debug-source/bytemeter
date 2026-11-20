@@ -4,9 +4,11 @@
 // the page is a local file that fetches nothing. Not part of the app: SwiftPM
 // does not build anything in Scripts.
 //
-//   swift Scripts/snapshot.swift DASHBOARD.html PAGE.png
+//   swift Scripts/snapshot.swift DASHBOARD.html PAGE.png [--width N]
 //       Renders the page, and prints where each section sits in PAGE.png,
 //       in pixels. The crops in MAINTENANCE.md are measured from those.
+//       --width sets the page's width in CSS pixels, for the README's hero
+//       and the social preview, which are pages of their own in docs/art.
 //
 //   swift Scripts/snapshot.swift --strip FILE.png...
 //       Rewrites each PNG keeping only the chunks the image needs (IHDR,
@@ -18,7 +20,8 @@
 import AppKit
 import WebKit
 
-let cssWidth = 1400
+var cssWidth = 1400
+var customWidth = false
 let scale = 2
 
 func fail(_ message: String) -> Never {
@@ -137,7 +140,11 @@ final class Renderer: NSObject, WKNavigationDelegate {
             // The fonts are inside the page, but they still have to be decoded
             // before anything is measured or drawn.
             _ = try await web.callAsyncJavaScript("await document.fonts.ready", contentWorld: .page)
-            let height = Int((try await web.evaluateJavaScript("document.documentElement.scrollHeight") as? Double) ?? 0)
+            // A page shorter than the window still reports the window's height
+            // as its scroll height, so a page given a width is measured by its body.
+            let extent = customWidth ? "Math.ceil(document.body.getBoundingClientRect().bottom)"
+                                     : "document.documentElement.scrollHeight"
+            let height = Int((try await web.evaluateJavaScript(extent) as? Double) ?? 0)
             guard height > 0 else { fail("the page has no height") }
             window.setContentSize(NSSize(width: cssWidth, height: height))
             web.frame = NSRect(x: 0, y: 0, width: cssWidth, height: height)
@@ -157,14 +164,20 @@ final class Renderer: NSObject, WKNavigationDelegate {
     }
 }
 
-let args = Array(CommandLine.arguments.dropFirst())
+var args = Array(CommandLine.arguments.dropFirst())
+if let flag = args.firstIndex(of: "--width") {
+    guard flag + 1 < args.count, let width = Int(args[flag + 1]), width > 0 else { fail("--width needs a number of CSS pixels") }
+    cssWidth = width
+    customWidth = true
+    args.removeSubrange(flag...flag + 1)
+}
 if args.first == "--strip" {
     guard args.count > 1 else { fail("--strip needs at least one PNG") }
     for path in args.dropFirst() { strip(path) }
     exit(0)
 }
 guard args.count == 2 else {
-    fail("usage: swift Scripts/snapshot.swift DASHBOARD.html PAGE.png, or --strip FILE.png...")
+    fail("usage: swift Scripts/snapshot.swift PAGE.html PAGE.png [--width N], or --strip FILE.png...")
 }
 let page = URL(fileURLWithPath: args[0]).standardizedFileURL
 guard FileManager.default.fileExists(atPath: page.path) else { fail("there is no page at \(page.path)") }
