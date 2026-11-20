@@ -1,0 +1,19 @@
+/* Shared by hero.html and social-preview.html. Scripts/make_art.sh copies the
+   fonts and images beside these pages before it renders them. */
+@font-face { font-family: "Fraunces"; src: url("fraunces.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Inter Tight"; src: url("inter-tight.woff2") format("woff2"); font-weight: 100 900; }
+:root {
+  --plane: #0b0d0f; --surface: #13171a; --hairline: #212429; --hairline-2: #2c313a;
+  --ink: #eef1f3; --ink-2: #a8b1b8; --muted: #7a848b; --accent: #35a99f;
+  --display: "Fraunces", Georgia, serif; --text: "Inter Tight", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html { background: var(--plane); }
+/* Authored at twice the size and halved, so the 2x snapshot comes out at the
+   authored pixel size. */
+body { margin: 0; zoom: 0.5; color: var(--ink); font: 450 22px/1.45 var(--text);
+  -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+.stage { position: relative; overflow: hidden; background:
+  radial-gradient(900px 620px at 0% 0%, rgba(53,169,159,0.10), rgba(53,169,159,0) 70%), var(--plane); }
+.frame { border: 1px solid var(--hairline-2); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.frame img { display: block; width: 100%; }

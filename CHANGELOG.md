@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+A security review, a tidy of the code and a new front page. No figure changes, and the CSV is byte for byte as before for the same database. The dashboard page differs by one line in its head, below, and draws the same pixels. The self-test runs 1,280 checks, up from 1,278.
+
+- A process whose name holds commas can no longer put figures of its own into another app's row in Top talkers. `nettop` does not quote a name, so the two byte counts are now read from the end of each row, where they were read from the start. The interface totals were never affected.
+- The dashboard page carries a Content-Security-Policy that refuses scripts and anything fetched. Every outside text on the page was already escaped, and CI already fails on a script or a web address; the policy means a slip in either would still do nothing.
+- `install.sh` stops if `HOME` is empty, `/` or not a folder, where it would have gone on to remove `/Applications/Bytemeter.app`.
+- CI uses its one action by commit, not by a tag that can move, leaves no token in the checkout, and parses every shell script. Dependabot keeps the pinned commit current.
+- The code is tidier with no change in behaviour: the choice between 'This month' and 'This cycle' is made in one place, where it was typed out six times; the projection no longer returns a date nobody read; and a few bare numbers have names.
+- The README has a new first screen, a picture of the menu beside the dashboard, and two clips made from the synthetic month by `Scripts/make_clips.sh`. Its long reference sections moved, word for word, to `docs/guide.md`, `docs/accuracy.md` and `docs/how-it-works.md`. The pictures moved to `docs/screenshots/`.
+- `Scripts/make_art.sh` draws the README's hero and a social preview for GitHub from two pages in `docs/art`, and `Scripts/snapshot.swift` takes `--width` for them.
+- MAINTENANCE.md opens with what to read for which job and a release at a glance. Its steps are unchanged.
+
 ## 1.3.0, 20 November 2026
 
 Leaner while it sits in the menu bar, with two small additions. No figure changes: the CSV is byte for byte as before for the same database, and so is the dashboard page apart from the port names below. The self-test runs 1,278 checks, up from 1,193.

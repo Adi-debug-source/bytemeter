@@ -5,7 +5,7 @@ A macOS menu bar app in Swift that counts the bytes the Mac's network interfaces
 ## The worst mistakes here
 
 - Touching the live data in `~/Library/Application Support/Bytemeter/`: it is the only record of what the Mac carried. Work on a demo folder: `Scripts/make_demo_db.py` writes one, and the app reads it with `--demo <folder>`.
-- Real data in anything that goes online, a README image or pull request evidence: it shows someone's usage and app list. Use the synthetic month (MAINTENANCE.md, "Screenshots").
+- Real data in anything that goes online, a README image or pull request evidence: it shows someone's usage and app list. Use the synthetic month (MAINTENANCE.md, "Screenshots and clips").
 - Stopping or reloading the installed app with `kill` or `kickstart`: launchd starts a killed copy again as a crash, and the kernel kills a new build under the old signature. Use `bootout` and `bootstrap` (MAINTENANCE.md, "The login item").
 
 ## Commands
