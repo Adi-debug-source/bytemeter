@@ -42,6 +42,7 @@ case "$seconds" in ''|*[!0-9]*) echo "--seconds wants a whole number." >&2; exit
 [ -x "$binary" ] || { echo "No binary at $binary. Run: swift build -c release" >&2; exit 1; }
 
 home="$(mktemp -d "${TMPDIR:-/tmp}/bytemeter_measure.XXXXXX")"
+home="$(cd "$home" && pwd)"    # as the app will spell it, with no doubled slash
 data="$home/Library/Application Support/Bytemeter"
 pid=""
 cleanup() {
@@ -79,6 +80,16 @@ best_ms() {
     done
     echo "$best"
 }
+# Before the app is started for real: prove this build keeps its data in the
+# home folder it is given. --dashboard with no folder prints where it wrote,
+# and anywhere but under that home means the app would count into the real
+# data folder, so nothing more is run.
+where="$(CFFIXED_USER_HOME="$home" "$binary" --dashboard 2> /dev/null || true)"
+case "$where" in
+    "$home"/*) ;;
+    *) echo "This build did not keep to the home folder it was given (it wrote to: ${where:-nowhere}), so it is not started." >&2; exit 1 ;;
+esac
+
 launch_ms="$(best_ms env CFFIXED_USER_HOME="$home" "$binary" --help)"
 dashboard_ms="$(best_ms env CFFIXED_USER_HOME="$home" "$binary" --dashboard "$data")"
 

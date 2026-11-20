@@ -62,7 +62,7 @@ The code is in four parts, split on purpose:
 The menu bar item shows one total, with monospaced digits so its width does not jitter as the figure changes.
 
 - Left-click opens the menu.
-- **Menu bar shows**, in the menu, chooses the total: Today, This week, This month or All time. Right-click, a two-finger click or a Control-click on the figure steps through the same four. The choice is kept across restarts.
+- **Menu bar shows**, in the menu, chooses the total: Today, This week, This month (This cycle, on a billing cycle) or All time. Right-click, a two-finger click or a Control-click on the figure steps through the same four. The choice is kept across restarts.
 - Live speed is a separate switch in the menu. When it is on, the current rate appears beside the total; it never replaces it.
 
 The menu holds:

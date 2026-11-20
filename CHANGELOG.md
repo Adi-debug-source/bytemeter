@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Leaner while it sits in the menu bar, with two small additions. No figure changes, and the dashboard page and its CSV are byte for byte as before for the same database. The self-test runs 1,278 checks, up from 1,193.
+Leaner while it sits in the menu bar, with two small additions. No figure changes: the CSV is byte for byte as before for the same database, and so is the dashboard page apart from the port names below. The self-test runs 1,278 checks, up from 1,193.
 
 - Bytemeter takes far less of the processor while idle. Watched for two minutes on the Mac it was developed on, it used 0.05% of one core with all time in the menu bar, where 1.2.5 used 0.46%; 0.07% with today, where it used 0.22%; and 0.66% with the live speed on, where it used 1.37%. Memory is unchanged at about 12 MB. Three things did it:
   - A reading asks the kernel for its list of interfaces once. It used to ask once for the names and again for every interface's index, six times on a Mac with five ports, and fetching that list was most of what the app spent. The counters themselves are read exactly as before, from the 64 bit interface MIB.

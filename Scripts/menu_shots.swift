@@ -9,7 +9,7 @@
 // clicked, the demo database is only read, and a running Bytemeter is left
 // alone, as --demo always leaves it.
 //
-// It needs a build (swift build -c release), a demo database already brought
+// Run it from the top of the repository. It needs a build (swift build -c release), a demo database already brought
 // up to date by one run of --dashboard on its folder, and macOS's permission
 // for the terminal it runs in to record the screen, which screencapture asks
 // for. The picture is as sharp as the screen, so take it on a Retina screen,
@@ -22,7 +22,19 @@ import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 
+/// The demo while it runs, and the whole capture before it is trimmed, so a
+/// failure at any point ends the one and removes the other. `exit` skips
+/// every `defer`, so `fail` and the last line see to both.
+var runningDemo: Process?
+var scratch: URL?
+
+func tidyUp() {
+    runningDemo?.terminate()
+    if let scratch { try? FileManager.default.removeItem(at: scratch) }
+}
+
 func fail(_ message: String) -> Never {
+    tidyUp()
     FileHandle.standardError.write(Data((message + "\n").utf8))
     exit(1)
 }
@@ -74,9 +86,9 @@ func windows(of pid: Int32) -> [Window] {
 let demo = Process()
 demo.executableURL = URL(fileURLWithPath: binary)
 demo.arguments = ["--demo", folder, "--as-of", asOf, "--open-menu"]
-demo.standardError = FileHandle.nullDevice
+// Its own words go to the terminal, so a refusal says why in its own terms.
 do { try demo.run() } catch { fail("Could not start the demo: \(error)") }
-defer { demo.terminate() }
+runningDemo = demo
 
 // An open menu is two windows, one inside the other: the menu itself, and
 // around it the one macOS draws on screen, which carries the shadow as well.
@@ -86,8 +98,8 @@ var menu: Window?
 for _ in 0..<40 {
     usleep(250_000)
     guard demo.isRunning else {
-        fail("The demo did not stay running. Build the dashboard from the folder once first, which brings a new "
-             + "demo database up to date: .build/release/Bytemeter --dashboard \(folder) --as-of \(asOf)")
+        fail("The demo did not stay running; it says why above. A new demo database is brought up to date by "
+             + "building the dashboard from its folder once: .build/release/Bytemeter --dashboard \(folder) --as-of \(asOf)")
     }
     let found = windows(of: demo.processIdentifier)
     drawn = found.filter(\.onScreen).max { $0.bounds.height < $1.bounds.height }
@@ -101,7 +113,7 @@ guard let drawn, let menu else { fail("The demo's menu did not open.") }
 usleep(600_000)
 
 let whole = FileManager.default.temporaryDirectory.appendingPathComponent("bytemeter_menu_\(UUID().uuidString).png")
-defer { try? FileManager.default.removeItem(at: whole) }
+scratch = whole
 run("/usr/sbin/screencapture", ["-x", "-o", "-l", String(drawn.id), whole.path])
 guard let source = CGImageSourceCreateWithURL(whole as CFURL, nil),
       let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
@@ -118,4 +130,5 @@ guard let trimmed = image.cropping(to: box),
 }
 CGImageDestinationAddImage(destination, trimmed, nil)
 guard CGImageDestinationFinalize(destination) else { fail("Could not write \(output.path).") }
+tidyUp()
 print("Wrote \(output.path), \(trimmed.width) by \(trimmed.height) pixels.")
