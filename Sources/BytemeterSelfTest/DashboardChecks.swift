@@ -31,6 +31,7 @@ func runDashboardChecks() {
     checkStandInNetworkNamesReadAsUnknown()
     checkProjectionTileReadsAsASentence(fortyDays)
     checkFiguresKeepTheirUnits(["few days": fewDays, "40 days": fortyDays])
+    checkPortsAreNamedOnThePage(unnamed: fewDays)
 }
 
 // MARK: - The fixtures
@@ -50,9 +51,11 @@ private struct BuiltPage {
     let html: String
     let csv: String
 
-    init(_ db: Database, now: String, cal: BytemeterCalendar = london, capBytes: UInt64 = 0, ssidCapture: Bool = false) {
+    init(_ db: Database, now: String, cal: BytemeterCalendar = london, capBytes: UInt64 = 0, ssidCapture: Bool = false,
+         interfaceNames: [String: String] = [:]) {
         let options = DashboardData.Options(ssidCapture: ssidCapture, perAppSampling: true,
-                                            capEnabled: capBytes > 0, capBytes: capBytes)
+                                            capEnabled: capBytes > 0, capBytes: capBytes,
+                                            interfaceNames: interfaceNames)
         data = DashboardData(aggregator: Aggregator(db: db, cal: cal), options: options, now: cal.parseLocal(now)!)
         html = DashboardGenerator.html(data)
         csv = DashboardGenerator.csvExport(data)
@@ -311,6 +314,29 @@ private func checkLabelsNameTheirPeriod(months: BuiltPage, cycles: BuiltPage) {
         check(built.html.contains("Idle means no keyboard, mouse or trackpad input for five minutes or more, over the last 30 days."),
               "on \(name), the idle note names every kind of input that counts")
     }
+}
+
+// MARK: - Interfaces are shown by the names macOS gives its ports
+
+private func checkPortsAreNamedOnThePage(unnamed: BuiltPage) {
+    expect(InterfaceNames.label("en0", names: ["en0": "Wi-Fi"]), "Wi-Fi (en0)", "a named port reads as its name, then the kernel's")
+    expect(InterfaceNames.label("en7", names: ["en0": "Wi-Fi"]), "en7", "an interface with no name is shown by the kernel's alone")
+    expect(InterfaceNames.label("en0", names: ["en0": "  "]), "en0", "an empty name is no name")
+    expect(InterfaceNames.label("en0", names: ["en0": "en0"]), "en0", "a name that only repeats the kernel's is not said twice")
+
+    let db = fewDaysDatabase()
+    db.addBuckets([BucketDelta(minute: londonMinute("2026-10-08T10:00"), iface: "en5", bytesIn: 9_000_000, bytesOut: 900_000)],
+                  ssid: ssidPlaceholder, idle: false)
+    let named = BuiltPage(db, now: fixtureMoment, interfaceNames: ["en0": "Wi-Fi", "en5": "<i>Phone</i> USB", "en9": "Unused"])
+    let list = panel(named.html, heading: "Per interface, last 30 days")
+    check(list.contains("<dt>Wi-Fi (en0)</dt>"), "the per-interface list names the Wi-Fi port")
+    check(list.contains("<dt>&lt;i&gt;Phone&lt;/i&gt; USB (en5)</dt>") && !named.html.contains("<i>Phone"),
+          "a port's name is escaped like any other outside text")
+    check(!named.html.contains("Unused"), "a named port that carried nothing is not listed")
+    expect(named.csvRows.filter { $0.first == "interface_30d" }.map { $0[1] }.sorted(), ["en0", "en5"],
+           "the CSV keeps the kernel's names, so its shape does not depend on the Mac")
+    check(panel(unnamed.html, heading: "Per interface, last 30 days").contains("<dt>en0</dt>"),
+          "with no names given, the list shows the kernel's")
 }
 
 // MARK: - A long Month by month keeps its labels apart
