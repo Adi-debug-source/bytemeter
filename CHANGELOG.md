@@ -1,8 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.4.1, not yet released
 
-- The dashboard's footer says 'Nothing here has left it' where it said 'the machine'.
+A wording release. No figure changes, and the self-test runs the same 1,309 checks as 1.4.0.
+
+- The dashboard's footer says 'Nothing here has left it' where it said 'the machine'. The README's tour clip is made again, so its last frame shows the new footer.
+- The README and the accuracy page say Mac where they said 'the machine', quoted words take single quotes, and the README links Tokenmeter.
+- CONTRIBUTING.md and an issue form for a figure that looks wrong are new, and the README's contributing section points at them.
+- For contributors: a verify skill, `.claude/skills/verify/SKILL.md`, smoke-tests the app on synthetic data before a commit, and the release steps in MAINTENANCE.md use `vX.Y.Z` and `gh release create --verify-tag`.
 
 ## 1.4.0, 21 November 2026
 
