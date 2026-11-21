@@ -124,7 +124,7 @@ Reading your Wi-Fi network name is off by default, and while it is off Bytemeter
 Bytemeter is a small project with one claim: its figures match what the network interfaces carried. Most of the work is in keeping that claim true.
 
 - **It found a trap in the usual way of counting.** `getifaddrs`, which most examples use, returns 32-bit byte counters on macOS, so they wrap every 4.29 GB and quietly lose it. Bytemeter reads the 64-bit counters from the interface MIB through `sysctl` instead, and its figures match `netstat -ib` exactly.
-- **It is tested where it matters.** The self-test runs 1,280 checks on the counting rules: restarts, interface resets, counter wraps, sleep, a clock set backwards, clock changes in every time zone, database upgrades from every earlier version, and a failed write that must move nothing. CI runs it on every push, builds the app from a clean clone and checks that the dashboard page fetches nothing.
+- **It is tested where it matters.** The self-test runs 1,309 checks on the counting rules: restarts, interface resets, counter wraps, sleep, a clock set backwards, clock changes in every time zone, database upgrades from every earlier version, and a failed write that must move nothing. CI runs it on every push, builds the app from a clean clone and checks that the dashboard page fetches nothing.
 - **Every figure comes from one table.** Totals, averages, the projection and the charts are all worked out from the same minute rows when they are asked for, so no two figures on screen can disagree.
 - **It has no dependencies.** Swift, AppKit, SQLite and `nettop`, all of which ship with macOS. It builds with the Command Line Tools alone.
 - **Its cost is measured, not guessed.** Sitting in the menu bar it takes 0.05% to 0.07% of one processor core and about 12 MB of memory on the Mac it was developed on, or 0.7% with the live speed redrawing every second. `Scripts/measure_idle.sh` and `swift run -c release BytemeterSelfTest --measure` repeat the measurement.
@@ -222,7 +222,7 @@ Building needs macOS 13.5 or later, the first release that runs Swift 5.9, and t
 
 ```bash
 swift build -c release                     # build
-swift run -c release BytemeterSelfTest     # run the self-test, 1,280 checks
+swift run -c release BytemeterSelfTest     # run the self-test, 1,309 checks
 ```
 
 The self-test is a plain executable rather than an XCTest target because XCTest is not part of the Command Line Tools, and this project does not assume full Xcode. Swift Testing does run under the Command Line Tools, but it needs Swift 6, which would raise the minimum macOS. CI runs the self-test on every push, builds the app bundle from a clean clone, builds the demo dashboard and checks it fetches nothing, and verifies the bundle's signature.
