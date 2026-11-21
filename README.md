@@ -9,9 +9,9 @@
 Totals in the menu bar, a dashboard with charts, a CSV export. Everything stays on your Mac.
 
 [![tests](https://img.shields.io/github/actions/workflow/status/Adi-debug-source/bytemeter/test.yml?branch=main&label=tests)](https://github.com/Adi-debug-source/bytemeter/actions/workflows/test.yml)
-[![release](https://img.shields.io/github/v/release/Adi-debug-source/bytemeter?label=release)](https://github.com/Adi-debug-source/bytemeter/releases/latest)
-[![licence: MIT](https://img.shields.io/badge/licence-MIT-d97757)](LICENSE)
-[![macOS 13.5 or later](https://img.shields.io/badge/macOS-13.5%20or%20later-lightgrey)](#install)
+[![release](https://img.shields.io/github/v/release/Adi-debug-source/bytemeter?label=release&color=35a99f)](https://github.com/Adi-debug-source/bytemeter/releases/latest)
+[![licence: MIT](https://img.shields.io/badge/licence-MIT-35a99f)](LICENSE)
+[![macOS 13.5 or later](https://img.shields.io/badge/macOS-13.5%20or%20later-5c6371)](#install)
 
 </div>
 
