@@ -1,0 +1,42 @@
+name: A figure looks wrong
+description: A total, a chart or a per-app figure that does not match what your Mac's interfaces carried
+labels: [accuracy]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not attach your real database, dashboard or CSV export: they show your apps, your network names and when you were online. A description of what you saw is enough.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`VERSION` in the repository, or for the installed app `plutil -extract CFBundleShortVersionString raw -o - ~/Applications/Bytemeter.app/Contents/Info.plist`"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: From About This Mac, or `sw_vers -productVersion`
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options: [The menu bar figure, The menu, Top Apps Today, The dashboard, The CSV export]
+    validations:
+      required: true
+  - type: textarea
+    id: figures
+    attributes:
+      label: What Bytemeter says, and what you expected
+      description: The figure, the period it covers, and where the figure you are comparing it with comes from (`netstat -ib`, a router, a provider).
+    validations:
+      required: true
+  - type: textarea
+    id: events
+    attributes:
+      label: Recent events
+      description: If you can, the Recent events list at the foot of the dashboard. It names sleeps, counter resets and new interfaces, which explain most differences.
+      render: text

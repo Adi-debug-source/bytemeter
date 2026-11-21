@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/icon.png" alt="" width="96">
+<img src="docs/icon.png" alt="The Bytemeter icon" width="96">
 
 <h1>Bytemeter</h1>
 
@@ -21,7 +21,7 @@ Totals in the menu bar, a dashboard with charts, a CSV export. Everything stays 
 
 Bytemeter sits in the menu bar and shows how much data your Mac has used today, in the last 7 or 30 days, or since it started counting. Click it for the detail, or open the dashboard. It is written in Swift, has no dependencies, and makes no network requests of any kind: a tool that measures data use should not spend data.
 
-Every picture and clip on this page is the real app showing a generated month of invented traffic (`Scripts/make_demo_db.py`), not anyone's usage.
+Every picture and clip on this page is the real app showing a generated month of invented traffic ([`Scripts/make_demo_db.py`](Scripts/make_demo_db.py)), not anyone's usage.
 
 ## Install
 
@@ -53,7 +53,7 @@ Both routes need macOS 13.5 or later and the Xcode Command Line Tools (`xcode-se
 </td>
 <td valign="top">
 
-- **One figure, always in view.** Today, the last 7 days, the last 30 days or all time, the same four as Tokenmeter. Click its row in the menu, or right-click the figure to step through them. A live speed can sit beside it.
+- **One figure, always in view.** Today, the last 7 days, the last 30 days or all time, the same four as [Tokenmeter](https://github.com/Adi-debug-source/tokenmeter). Click its row in the menu, or right-click the figure to step through them. A live speed can sit beside it.
 - **Four totals, read in a glance.** Each row has one figure, its download, worked out from the same rows as the dashboard, so no two figures can disagree. This week, this month, upload, the averages and the rest are on the dashboard.
 - **Where the month is heading.** One line with a projection for the month's end, download and upload combined as a provider counts them.
 - **A monthly cap.** Set your allowance in GB and the day your billing cycle starts, and that line becomes what is used of the cap and how many days are left, over a bar.
@@ -67,7 +67,7 @@ The digits are monospaced, so the menu bar item does not jitter as the figure ch
 
 ### A dashboard that is one file
 
-Open dashboard writes a single dark HTML page and opens it: hand-written HTML and inline SVG, no JavaScript, nothing fetched. This is one invented day, a page every half hour:
+Open Dashboard writes a single dark HTML page and opens it: hand-written HTML and inline SVG, no JavaScript, nothing fetched. This is one invented day, a page every half hour:
 
 <p align="center">
   <img src="docs/screenshots/dashboard-day.gif" alt="The top of the dashboard through one invented day: the figure for today climbs from a few megabytes to 3.32 GB as the bars of the hourly chart fill in" width="100%">
@@ -113,9 +113,9 @@ It reads the kernel's own interface byte counters every 5 seconds, keeps per-app
 ~/Library/Application Support/Bytemeter/bytemeter.db
 ```
 
-Minute rows are kept for 90 days, then collapsed to hourly, so on a typical machine the file levels off at roughly 40 MB and then grows by a few MB a year. Its log is at `~/Library/Logs/Bytemeter/bytemeter.err`.
+Minute rows are kept for 90 days, then collapsed to hourly, so on a typical Mac the file levels off at roughly 40 MB and then grows by a few MB a year. Its log is at `~/Library/Logs/Bytemeter/bytemeter.err`.
 
-Reading your Wi-Fi network name is off by default, and while it is off Bytemeter never touches Location Services. Switching it on in Preferences asks macOS for Location Services, because macOS treats a network name as location information. If you refuse, the feature switches itself back off and tells you where to allow it. Because each build is ad-hoc signed afresh, macOS may forget the permission after an update. Bytemeter never asks again on its own: Preferences says that network names are not being recorded, and offers to ask macOS again.
+Reading your Wi-Fi network name is off by default, and while it is off Bytemeter never touches Location Services. Switching it on in Preferences asks macOS for Location Services, because macOS treats a network name as location information. If you refuse, the feature switches itself back off and tells you where to allow it. Because each build is ad hoc signed afresh, macOS may forget the permission after an update. Bytemeter never asks again on its own: Preferences says that network names are not being recorded, and offers to ask macOS again.
 
 [SECURITY.md](SECURITY.md) says what counts as a security report and how to send one privately.
 
@@ -166,7 +166,7 @@ The code is in four parts, split on purpose:
 <details>
 <summary><b>Why is there no download, only a build?</b></summary>
 
-Bytemeter is not notarised, and it does not need to be. Both install routes build it on your own Mac, so there is no downloaded app for macOS to quarantine, and it opens without a warning. A prebuilt, ad-hoc signed app would be refused by Gatekeeper.
+Bytemeter is not notarised, and it does not need to be. Both install routes build it on your own Mac, so there is no downloaded app for macOS to quarantine, and it opens without a warning. A prebuilt, ad hoc signed app would be refused by Gatekeeper.
 </details>
 
 <details>
@@ -207,7 +207,7 @@ No. Other menu bar data meters exist, some with alerts and per-app limits. Bytem
 
 ## Install and remove
 
-`install.sh` builds the app with `swift build -c release`, ad-hoc signs `Bytemeter.app`, copies it to `~/Applications`, and adds a login item so it starts at login. The login item restarts the app after a crash, but if you quit it, it stays quit until the next login. It is safe to run again after `git pull` to update. The options are:
+`install.sh` builds the app with `swift build -c release`, ad hoc signs `Bytemeter.app`, copies it to `~/Applications`, and adds a login item so it starts at login. The login item restarts the app after a crash, but if you quit it, it stays quit until the next login. It is safe to run again after `git pull` to update. The options are:
 
 - `--uninstall`: removes the app and the login item, and keeps your data.
 - `--dry-run`: says what it would do and changes nothing.
@@ -250,16 +250,17 @@ The pictures and clips in this README are made this way, from invented data, so 
 
 ## Contributing
 
-Issues and pull requests are welcome. A bug report is most useful with the version (`VERSION`), what the menu or dashboard showed, and what you expected. For a change:
+The most useful contribution is a check against reality: a figure compared with `netstat -ib`, or a gap that [How accurate it is](docs/accuracy.md) does not list. [CONTRIBUTING.md](CONTRIBUTING.md) says how, and what a pull request needs.
 
-1. Run `swift run -c release BytemeterSelfTest` before and after. It is the gate, and a fix for a counting bug comes with a check that fails without it.
-2. Keep the engine free of AppKit and the dashboard free of scripts and web addresses. CI checks the second.
-3. Read [MAINTENANCE.md](MAINTENANCE.md) for how the parts fit together, the login item and the release steps, and [CHANGELOG.md](CHANGELOG.md) for what each version changed and why.
-
-[AGENTS.md](AGENTS.md) holds the working rules for coding agents on this repository; they are a fair summary of the standards for people too. Report a vulnerability privately, as [SECURITY.md](SECURITY.md) describes.
+- Before anything else: `swift run -c release BytemeterSelfTest` (needs only the Command Line Tools)
+- How the parts fit together, the login item and the release steps: [MAINTENANCE.md](MAINTENANCE.md)
+- What changed in each version: [CHANGELOG.md](CHANGELOG.md)
+- The working rules for coding agents: [AGENTS.md](AGENTS.md)
 
 ## Licence
 
 MIT, see [LICENSE](LICENSE). Copyright (c) 2026 Aditya Kumar.
 
 The dashboard carries two fonts under the SIL Open Font License 1.1: Fraunces, by The Fraunces Project Authors, and Inter Tight, by The Inter Project Authors. Their licences are `OFL-Fraunces.txt` and `OFL-InterTight.txt` in [Resources/Fonts](Resources/Fonts).
+
+Also by Aditya Kumar: [Tokenmeter](https://github.com/Adi-debug-source/tokenmeter), which shows what your AI coding would have cost at API rates.

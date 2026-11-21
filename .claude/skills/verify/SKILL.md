@@ -40,7 +40,7 @@ cat "$T/demo.log"; kill -0 $PID && echo alive; kill $PID
 
 Working means the log says `Bytemeter demo: showing ... Read only.` and the process is still alive when checked. The loop only waits up to ten seconds for that line; it is not a retry. Stop it by the `PID` you kept, never by name. Demo mode never writes and leaves an installed Bytemeter alone.
 
-What this covers: the app launches in demo mode, opens the database, builds its menu bar item and stays up. What it does not: the menu's contents, which need a click. For a change to the menu, take the menu image as MAINTENANCE.md, "Screenshots and clips", says (`Scripts/menu_shots.swift`), which needs screen recording allowed, and look at it.
+What this covers: the app launches in demo mode, opens the database, builds its menu bar item and stays up. What it does not: the menu's contents, which need a click. For a change to the menu, take the menu image as MAINTENANCE.md, 'Screenshots and clips', says (`Scripts/menu_shots.swift`), which needs screen recording allowed, and look at it.
 
 The temp folder holds only synthetic data; delete it by its printed path when done.
 

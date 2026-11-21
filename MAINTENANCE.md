@@ -20,9 +20,9 @@ swift build -c release
 swift run -c release BytemeterSelfTest
 ```
 
-Both need only the Xcode command line tools, not full Xcode. The self-test is a
+Both need only the Xcode Command Line Tools, not full Xcode. The self-test is a
 plain executable rather than an XCTest target because XCTest cannot be resolved
-with the command line tools alone. It prints how many checks ran and exits
+with the Command Line Tools alone. It prints how many checks ran and exits
 non-zero if any failed. Run it after any change.
 
 A few `ld: warning: search path ... not found` lines under the command line
@@ -56,6 +56,8 @@ for each product linked.
 | `install.sh` | builds the app, and installs, updates or removes it |
 | `Formula/bytemeter.rb` | the Homebrew formula, pointed at the latest tag (see Homebrew) |
 | `.github/workflows/test.yml` | CI: the fonts check, the build, the self-test, the demo dashboard, the demo script's refusal of the real data folder, the scripts and formula parse, and the bundle from a clean clone |
+| `.github/ISSUE_TEMPLATE/` | the issue form for a figure that looks wrong, and the link for reporting a vulnerability privately |
+| `CONTRIBUTING.md` | how to check a figure, report a gap and send a change, and what a pull request needs |
 | `CHANGELOG.md` | what each release changed |
 
 `./install.sh --help` lists its options. `--dry-run` works with all of them and
@@ -67,7 +69,7 @@ Short on purpose: Data used, four period rows, one line about the month, Top App
 
 - **The period rows are standard menu items; every other row is a drawn view.** AppKit gives a view in a menu item no key events, so a drawn period row could not be chosen with Return; tested on macOS 27 on 21 November 2026, which is why they are standard items. Each period row's figure sits at a right tab stop (`MenuRows.period`). AppKit keeps its shortcut column to the right of a standard item's title, so the figures end about 30 points short of the ⌘D column, and the drawn rows end theirs on the same edge (`MenuRows.figureColumn`). The rows that only inform stay views because AppKit draws a disabled item grey whatever its title's colour.
 - **The periods are Today, Last 7 days, Last 30 days and All time**, Tokenmeter's four, for the rows and the right-click cycle alike. `StatusMode(saved:)` maps the week and month that 1.3.1 and earlier saved to the last 7 and 30 days.
-- **Plain process names** live in `ProcessNames`, in the engine. A name goes in only if it is true for every app behind the process: the WebKit networking process serves Mail too, so it is "Web content (WebKit)", not Safari. Anything not listed keeps its own name.
+- **Plain process names** live in `ProcessNames`, in the engine. A name goes in only if it is true for every app behind the process: the WebKit networking process serves Mail too, so it is 'Web content (WebKit)', not Safari. Anything not listed keeps its own name.
 - **The menu is pinned by the self-test through `MenuModel`**, without opening a menu: four rows, one ticked, download only, the warning row only when it should be, the cap line in place of the projection, no submenu while sampling is off.
 
 ## Measuring
@@ -89,8 +91,8 @@ For the figures to be comparable, run both on a quiet Mac. The idle figures of e
 `VERSION` holds both numbers:
 
 ```
-VERSION=1.3.0
-BUILD=8
+VERSION=X.Y.Z
+BUILD=N
 ```
 
 `install.sh` writes them into `CFBundleShortVersionString` and
@@ -102,8 +104,8 @@ To bump it:
 
 1. Change `VERSION`: a fix moves the last number, a new feature the middle one.
 2. Add one to `BUILD`, whatever `VERSION` did. It only ever goes up.
-3. Commit with the version as the message, for example `Bytemeter 1.0.1`.
-4. The tag is the same number with a `v` in front: `v1.0.1`. It goes on the
+3. Commit with the version as the message, for example `Bytemeter X.Y.Z`.
+4. The tag is the same number with a `v` in front: `vX.Y.Z`. It goes on the
    last commit of the release, the one that dates the CHANGELOG heading, which
    can come after the version commit.
 
@@ -111,7 +113,7 @@ To bump it:
 
 `Resources/AppIcon.icns` is the only copy of the design. The code that drew it
 was a one-off and no longer exists, so it cannot be regenerated from this
-repository. Do not redraw it to "rebuild" it: a redraw is a different icon.
+repository. Do not redraw it to 'rebuild' it: a redraw is a different icon.
 If a generator is ever written, it has to reproduce this file before it
 replaces it, checked by eye at 32 and 1024 pixels.
 
@@ -250,14 +252,14 @@ pointed at it.
    tag that last commit and push both:
 
    ```bash
-   git tag -a v1.0.1 -m "Bytemeter 1.0.1"
-   git push origin main v1.0.1
+   git tag -a vX.Y.Z -m "Bytemeter X.Y.Z"
+   git push origin main vX.Y.Z
    ```
 
 3. Create the release, with no files attached:
 
    ```bash
-   gh release create v1.0.1 --title "Bytemeter 1.0.1" --notes-file notes.md
+   gh release create vX.Y.Z --verify-tag --title "Bytemeter X.Y.Z" --notes-file notes.md
    ```
 
    Write the notes as prose: what changed and why, not a list of commits.
@@ -308,7 +310,7 @@ After each release:
 1. Take the checksum of the new tag's tarball, as GitHub serves it:
 
    ```bash
-   curl -sL https://github.com/Adi-debug-source/bytemeter/archive/refs/tags/v1.0.1.tar.gz | shasum -a 256
+   curl -sL https://github.com/Adi-debug-source/bytemeter/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256
    ```
 
 2. In `Formula/bytemeter.rb`, set `url` to the new tag and `sha256` to that

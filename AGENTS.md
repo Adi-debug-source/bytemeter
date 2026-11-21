@@ -5,21 +5,21 @@ A macOS menu bar app in Swift that counts the bytes the Mac's network interfaces
 ## The worst mistakes here
 
 - Touching the live data in `~/Library/Application Support/Bytemeter/`: it is the only record of what the Mac carried. Work on a demo folder: `Scripts/make_demo_db.py` writes one, and the app reads it with `--demo <folder>`.
-- Real data in anything that goes online, a README image or pull request evidence: it shows someone's usage and app list. Use the synthetic month (MAINTENANCE.md, "Screenshots and clips").
-- Stopping or reloading the installed app with `kill` or `kickstart`: launchd starts a killed copy again as a crash, and the kernel kills a new build under the old signature. Use `bootout` and `bootstrap` (MAINTENANCE.md, "The login item").
+- Real data in anything that goes online, a README image or pull request evidence: it shows someone's usage and app list. Use the synthetic month (MAINTENANCE.md, 'Screenshots and clips').
+- Stopping or reloading the installed app with `kill` or `kickstart`: launchd starts a killed copy again as a crash, and the kernel kills a new build under the old signature. Use `bootout` and `bootstrap` (MAINTENANCE.md, 'The login item').
 
 ## Commands
 
 - Test: `swift run -c release BytemeterSelfTest` (the gate: a Stop hook runs it at the end of every turn; builds first, then prints how many checks ran and exits non-zero if any failed; needs only the Command Line Tools)
 - Build: `swift build -c release`
 - Fonts check: `python3 Scripts/make_fonts.py --check` (the embedded fonts must match their files; CI runs it first)
-- Measure: `swift run -c release BytemeterSelfTest --measure` for the engine and `Scripts/measure_idle.sh` for the running app (MAINTENANCE.md, "Measuring"; a change that claims to be faster shows both, before and after)
+- Measure: `swift run -c release BytemeterSelfTest --measure` for the engine and `Scripts/measure_idle.sh` for the running app (MAINTENANCE.md, 'Measuring'; a change that claims to be faster shows both, before and after)
 - Install locally: `./install.sh` (`--dry-run` says exactly what would happen; `--help` lists the options)
 - Version, icon, release, Homebrew and screenshots: MAINTENANCE.md is the authority. Read the section the task needs; nothing from it is copied here.
 
 ## Layout
 
-The table in MAINTENANCE.md, "How it fits together", names every part. In short: `Sources/BytemeterCore` is the engine, `Sources/BytemeterDashboard` the page and the export, `Sources/Bytemeter` the macOS app, `Sources/BytemeterSelfTest` the checks (one file per subject, shared helpers in `Harness.swift`), `VERSION` the version, `Scripts/` the generators and templates, `Resources/` the icon and fonts, `Formula/` the Homebrew formula.
+The table in MAINTENANCE.md, 'How it fits together', names every part. In short: `Sources/BytemeterCore` is the engine, `Sources/BytemeterDashboard` the page and the export, `Sources/Bytemeter` the macOS app, `Sources/BytemeterSelfTest` the checks (one file per subject, shared helpers in `Harness.swift`), `VERSION` the version, `Scripts/` the generators and templates, `Resources/` the icon and fonts, `Formula/` the Homebrew formula.
 
 ## Conventions this code keeps
 
