@@ -55,12 +55,16 @@ func checkTopTalkersRankByTotal() {
 // MARK: - Menu bar mode cycling
 
 func checkStatusModesCycle() {
-    expect(StatusMode.today.next, StatusMode.week, "clicking today gives this week")
-    expect(StatusMode.week.next, StatusMode.month, "clicking this week gives this month")
-    expect(StatusMode.month.next, StatusMode.allTime, "clicking this month gives all time")
+    expect(StatusMode.today.next, StatusMode.last7, "clicking today gives the last 7 days")
+    expect(StatusMode.last7.next, StatusMode.last30, "clicking the last 7 days gives the last 30 days")
+    expect(StatusMode.last30.next, StatusMode.allTime, "clicking the last 30 days gives all time")
     expect(StatusMode.allTime.next, StatusMode.today, "clicking all time comes back to today")
     expect(StatusMode.allCases.count, 4, "four positions in the cycle")
-    expect(StatusMode(rawValue: "month"), StatusMode.month, "the saved mode round trips")
+    expect(StatusMode(saved: StatusMode.last30.rawValue), StatusMode.last30, "the saved mode round trips")
+    // Up to 1.3.1 the cycle held this week and this month. A saved one must
+    // not fall back to today on upgrade, but to the rolling period nearest it.
+    expect(StatusMode(saved: "week"), StatusMode.last7, "a saved this week comes back as the last 7 days")
+    expect(StatusMode(saved: "month"), StatusMode.last30, "a saved this month comes back as the last 30 days")
     expect(StatusMode(saved: StatusMode.allTime.rawValue), StatusMode.allTime, "all time round trips through settings")
     expect(StatusMode(saved: "fortnight"), StatusMode.today, "an unknown saved mode falls back to today")
     expect(StatusMode(saved: nil), StatusMode.today, "no saved mode means today")
@@ -511,11 +515,11 @@ func checkAsOfAMomentMatchesThatMoment() {
 // MARK: - One set of headline figures, and the menu bar's figure is one of them
 
 func checkHeadlinesAreOneSet() {
-    // Traffic on four days, so today, this week, this month and all time all
-    // differ, and a row after the moment that none of them may count.
+    // Traffic on four days, so today, the last 7 days, the last 30 days and
+    // all time all differ, and a row after the moment that none of them may count.
     let db = makeDatabase()
     addTraffic(db, at: "2026-08-20T10:00", 7_000_000_000, 700_000_000)
-    addTraffic(db, at: "2026-10-02T09:00", 3_000_000_000, 300_000_000)    // a Friday: this month, not this week
+    addTraffic(db, at: "2026-09-25T09:00", 3_000_000_000, 300_000_000)    // the last 30 days, not the last 7
     addTraffic(db, at: "2026-10-06T14:00", 2_000_000_000, 200_000_000)
     addTraffic(db, at: "2026-10-08T08:30", 1_000_000_000, 100_000_000)
     addTraffic(db, at: "2026-10-08T15:00", 9_000_000_000, 900_000_000)    // after the moment
@@ -526,7 +530,7 @@ func checkHeadlinesAreOneSet() {
     let rows = lines.compactMap { line -> (label: String, down: String)? in
         if case let .period(_, label, down, _, _) = line { return (label, down) } else { return nil }
     }
-    expect(rows.map(\.label), ["Today", "This week", "This month", "All time"],
+    expect(rows.map(\.label), ["Today", "Last 7 days", "Last 30 days", "All time"],
            "the period rows are the four the menu bar cycles through, in its order")
     let download: [UInt64] = [1_000_000_000, 3_000_000_000, 6_000_000_000, 13_000_000_000]
     for (index, mode) in StatusMode.allCases.enumerated() where index < rows.count {
@@ -539,7 +543,7 @@ func checkHeadlinesAreOneSet() {
               "\(mode.label): worked out on its own, as the menu bar does, it is the same figure")
     }
     expect(headlines.figure(for: .allTime).since, london.parseLocal("2026-08-20T10:00"), "all time carries its start date")
-    check([StatusMode.today, .week, .month].allSatisfy { headlines.figure(for: $0).since == nil },
+    check([StatusMode.today, .last7, .last30].allSatisfy { headlines.figure(for: $0).since == nil },
           "and only all time carries one")
     let none = Aggregator(db: makeDatabase(), cal: london)
     let empty = Headlines.figure(for: .allTime, aggregator: none, now: now)
@@ -550,13 +554,11 @@ func checkHeadlinesAreOneSet() {
 // MARK: - The menu offers the four periods the menu bar cycles through
 
 func checkMenuOffersThePeriods() {
-    let offered = MenuModel.periods(current: .week, cal: london)
+    let offered = MenuModel.periods(current: .last7)
     expect(offered.map(\.mode), StatusMode.allCases, "the menu offers the periods in the order a right-click cycles them")
-    expect(offered.map(\.title), ["Today", "This week", "This month", "All time"], "each under the menu bar's own name for it")
+    expect(offered.map(\.title), ["Today", "Last 7 days", "Last 30 days", "All time"],
+           "each under the menu bar's own name for it, as Tokenmeter names them")
     expect(offered.map(\.chosen), [false, true, false, false], "and marks the one showing now, and only that")
-    let onACycle = MenuModel.periods(current: .month, cal: BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15))
-    expect(onACycle.map(\.title), ["Today", "This week", "This cycle", "All time"], "on a billing cycle the month is offered as the cycle")
-    expect(onACycle.filter(\.chosen).map(\.mode), [.month], "and is the one marked when it is showing")
 }
 
 // MARK: - The menu is four periods, one ticked, in download only
@@ -602,14 +604,14 @@ func checkMenuIsFourPeriodsInDownload() {
     let tooltips = MenuModel.information(snapshot, options: menuOptions()).compactMap { line -> String?? in
         if case let .period(_, _, _, _, toolTip) = line { return toolTip } else { return nil }
     }
-    expect(tooltips, [nil, "From Monday", "From 1 Sep", "Since 25 Sep 2026 · 4.5 days counted"],
-           "the dates the rows used to carry are their tooltips")
+    expect(tooltips, [nil, "From 23 Sep", "From 31 Aug", "Since 25 Sep 2026 · 4.5 days counted"],
+           "each row's tooltip says where it starts, counting today as one of the days")
     let cycle = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
     let onACycle = MenuModel.information(MenuSnapshot(aggregator: Aggregator(db: db, cal: cycle), now: now),
-                                         options: menuOptions(statusMode: .month))
+                                         options: menuOptions(statusMode: .last30))
     check(onACycle.contains { line in
-        if case .period(.month, "This cycle", _, true, "From 15 Sep") = line { return true } else { return false }
-    }, "on a billing cycle the month row is the cycle, from its first day")
+        if case .period(.last30, "Last 30 days", _, true, "From 31 Aug") = line { return true } else { return false }
+    }, "a billing cycle does not move the rolling 30 days")
 
     // Top Apps Today: download only, by download, under plain names.
     let apps = MenuModel.topApps(snapshot, options: menuOptions())
@@ -751,9 +753,9 @@ func checkMenuBarFigureIsARunningTotal() {
 
     // Emptying a table outright is the one change SQLite makes without
     // reporting a row, so `exec`, and `run` for a delete, end the kept sum
-    // themselves. This month keeps its start whatever the table holds, so
-    // only that can end its sum.
-    func month() -> Totals { Headlines.figure(for: .month, aggregator: aggregator, now: now).totals }
+    // themselves. The last 30 days keep their start whatever the table
+    // holds, so only that can end their sum.
+    func month() -> Totals { Headlines.figure(for: .last30, aggregator: aggregator, now: now).totals }
     addTraffic(db, at: "2026-12-05T10:00", 9_000, 900)
     expect(month(), Totals(bytesIn: 9_000, bytesOut: 900), "the month has traffic before the table is emptied")
     try? db.exec("DELETE FROM samples;")

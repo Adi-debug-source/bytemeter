@@ -5,8 +5,8 @@ import BytemeterCore
 ///
 /// The status item shows one total. Clicking opens the menu, the way every
 /// other menu bar item behaves; right-click, a two-finger click or
-/// Control-click cycles the total through today, this week, this month and
-/// all time. Live speed is a separate toggle that sits alongside the total
+/// Control-click cycles the total through today, the last 7 days, the last 30
+/// days and all time. Live speed is a separate toggle that sits alongside the total
 /// rather than replacing it.
 final class StatusItemController: NSObject, NSMenuDelegate {
 

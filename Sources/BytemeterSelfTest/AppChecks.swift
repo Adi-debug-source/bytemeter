@@ -274,7 +274,7 @@ private func checkStatusTooltipOnlyUnderThePointer() {
     let second = StatusTooltip.text(mode: .today, totals: Totals(bytesIn: 9_750_000_000, bytesOut: 291_000_000),
                                     since: nil, calendar: london)
     expect(first, "Bytemeter: Today. Down 9.75 GB, up 290 MB. Click for the menu. Right-click, two-finger click "
-                  + "or Control-click to cycle today, week, month and all time.",
+                  + "or Control-click to cycle today, the last 7 days, the last 30 days and all time.",
            "the tooltip gives both figures and how to use the item")
     let since = london.parseLocal("2026-09-01T08:00")!
     check(StatusTooltip.text(mode: .allTime, totals: Totals(bytesIn: gb), since: since, calendar: london)
@@ -283,12 +283,9 @@ private func checkStatusTooltipOnlyUnderThePointer() {
     check(!StatusTooltip.text(mode: .today, totals: Totals(bytesIn: gb), since: since, calendar: london).contains("since"),
           "and no other period does")
     let cycle = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
-    check(StatusTooltip.text(mode: .month, totals: Totals(bytesIn: gb), since: nil, calendar: cycle)
-            .hasPrefix("Bytemeter: This cycle. "),
-          "on a billing cycle the month figure is called a cycle, as the menu calls it")
-    check(StatusTooltip.text(mode: .month, totals: Totals(bytesIn: gb), since: nil, calendar: london)
-            .hasPrefix("Bytemeter: This month. "),
-          "and a month otherwise")
+    check(StatusTooltip.text(mode: .last30, totals: Totals(bytesIn: gb), since: nil, calendar: cycle)
+            .hasPrefix("Bytemeter: Last 30 days. "),
+          "a billing cycle does not rename the rolling 30 days, which are not the cycle")
 
     var tooltip = StatusTooltip()
     expect(tooltip.pointerArrived(), nil, "before the first figures there is nothing to show")

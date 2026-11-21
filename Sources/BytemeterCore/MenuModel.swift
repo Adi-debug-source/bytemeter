@@ -39,7 +39,9 @@ public struct MenuApp: Equatable {
 /// dashboard and the menu bar show.
 public struct MenuSnapshot {
     public let today: Totals
-    public let thisWeek: Totals
+    public let last7: Totals
+    public let last30: Totals
+    /// For the cap, which counts the month or billing cycle.
     public let thisMonth: Totals
     /// Worded once, in `Headlines`, for the menu and the dashboard alike.
     public let projection: ProjectionWording
@@ -58,7 +60,8 @@ public struct MenuSnapshot {
         let cal = aggregator.cal
         let headlines = Headlines(aggregator: aggregator, now: now)
         today = headlines.today
-        thisWeek = headlines.thisWeek
+        last7 = headlines.last7
+        last30 = headlines.last30
         thisMonth = headlines.thisMonth
         projection = headlines.projection
         allTime = headlines.allTime
@@ -104,13 +107,8 @@ public enum MenuModel {
     /// cycles through them, each as the menu offers it, with the one showing
     /// now marked. The menu's rows are this choice, so it can be seen, and
     /// made from the keyboard or with VoiceOver, which a right-click cannot be.
-    /// On a billing cycle the month is called the cycle.
-    public static func periods(current: StatusMode, cal: BytemeterCalendar)
-        -> [(mode: StatusMode, title: String, chosen: Bool)] {
-        StatusMode.allCases.map { mode in
-            let title = mode == .month ? cal.cycleName : mode.label
-            return (mode, title, mode == current)
-        }
+    public static func periods(current: StatusMode) -> [(mode: StatusMode, title: String, chosen: Bool)] {
+        StatusMode.allCases.map { ($0, $0.label, $0 == current) }
     }
 
     /// Everything above the submenu and the commands, in order.
@@ -133,19 +131,19 @@ public enum MenuModel {
             lines.append(.warning("Counting has started: the first figures appear within a minute.", toolTip: nil))
         }
 
-        for period in periods(current: options.statusMode, cal: data.cal) {
+        for period in periods(current: options.statusMode) {
             let totals: Totals
             let toolTip: String?
             switch period.mode {
             case .today:
                 totals = data.today
                 toolTip = nil
-            case .week:
-                totals = data.thisWeek
-                toolTip = "From Monday"
-            case .month:
-                totals = data.thisMonth
-                toolTip = "From " + data.cal.dayLabel(data.cal.startOfCycle(data.now))
+            case .last7:
+                totals = data.last7
+                toolTip = "From " + data.cal.dayLabel(data.cal.startOfDay(data.now, offsetBy: -6))
+            case .last30:
+                totals = data.last30
+                toolTip = "From " + data.cal.dayLabel(data.cal.startOfDay(data.now, offsetBy: -29))
             case .allTime:
                 totals = data.allTime.totals
                 toolTip = data.allTime.since.map { "Since \(data.cal.dateLabel($0)) · \(data.allTime.daysText) counted" }

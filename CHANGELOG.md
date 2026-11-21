@@ -2,15 +2,17 @@
 
 ## Unreleased
 
-A shorter menu. It held 33 lines and 35 figures; it now holds ten rows that say how much has been used, and the rest is one click deeper or on the dashboard. No figure changes: the CSV and the dashboard's figures are as before for the same database.
+A shorter menu. It held 33 lines and 35 figures; it now holds ten rows that say how much has been used, and the rest is one click deeper or on the dashboard. No figure changes: the CSV and the dashboard's figures are as before for the same database. The self-test runs 1,309 checks, up from 1,280.
 
-- The menu opens with Data used, then Today, This week, This month and All time, one figure each, the download, as the menu bar shows. The one in the menu bar carries a tick, and clicking another puts it there, which replaces the Menu bar shows submenu. The dates the rows used to carry, such as from Monday and since when all time counts, are in their tooltips.
+- The menu opens with Data used, then Today, Last 7 days, Last 30 days and All time, one figure each, the download, as the menu bar shows. These are Tokenmeter's four, so the two apps read alike; this week and this month stay on the dashboard. The one in the menu bar carries a tick, and clicking another puts it there, which replaces the Menu bar shows submenu. Each row's tooltip says where it starts.
+- The right-click on the menu bar figure steps through the same four. A saved this week or this month comes back as the last 7 or the last 30 days.
 - Under them, one line: where the month is heading, or, with a cap set, what is used of the cap and the days left, over a thin bar in the dashboard's teal.
 - Top Apps Today is a submenu, with today's top five apps by download, a bar for each and plain names for three background processes: Web content (WebKit), iCloud and Background downloads. Any other process keeps its own name. The submenu is left out while per-app sampling is off.
-- Upload, yesterday, the last 7 and 30 days, the four averages and the two peaks leave the menu. Upload, the last 7 and 30 days, the busiest hour today and all time's daily average are on the dashboard.
+- This week, this month, upload, yesterday, the four averages and the two peaks leave the menu. This week, this month, upload, the busiest hour today and all time's daily average are on the dashboard.
 - The live rate, while live speed is on, sits at the right of the menu's header. Its switch is in Preferences, and the right-click hint is in the menu bar item's tooltip, so both leave the menu.
 - The commands are in title case: Open Dashboard, Preferences…, Quit Bytemeter.
 - The rows are 13 points, the size of the commands below them, and every figure ends on one right edge. The four period rows are standard menu items, so Return, the tick and VoiceOver work as they do anywhere in macOS.
+- The README's menu picture, the hero and the social preview show the new menu and its four periods, from the synthetic month.
 
 ## 1.3.1, 20 November 2026
 

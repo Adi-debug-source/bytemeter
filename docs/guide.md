@@ -7,19 +7,19 @@ Everything the menu bar item, the menu, Preferences and the dashboard show, in f
 The menu bar item shows one total, with monospaced digits so its width does not jitter as the figure changes.
 
 - Left-click opens the menu.
-- The four period rows in the menu choose the total: Today, This week, This month (This cycle, on a billing cycle) or All time. The one showing carries a tick; click another, or reach it with the arrow keys or VoiceOver. Right-click, a two-finger click or a Control-click on the figure steps through the same four, as the item's tooltip says. The choice is kept across restarts.
+- The four period rows in the menu choose the total: Today, Last 7 days, Last 30 days or All time. The last 7 and 30 days count today as one of their days, from midnight, whatever the billing cycle. The one showing carries a tick; click another, or reach it with the arrow keys or VoiceOver. Right-click, a two-finger click or a Control-click on the figure steps through the same four, as the item's tooltip says. The choice is kept across restarts.
 - Live speed is a switch in Preferences. When it is on, the current download rate appears beside the total, never in its place, and at the right of the menu's header.
 
 The menu holds, from the top:
 
 - **Data used**, the header, with the live download rate at its right while live speed is on.
 - A **warning line**, only when something is wrong: if recording stops because the database cannot be written, for example on a full disk, it says so and since when. On a new install, until the first figures arrive, it says counting has started.
-- **Four period rows:** Today, This week, This month and All time, each with one figure, its download, as the menu bar shows. Hover over a row for where it starts: from Monday, from the 1st of the month (or the cycle's first day), and for all time its start date and day count, for example "Since 1 Jan 2026 · 90.0 days counted".
+- **Four period rows:** Today, Last 7 days, Last 30 days and All time, each with one figure, its download, as the menu bar shows. Hover over a row for where it starts, for example "From 23 Sep", and for all time its start date and day count, for example "Since 1 Jan 2026 · 90.0 days counted".
 - **One line about the month:** a month-end projection, download and upload combined as a provider counts them, for example "On track for 100.8 GB in total this month". It carries the month's rate so far on to its end. On the first day of a month it runs the last 24 hours on instead, and with under a day counted at all it says it is too early to project. When a cap is set, the cap takes its place: "97.1 of 150.0 GB, 2 days left" over a thin bar. Every other figure in the menu is download; the projection and the cap add the two together, and their tooltips say so.
 - **Top Apps Today**, a submenu: the five apps that used the most today, by download, each with a bar for its share and a plain name where the process has one ("Web content (WebKit)", "iCloud", "Background downloads"). It is a guide, not an exact split, and is left out while per-app sampling is off.
 - **Open Dashboard** (⌘D), **Preferences…** (⌘,) and **Quit Bytemeter** (⌘Q).
 
-Upload, yesterday, the last 7 and 30 days, the busiest hour and the per-app upload are on the dashboard.
+This week, this month, upload, yesterday, the busiest hour and the per-app upload are on the dashboard.
 
 ## Preferences
 

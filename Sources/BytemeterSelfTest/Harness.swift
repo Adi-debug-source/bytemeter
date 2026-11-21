@@ -198,8 +198,8 @@ extension Headlines {
     func figure(for mode: StatusMode) -> (totals: Totals, since: Date?) {
         switch mode {
         case .today: return (today, nil)
-        case .week: return (thisWeek, nil)
-        case .month: return (thisMonth, nil)
+        case .last7: return (last7, nil)
+        case .last30: return (last30, nil)
         case .allTime: return (allTime.totals, allTime.since)
         }
     }

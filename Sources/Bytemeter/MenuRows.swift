@@ -8,9 +8,9 @@ import AppKit
 /// view is drawn exactly as it is.
 ///
 /// The four period rows are standard items, because they are chosen, and
-/// AppKit sends a view item's action on neither Return nor a click (tested on
-/// macOS 27): as standard items Return, the tick, the highlight and VoiceOver
-/// are AppKit's own. Their figure sits at a right tab stop, and the views draw
+/// AppKit gives a view item no key events, so Return cannot choose one
+/// (tested on macOS 27): as standard items Return, the tick, the highlight and
+/// VoiceOver are AppKit's own. Their figure sits at a right tab stop, and the views draw
 /// to the same edge, so every figure lines up.
 ///
 /// Deliberately free of anything but AppKit, so the rows can be rendered on

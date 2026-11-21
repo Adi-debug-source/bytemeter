@@ -8,7 +8,7 @@ public enum StateKey {
     /// traffic that happened while it was not running.
     public static func rawCounter(_ iface: String) -> String { "raw:\(iface)" }
 
-    public static let statusMode = "status_mode"            // today, week, month or all_time
+    public static let statusMode = "status_mode"            // today, last_7_days, last_30_days or all_time; week and month up to 1.3.1
     public static let liveSpeed = "live_speed"              // the toggle the user flips
     public static let ssidCapture = "ssid_capture"          // off by default
     public static let perAppSampling = "per_app_sampling"   // on by default
