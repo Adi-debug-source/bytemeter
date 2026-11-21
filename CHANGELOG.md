@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0, 21 November 2026
 
 A shorter menu. It held 33 lines and 35 figures; it now holds ten rows that say how much has been used, and the rest is one click deeper or on the dashboard. No figure changes: the CSV and the dashboard's figures are as before for the same database. The self-test runs 1,309 checks, up from 1,280.
 
