@@ -329,14 +329,13 @@ func checkMenuSaysWhenRecordingStops() {
     let stopped = london.parseLocal("2026-10-08T14:05")!
     db.clock = { stopped }
     let start = Int64(london.parseLocal("2026-10-08T13:00")!.timeIntervalSince1970)
-    let options = MenuModel.Options(liveSpeed: true, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0,
-                                    perAppSampling: true)
+    let options = menuOptions(liveSpeed: true)
     func menu(_ database: Database) -> [MenuLine] {
         MenuModel.information(MenuSnapshot(aggregator: Aggregator(db: database, cal: london),
                                            now: london.parseLocal("2026-10-08T15:00")!), options: options)
     }
     func saysNotRecording(_ lines: [MenuLine]) -> Bool {
-        lines.contains { if case let .text(text, _) = $0 { return text.hasPrefix("Not recording") } else { return false } }
+        lines.contains { if case let .warning(text, _) = $0 { return text.hasPrefix("Not recording") } else { return false } }
     }
 
     check(writeSample(db, raw: 1_000, at: start, counterSource: nil)
@@ -350,20 +349,22 @@ func checkMenuSaysWhenRecordingStops() {
     expect(db.failingSince, stopped, "which keeps the time the run of failures began")
 
     let failing = menu(db)
-    expect(Array(failing.prefix(3)),
-           [.text("Not recording since 8 Oct 2026 at 14:05: the database cannot be written",
-                  toolTip: "Bytemeter tries again every 5 seconds. Traffic in the meantime is counted once a write "
-                      + "succeeds, unless the Mac restarts first. The reason is in "
-                      + "~/Library/Logs/Bytemeter/bytemeter.err."),
-            .separator, .header("Live")],
-           "the menu says first that recording has stopped, and since when, above everything else")
+    let header = MenuLine.header(MenuModel.title, trailing: "↓ 0 B/s")
+    expect(Array(failing.prefix(2)),
+           [header,
+            .warning("Not recording since 8 Oct 2026 at 14:05: the database cannot be written",
+                     toolTip: "Bytemeter tries again every 5 seconds. Traffic in the meantime is counted once a write "
+                         + "succeeds, unless the Mac restarts first. The reason is in "
+                         + "~/Library/Logs/Bytemeter/bytemeter.err.")],
+           "the menu says that recording has stopped, and since when, right under its header, above every figure")
 
     makeRoom(db)
     check(writeSample(db, raw: 53_000, at: start + 3_615, counterSource: nil), "with room again the next sample commits")
     check(db.failingSince == nil, "and the commit clears when recording stopped")
     let recovered = menu(db)
     check(!saysNotRecording(recovered), "so the line is gone")
-    expect(recovered.first, .header("Live"), "and the menu starts as it always does")
+    check(recovered.dropFirst().first.map { if case .period = $0 { return true } else { return false } } == true,
+          "and the figures follow the header, as they always do")
 
     // The demo's database is opened read only and writes nothing, so it can
     // never be failing to write.

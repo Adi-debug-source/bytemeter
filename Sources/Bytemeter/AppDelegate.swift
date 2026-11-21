@@ -54,11 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusController.onOpenDashboard = { [weak self] in self?.openDashboard() }
         statusController.onOpenPreferences = { [weak self] in self?.openPreferences() }
-        statusController.onLiveSpeedChanged = { [weak self] in self?.sampler.updateRateTimer() }
 
         sampler.onSample = { [weak self] in self?.statusController.refresh() }
-        sampler.onRate = { [weak self] down, up in
-            self?.statusController.updateRate(inBytes: down, outBytes: up)
+        sampler.onRate = { [weak self] down, _ in
+            self?.statusController.updateRate(inBytes: down)
         }
 
         registerSleepAndWake()
@@ -128,7 +127,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// A click opens the menu; right-click, a two-finger click or Control-click
     /// cycles the total. The menu opens once by itself on the first launch, so
-    /// its figures and that hint are seen without anyone having to find them.
+    /// its figures are seen without anyone having to find them, and the
+    /// item's tooltip says how to cycle the total.
     private func showFirstRunHintIfNeeded() {
         let database = db!
         dbQueue.async { [weak self] in

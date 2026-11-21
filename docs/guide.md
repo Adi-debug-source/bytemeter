@@ -7,32 +7,33 @@ Everything the menu bar item, the menu, Preferences and the dashboard show, in f
 The menu bar item shows one total, with monospaced digits so its width does not jitter as the figure changes.
 
 - Left-click opens the menu.
-- **Menu bar shows**, in the menu, chooses the total: Today, This week, This month (This cycle, on a billing cycle) or All time. Right-click, a two-finger click or a Control-click on the figure steps through the same four. The choice is kept across restarts.
-- Live speed is a separate switch in the menu. When it is on, the current rate appears beside the total; it never replaces it.
+- The four period rows in the menu choose the total: Today, This week, This month (This cycle, on a billing cycle) or All time. The one showing carries a tick; click another, or reach it with the arrow keys or VoiceOver. Right-click, a two-finger click or a Control-click on the figure steps through the same four, as the item's tooltip says. The choice is kept across restarts.
+- Live speed is a switch in Preferences. When it is on, the current download rate appears beside the total, never in its place, and at the right of the menu's header.
 
-The menu holds:
+The menu holds, from the top:
 
-- **Totals:** today, yesterday, this week (from Monday), the last 7 days, this month (from the 1st), the last 30 days, and all time since counting began. The four totals the menu bar can show are drawn at full contrast; the rest are grey. All time shows its start date and day count beneath it, for example "since 1 Jan 2026 · 90.0 days counted".
-- **Averages:** per hour today, per day this week, per day this month, and per day across all time.
-- A **month-end projection** (download and upload combined, as a provider counts them), the **peak hour** and the **peak day**, and the **cap** when one is set. Every other headline figure is download; the projection and the cap are the figures that add the two together, and the projection says so beside its figure. The projection carries the month's rate so far on to its end. On the first day of a month it runs the last 24 hours on instead, and with under a day counted at all it says it is too early to project.
-- **Top talkers** today, per app.
-- **Menu bar shows**, **Live speed in the menu bar**, **Open dashboard** (⌘D), **Preferences** (⌘,) and **Quit Bytemeter** (⌘Q).
+- **Data used**, the header, with the live download rate at its right while live speed is on.
+- A **warning line**, only when something is wrong: if recording stops because the database cannot be written, for example on a full disk, it says so and since when. On a new install, until the first figures arrive, it says counting has started.
+- **Four period rows:** Today, This week, This month and All time, each with one figure, its download, as the menu bar shows. Hover over a row for where it starts: from Monday, from the 1st of the month (or the cycle's first day), and for all time its start date and day count, for example "Since 1 Jan 2026 · 90.0 days counted".
+- **One line about the month:** a month-end projection, download and upload combined as a provider counts them, for example "On track for 100.8 GB in total this month". It carries the month's rate so far on to its end. On the first day of a month it runs the last 24 hours on instead, and with under a day counted at all it says it is too early to project. When a cap is set, the cap takes its place: "97.1 of 150.0 GB, 2 days left" over a thin bar. Every other figure in the menu is download; the projection and the cap add the two together, and their tooltips say so.
+- **Top Apps Today**, a submenu: the five apps that used the most today, by download, each with a bar for its share and a plain name where the process has one ("Web content (WebKit)", "iCloud", "Background downloads"). It is a guide, not an exact split, and is left out while per-app sampling is off.
+- **Open Dashboard** (⌘D), **Preferences…** (⌘,) and **Quit Bytemeter** (⌘Q).
 
-If recording stops because the database cannot be written, for example on a full disk, a line at the top of the menu says so and since when, and on a new install, until the first figures arrive, it says counting has started.
+Upload, yesterday, the last 7 and 30 days, the busiest hour and the per-app upload are on the dashboard.
 
 ## Preferences
 
 Preferences, from the menu, has five settings:
 
-1. **Live speed in the menu bar**, beside the total and never in its place. It can be switched from the menu too.
-2. **Per-app sampling with `nettop`**, on by default. While it is off, nothing new is recorded per app, the menu says so where Top talkers would be, and the dashboard's Top talkers says so too.
+1. **Live speed in the menu bar**, beside the total and never in its place.
+2. **Per-app sampling with `nettop`**, on by default. While it is off, nothing new is recorded per app, the menu leaves out Top Apps Today, and the dashboard's Top talkers says sampling is off.
 3. **The Wi-Fi network name**, off by default. It needs Location Services, for the reasons under [Privacy](../README.md#privacy). While it is on and macOS allows it, the dashboard splits traffic by network.
-4. **A monthly cap in GB**, off by default. The menu shows a bar with the percentage used, and the dashboard a Monthly cap panel, and both say what is left and how many days are to go, or how far over the cap the month is. It counts download and upload together, as a provider does, over the month or the billing cycle below. It is a figure to watch, and sends no alert.
-5. **The day the billing cycle starts**, from 1 to 28. 1, the default, means calendar months. On any other day, this month becomes this cycle in the menu and on the dashboard, including the averages, the projection, the peak day and Month by month.
+4. **A monthly cap in GB**, off by default. The menu shows what is used of the cap over a bar, with the days left or how far over it the month is, and the dashboard a Monthly cap panel with the percentage, what is left and how many days are to go. It counts download and upload together, as a provider does, over the month or the billing cycle below. It is a figure to watch, and sends no alert.
+5. **The day the billing cycle starts**, from 1 to 28. 1, the default, means calendar months. On any other day, this month becomes this cycle in the menu and on the dashboard, including the projection and Month by month.
 
 ## The dashboard
 
-Open dashboard writes one dark, self-contained HTML page and opens it. It is made again each time, with hand-rolled inline SVG and native SVG tooltips: zero JavaScript, zero network requests. A CSV export sits beside it as a real file.
+Open Dashboard writes one dark, self-contained HTML page and opens it. It is made again each time, with hand-rolled inline SVG and native SVG tooltips: zero JavaScript, zero network requests. A CSV export sits beside it as a real file.
 
 The top of the page gives today's download, compared with yesterday at the same time of day, beside this week, the last 7 days, this month, the last 30 days, the projection and all time, then a Monthly cap panel when a cap is set.
 

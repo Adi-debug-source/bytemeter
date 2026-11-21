@@ -17,7 +17,9 @@ public struct ProjectionWording: Equatable {
     /// "by the end of September", or "by the end of the cycle, 14 Oct" when a
     /// billing cycle starts on another day.
     public let deadline: String
-    /// The menu's line. The dashboard shows the same parts as a tile.
+    /// The menu's line: "On track for 100.8 GB in total this month", where
+    /// "in total" says it is download and upload together. The dashboard
+    /// shows the figure and the deadline as a tile.
     public let headline: String
     /// The tile's heading: "On track for", or "Projection" when it is too
     /// early, since "On track for" over "Too early" is not a sentence.
@@ -49,7 +51,7 @@ public struct ProjectionWording: Equatable {
         }
         if let projected {
             figure = Units.bytes(projected.total)
-            headline = "On track for \(figure) \(deadline)"
+            headline = "On track for \(figure) in total " + cal.cycleName.lowercased()
             title = "On track for"
             qualifier = deadline
             isTooEarly = false

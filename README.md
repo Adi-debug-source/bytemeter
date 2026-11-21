@@ -16,7 +16,7 @@ Totals in the menu bar, a dashboard with charts, a CSV export. Everything stays 
 </div>
 
 <p align="center">
-  <img src="docs/screenshots/hero.png" alt="The Bytemeter menu beside its dashboard: seven totals, the averages, a month-end projection and the apps that used the most today, then today's download as one large figure with a chart of the day by hour" width="100%">
+  <img src="docs/screenshots/hero.png" alt="The Bytemeter menu beside its dashboard: today, this week, this month and all time with today ticked, and where the month is heading, then today's download as one large figure with a chart of the day by hour" width="100%">
 </p>
 
 Bytemeter sits in the menu bar and shows how much data your Mac has used today, this week, this month or since it started counting. Click it for the detail, or open the dashboard. It is written in Swift, has no dependencies, and makes no network requests of any kind: a tool that measures data use should not spend data.
@@ -44,20 +44,20 @@ Both routes need macOS 13.5 or later and the Xcode Command Line Tools (`xcode-se
 
 ## What you get
 
-### A total in the menu bar, and a menu with the detail
+### A total in the menu bar, and a short menu
 
 <table>
 <tr>
 <td width="40%" valign="top">
-<img src="docs/screenshots/menu-totals.png" alt="The Bytemeter menu: totals, averages, the month-end projection, peak hour and day, and top talkers" width="100%">
+<img src="docs/screenshots/menu-totals.png" alt="The Bytemeter menu: Data used, then today, this week, this month and all time, each with its download and today ticked, the month-end projection, Top Apps Today, Open Dashboard, Preferences and Quit" width="100%">
 </td>
 <td valign="top">
 
-- **One figure, always in view.** Today, this week, this month or all time. Choose which from the menu, or right-click the figure to step through them. A live speed can sit beside it.
-- **Seven totals and four averages**, each with download and upload, all worked out from the same rows, so no two figures can disagree.
-- **Where the month is heading.** A projection for the month's end, download and upload combined as a provider counts them, with the busiest hour and day.
-- **A monthly cap.** Set your allowance in GB and the day your billing cycle starts, and the menu shows a bar with what is used, what is left and how many days are to go.
-- **Top talkers.** The apps that used the most today, sampled with `nettop`.
+- **One figure, always in view.** Today, this week, this month or all time. Click its row in the menu, or right-click the figure to step through them. A live speed can sit beside it.
+- **Four totals, read in a glance.** Each row has one figure, its download, worked out from the same rows as the dashboard, so no two figures can disagree. Upload, the averages and the rest are on the dashboard.
+- **Where the month is heading.** One line with a projection for the month's end, download and upload combined as a provider counts them.
+- **A monthly cap.** Set your allowance in GB and the day your billing cycle starts, and that line becomes what is used of the cap and how many days are left, over a bar.
+- **Top Apps Today.** The apps that downloaded the most today, under plain names, sampled with `nettop`, one click deeper.
 
 The digits are monospaced, so the menu bar item does not jitter as the figure changes.
 
