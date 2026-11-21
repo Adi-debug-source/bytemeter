@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.1, not yet released
+## 1.4.1, 21 November 2026
 
 A wording release. No figure changes, and the self-test runs the same 1,309 checks as 1.4.0.
 
