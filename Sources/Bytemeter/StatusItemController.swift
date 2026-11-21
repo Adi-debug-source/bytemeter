@@ -5,8 +5,8 @@ import BytemeterCore
 ///
 /// The status item shows one total. Clicking opens the menu, the way every
 /// other menu bar item behaves; right-click, a two-finger click or
-/// Control-click cycles the total through today, this week, this month and
-/// all time. Live speed is a separate toggle that sits alongside the total
+/// Control-click cycles the total through today, the last 7 days, the last 30
+/// days and all time. Live speed is a separate toggle that sits alongside the total
 /// rather than replacing it.
 final class StatusItemController: NSObject, NSMenuDelegate {
 
@@ -18,7 +18,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let clock: () -> Date
 
     private var rateIn: Double = 0
-    private var rateOut: Double = 0
     private var currentTotal = Totals()
     /// When all time began, for the tooltip only. The menu bar text never
     /// carries a date.
@@ -32,7 +31,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     var onOpenDashboard: (() -> Void)?
     var onOpenPreferences: (() -> Void)?
-    var onLiveSpeedChanged: (() -> Void)?
 
     /// `autosaveName` keeps a demo's item from sharing the real item's name,
     /// under which macOS remembers where the item sits in the menu bar.
@@ -50,7 +48,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             button.target = self
             button.action = #selector(statusItemClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.font = MenuRows.figureFont
+            button.font = MenuRows.statusItemFont
             // Tells the controller when the pointer comes onto the item and
             // leaves it, so the item carries a tooltip only in between.
             // `inVisibleRect` keeps the area the item's size as it changes.
@@ -92,9 +90,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if !pointerIsOnItem { apply(tooltip.pointerLeft()) }
     }
 
-    func updateRate(inBytes: Double, outBytes: Double) {
+    func updateRate(inBytes: Double) {
         rateIn = inBytes
-        rateOut = outBytes
         render()
     }
 
@@ -131,7 +128,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         // item is drawn again only when its words change.
         if drawn?.tip != tip { button.setAccessibilityHelp(tip) }
         if drawn?.text != text {
-            button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.figureFont])
+            button.attributedTitle = NSAttributedString(string: text, attributes: [.font: MenuRows.statusItemFont])
         }
         drawn = (text, tip)
     }
@@ -177,50 +174,42 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         readData { aggregator in snapshot = MenuSnapshot(aggregator: aggregator, now: now) }
         guard let data = snapshot else { return menu }
 
-        // Standard titles move right by a tick column whenever an item is
-        // ticked, and live speed is the only item that can be, so the rows
-        // follow it.
-        let inset = MenuRows.leadingInset(tickColumn: settings.liveSpeed)
-        let options = MenuModel.Options(liveSpeed: settings.liveSpeed, rateIn: rateIn, rateOut: rateOut,
+        let options = MenuModel.Options(statusMode: settings.statusMode, liveSpeed: settings.liveSpeed, rateIn: rateIn,
                                         capEnabled: settings.capEnabled,
                                         capBytes: UInt64(max(0, settings.capBytes)),
                                         perAppSampling: settings.perAppSampling)
         for line in MenuModel.information(data, options: options) {
-            menu.addItem(item(for: line, inset: inset))
+            menu.addItem(item(for: line))
         }
 
         menu.addItem(.separator())
-        // The same choice a right-click on the figure cycles through, where
-        // it can be seen and reached from the keyboard. Its ticks are in the
-        // submenu, so they add no tick column to this menu.
-        let period = NSMenuItem(title: MenuModel.periodsTitle, action: nil, keyEquivalent: "")
-        let periods = NSMenu()
-        for choice in MenuModel.periods(current: settings.statusMode,
-                                        cal: BytemeterCalendar(cycleStartDay: settings.cycleStartDay)) {
-            let item = NSMenuItem(title: choice.title, action: #selector(choosePeriod(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = choice.mode.rawValue
-            item.state = choice.chosen ? .on : .off
-            periods.addItem(item)
+        if let apps = MenuModel.topApps(data, options: options) {
+            let top = NSMenuItem(title: MenuModel.topAppsTitle, action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            submenu.autoenablesItems = false
+            submenu.addItem(MenuRows.header(MenuModel.topAppsHeader, trailing: nil, inset: MenuRows.plainInset))
+            if apps.isEmpty {
+                submenu.addItem(MenuRows.caption("Nothing recorded yet", inset: MenuRows.plainInset))
+            }
+            for app in apps {
+                submenu.addItem(MenuRows.app(app.name, down: app.down, share: app.share))
+            }
+            submenu.addItem(.separator())
+            submenu.addItem(MenuRows.caption(MenuModel.topAppsNote, inset: MenuRows.plainInset,
+                                             toolTip: MenuModel.topAppsNoteDetail))
+            top.submenu = submenu
+            menu.addItem(top)
         }
-        period.submenu = periods
-        menu.addItem(period)
 
-        let live = NSMenuItem(title: "Live speed in the menu bar", action: #selector(toggleLiveSpeed), keyEquivalent: "")
-        live.target = self
-        live.state = settings.liveSpeed ? .on : .off
-        menu.addItem(live)
-
-        let dashboard = NSMenuItem(title: "Open dashboard", action: #selector(openDashboard), keyEquivalent: "d")
+        let dashboard = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "d")
         dashboard.target = self
         menu.addItem(dashboard)
 
-        let preferences = NSMenuItem(title: "Preferences", action: #selector(openPreferences), keyEquivalent: ",")
+        let preferences = NSMenuItem(title: "Preferences…", action: #selector(openPreferences), keyEquivalent: ",")
         preferences.target = self
         menu.addItem(preferences)
 
         menu.addItem(.separator())
-        menu.addItem(MenuRows.text(MenuModel.hint, inset: inset, wraps: true))
         let quit = NSMenuItem(title: "Quit Bytemeter", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -230,33 +219,23 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     // MARK: - Menu helpers
 
-    /// One line of the menu as a row. Strong lines, the four totals the menu
-    /// bar cycles through, are full contrast; every other row is grey.
-    private func item(for line: MenuLine, inset: CGFloat) -> NSMenuItem {
+    private func item(for line: MenuLine) -> NSMenuItem {
         switch line {
-        case let .header(text):
-            return MenuRows.header(text, inset: inset)
-        case let .figure(label, down, up, strong):
-            return MenuRows.figure(label, down: down, up: up, tone: strong ? .strong : .quiet, inset: inset)
-        case let .text(text, toolTip):
-            // Most sentences fit on one line. One that does not, such as the
-            // line that says recording has stopped, wraps rather than losing
-            // its end.
-            return MenuRows.text(text, inset: inset, wraps: MenuRows.overflows(text), toolTip: toolTip)
-        case let .caption(text):
-            return MenuRows.caption(text, inset: inset)
+        case let .header(text, trailing):
+            return MenuRows.header(text, trailing: trailing)
+        case let .warning(text, toolTip):
+            return MenuRows.text(text, toolTip: toolTip)
+        case let .period(mode, label, down, chosen, toolTip):
+            return MenuRows.period(label, down: down, chosen: chosen, toolTip: toolTip,
+                                   action: #selector(choosePeriod(_:)), target: self, representedObject: mode.rawValue)
+        case let .insight(text, bar, toolTip):
+            return MenuRows.text(text, bar: bar, toolTip: toolTip)
         case .separator:
             return .separator()
         }
     }
 
     // MARK: - Actions
-
-    @objc private func toggleLiveSpeed() {
-        settings.liveSpeed.toggle()
-        onLiveSpeedChanged?()
-        render()
-    }
 
     @objc private func choosePeriod(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let mode = StatusMode(rawValue: raw) else { return }

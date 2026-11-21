@@ -51,7 +51,7 @@ final class PreferencesWindow: NSWindowController {
 
         liveSpeedBox = checkbox("Show live speed in the menu bar", settings.liveSpeed, #selector(toggleLiveSpeed))
         stack.addArrangedSubview(liveSpeedBox)
-        stack.addArrangedSubview(caption("Sits alongside the total rather than replacing it. Can be flipped from the menu too."))
+        stack.addArrangedSubview(caption("Sits alongside the total rather than replacing it."))
 
         perAppBox = checkbox("Sample per-app usage with nettop", settings.perAppSampling, #selector(togglePerApp))
         stack.addArrangedSubview(perAppBox)

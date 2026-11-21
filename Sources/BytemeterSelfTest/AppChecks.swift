@@ -45,25 +45,14 @@ private func checkPeaksAreDownloadOnly() {
     expect(aggregator.peakDownloadHourToday(now: now)?.hour, 10, "the dashboard's busiest hour is picked by download")
     expect(aggregator.peakDownloadDayThisCycle(now: now)?.label, "26 Sep", "the peak day is picked by download")
 
-    let snapshot = MenuSnapshot(aggregator: aggregator, now: now)
-    expect(snapshot.peakHourText, "Peak hour today: 10:00, ↓ " + Units.bytes(900_000_000),
-           "the menu's peak hour is the download figure, marked ↓")
-    expect(snapshot.peakDayText, "Peak day this month: 26 Sep, ↓ " + Units.bytes(5_000_000_000),
-           "the menu's peak day is the download figure, marked ↓")
-    let peakDay = aggregator.peakDownloadDayThisCycle(now: now)?.totals.bytesIn ?? .max
-    check(peakDay <= snapshot.thisMonth.bytesIn, "the peak day can never read larger than this month above it")
-
-    let empty = MenuSnapshot(aggregator: Aggregator(db: makeDatabase(), cal: london), now: now)
-    expect(empty.peakHourText, "Peak hour today: nothing yet", "no traffic, no peak hour")
-    expect(empty.peakDayText, "Peak day this month: nothing yet", "no traffic, no peak day")
-    let cycle = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
-    let cycleSnapshot = MenuSnapshot(aggregator: Aggregator(db: db, cal: cycle), now: now)
-    expect(cycleSnapshot.peakDayText, "Peak day this cycle: 26 Sep, ↓ " + Units.bytes(5_000_000_000),
-           "a billing cycle is called a cycle")
-    let cycleLines = MenuModel.information(cycleSnapshot, options: MenuModel.Options(
-        liveSpeed: false, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0, perAppSampling: false))
-    check(cycleLines.contains { if case .figure("Per day this cycle", _, _, false) = $0 { return true } else { return false } },
-          "and so is its daily average")
+    // The menu no longer shows the peaks; the dashboard's busiest hour is
+    // picked by the same rule, and the peak day still reads from Headlines.
+    let headlines = Headlines(aggregator: aggregator, now: now)
+    expect(headlines.peakDay?.label, "26 Sep", "the headlines' peak day is picked by download")
+    check((headlines.peakDay?.totals.bytesIn ?? .max) <= headlines.thisMonth.bytesIn,
+          "the peak day can never read larger than this month")
+    let empty = Headlines(aggregator: Aggregator(db: makeDatabase(), cal: london), now: now)
+    check(empty.peakHour == nil && empty.peakDay == nil, "no traffic, no peaks")
 }
 
 // MARK: - The projection says what it adds up, and when the month ends
@@ -77,35 +66,35 @@ private func checkProjectionWording() {
     let late = wording("2026-09-29T21:30")
     expect(late.deadline, "by the end of September", "seen on 29 September, it is the end of September, not 1 Oct")
     expect(late.figure, Units.bytes(100_800_000_000), "the projection is download and upload together")
-    expect(late.headline, "On track for \(Units.bytes(100_800_000_000)) by the end of September", "the menu's line")
+    expect(late.headline, "On track for \(Units.bytes(100_800_000_000)) in total this month",
+           "the menu's line says it is the total, and names the month as the menu's row does")
     expect([late.title, late.qualifier], ["On track for", "by the end of September"], "and the tile's heading and qualifier")
     expect(wording("2026-10-01T00:00").deadline, "by the end of October", "the first minute of a month")
     expect(wording("2027-02-10T12:00").deadline, "by the end of February", "a short month")
     expect(wording("2026-12-31T23:59").deadline, "by the end of December", "the last minute of a year")
     expect(wording("2026-09-29T21:30", cycleStartDay: 15).deadline, "by the end of the cycle, 14 Oct",
            "a billing cycle names its own last day")
+    check(wording("2026-09-29T21:30", cycleStartDay: 15).headline.hasSuffix(" in total this cycle"),
+          "and the menu's line calls it the cycle, as its row does")
     expect(wording("2026-10-15T00:00", cycleStartDay: 15).deadline, "by the end of the cycle, 14 Nov",
            "and moves on when the next cycle starts")
     check(ProjectionWording.basis.contains("down and up"), "the basis says download and upload are added together")
 
-    // The menu prints the same two parts the dashboard tile does, the basis
-    // directly under the line it explains.
+    // The menu's one insight line, under the four periods, is the
+    // projection, with its basis as the tooltip, since the line itself only
+    // says "in total".
     let now = london.parseLocal("2026-09-29T21:30")!
     let db = makeDatabase()
     db.addBuckets([BucketDelta(minute: londonMinute("2026-09-10T09:00"),
                                iface: "en0", bytesIn: 40_000_000_000, bytesOut: 5_000_000_000)],
                   ssid: ssidPlaceholder, idle: false)
     let snapshot = MenuSnapshot(aggregator: Aggregator(db: db, cal: london), now: now)
-    let lines = MenuModel.information(snapshot, options: MenuModel.Options(
-        liveSpeed: false, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0, perAppSampling: true))
+    let lines = MenuModel.information(snapshot, options: menuOptions())
     let expected = Aggregator(db: db, cal: london).projection(now: now)
     expect(snapshot.projection.figure, Units.bytes(expected?.total ?? 0), "the menu projects the combined total")
-    if let index = lines.firstIndex(of: .text(snapshot.projection.headline)), index > 0, index + 1 < lines.count {
-        expect(lines[index - 1], .header("Looking ahead"), "the projection opens Looking ahead")
-        expect(lines[index + 1], .caption(ProjectionWording.basis), "with its basis right under it")
-    } else {
-        check(false, "the menu shows the projection's headline")
-    }
+    expect(Array(lines.suffix(2)),
+           [.separator, .insight(snapshot.projection.headline, bar: nil, toolTip: ProjectionWording.basis)],
+           "the projection is the last line, after a separator, with its basis as its tooltip")
 }
 
 // MARK: - CSV cells cannot run as formulas
@@ -285,7 +274,7 @@ private func checkStatusTooltipOnlyUnderThePointer() {
     let second = StatusTooltip.text(mode: .today, totals: Totals(bytesIn: 9_750_000_000, bytesOut: 291_000_000),
                                     since: nil, calendar: london)
     expect(first, "Bytemeter: Today. Down 9.75 GB, up 290 MB. Click for the menu. Right-click, two-finger click "
-                  + "or Control-click to cycle today, week, month and all time.",
+                  + "or Control-click to cycle today, the last 7 days, the last 30 days and all time.",
            "the tooltip gives both figures and how to use the item")
     let since = london.parseLocal("2026-09-01T08:00")!
     check(StatusTooltip.text(mode: .allTime, totals: Totals(bytesIn: gb), since: since, calendar: london)
@@ -294,12 +283,9 @@ private func checkStatusTooltipOnlyUnderThePointer() {
     check(!StatusTooltip.text(mode: .today, totals: Totals(bytesIn: gb), since: since, calendar: london).contains("since"),
           "and no other period does")
     let cycle = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
-    check(StatusTooltip.text(mode: .month, totals: Totals(bytesIn: gb), since: nil, calendar: cycle)
-            .hasPrefix("Bytemeter: This cycle. "),
-          "on a billing cycle the month figure is called a cycle, as the menu calls it")
-    check(StatusTooltip.text(mode: .month, totals: Totals(bytesIn: gb), since: nil, calendar: london)
-            .hasPrefix("Bytemeter: This month. "),
-          "and a month otherwise")
+    check(StatusTooltip.text(mode: .last30, totals: Totals(bytesIn: gb), since: nil, calendar: cycle)
+            .hasPrefix("Bytemeter: Last 30 days. "),
+          "a billing cycle does not rename the rolling 30 days, which are not the cycle")
 
     var tooltip = StatusTooltip()
     expect(tooltip.pointerArrived(), nil, "before the first figures there is nothing to show")

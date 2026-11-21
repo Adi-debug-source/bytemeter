@@ -58,6 +58,14 @@ func addTraffic(_ db: Database, at local: String, _ bytesIn: UInt64, _ bytesOut:
                   ssid: ssidPlaceholder, idle: false)
 }
 
+/// The menu's settings as a fresh install has them, with today in the menu
+/// bar, unless a check says otherwise.
+func menuOptions(statusMode: StatusMode = .today, liveSpeed: Bool = false, rateIn: Double = 0,
+                 capEnabled: Bool = false, capBytes: UInt64 = 0, perAppSampling: Bool = true) -> MenuModel.Options {
+    MenuModel.Options(statusMode: statusMode, liveSpeed: liveSpeed, rateIn: rateIn,
+                      capEnabled: capEnabled, capBytes: capBytes, perAppSampling: perAppSampling)
+}
+
 // MARK: - Raw SQL, and rows read back
 
 /// Run raw SQL against a file, as the first release would have, without going
@@ -190,8 +198,8 @@ extension Headlines {
     func figure(for mode: StatusMode) -> (totals: Totals, since: Date?) {
         switch mode {
         case .today: return (today, nil)
-        case .week: return (thisWeek, nil)
-        case .month: return (thisMonth, nil)
+        case .last7: return (last7, nil)
+        case .last30: return (last30, nil)
         case .allTime: return (allTime.totals, allTime.since)
         }
     }

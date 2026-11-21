@@ -28,16 +28,14 @@ public struct StatusTooltip {
     /// date that the menu bar text deliberately leaves out.
     public static func text(mode: StatusMode, totals: Totals, since: Date?,
                             calendar: BytemeterCalendar = BytemeterCalendar()) -> String {
-        // The month figure is the billing cycle's when one is set, so it is
-        // called a cycle, as the menu calls it.
-        var label = mode == .month ? calendar.cycleName : mode.label
+        var label = mode.label
         if mode == .allTime, let since {
             label += ", since " + calendar.dateLabel(since)
         }
         return "Bytemeter: \(label). "
             + "Down \(Units.bytes(totals.bytesIn)), up \(Units.bytes(totals.bytesOut)). "
             + "Click for the menu. Right-click, two-finger click or Control-click to cycle "
-            + "today, week, month and all time."
+            + "today, the last 7 days, the last 30 days and all time."
     }
 
     /// Offers the latest text, each time the figures are drawn. Returns the

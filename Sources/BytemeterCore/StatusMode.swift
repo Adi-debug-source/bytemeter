@@ -6,10 +6,12 @@ import Foundation
 ///
 /// It lives in the shared engine rather than the macOS app because an iOS
 /// sibling wants the same four, in the same order and with the same labels.
+/// They are Tokenmeter's four, so the two apps' menu bars read alike: the
+/// calendar week and month are on the dashboard.
 public enum StatusMode: String, CaseIterable {
     case today
-    case week
-    case month
+    case last7 = "last_7_days"
+    case last30 = "last_30_days"
     case allTime = "all_time"
 
     /// Short on purpose: this is the menu bar's text. The start date and the
@@ -17,8 +19,8 @@ public enum StatusMode: String, CaseIterable {
     public var label: String {
         switch self {
         case .today: return "Today"
-        case .week: return "This week"
-        case .month: return "This month"
+        case .last7: return "Last 7 days"
+        case .last30: return "Last 30 days"
         case .allTime: return "All time"
         }
     }
@@ -29,10 +31,16 @@ public enum StatusMode: String, CaseIterable {
         return all[(index + 1) % all.count]
     }
 
-    /// The mode saved in settings. Anything missing or unrecognised, such as
-    /// a value written by a later version, comes back as today rather than
-    /// failing.
+    /// The mode saved in settings. Up to 1.3.1 the four were today, the
+    /// calendar week and month, and all time, so a saved week or month comes
+    /// back as the rolling period nearest it. Anything missing or
+    /// unrecognised, such as a value written by a later version, comes back
+    /// as today rather than failing.
     public init(saved raw: String?) {
-        self = raw.flatMap(StatusMode.init(rawValue:)) ?? .today
+        switch raw {
+        case "week": self = .last7
+        case "month": self = .last30
+        default: self = raw.flatMap(StatusMode.init(rawValue:)) ?? .today
+        }
     }
 }

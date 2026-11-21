@@ -4,8 +4,9 @@ import BytemeterCore
 // Checks for the figures the menu and the dashboard show: the units, top
 // talkers, the menu bar modes, averages, the projection, the heatmap, the
 // seven-day average, the comparison with yesterday, month by month, all
-// time, the figures as of a moment, the headline set, the cap, and the
-// menu's line while counting has only just started.
+// time, the figures as of a moment, the headline set, the menu's four
+// periods and its app names, the cap, and the menu's line while counting has
+// only just started.
 
 // MARK: - Units are decimal
 
@@ -54,12 +55,16 @@ func checkTopTalkersRankByTotal() {
 // MARK: - Menu bar mode cycling
 
 func checkStatusModesCycle() {
-    expect(StatusMode.today.next, StatusMode.week, "clicking today gives this week")
-    expect(StatusMode.week.next, StatusMode.month, "clicking this week gives this month")
-    expect(StatusMode.month.next, StatusMode.allTime, "clicking this month gives all time")
+    expect(StatusMode.today.next, StatusMode.last7, "clicking today gives the last 7 days")
+    expect(StatusMode.last7.next, StatusMode.last30, "clicking the last 7 days gives the last 30 days")
+    expect(StatusMode.last30.next, StatusMode.allTime, "clicking the last 30 days gives all time")
     expect(StatusMode.allTime.next, StatusMode.today, "clicking all time comes back to today")
     expect(StatusMode.allCases.count, 4, "four positions in the cycle")
-    expect(StatusMode(rawValue: "month"), StatusMode.month, "the saved mode round trips")
+    expect(StatusMode(saved: StatusMode.last30.rawValue), StatusMode.last30, "the saved mode round trips")
+    // Up to 1.3.1 the cycle held this week and this month. A saved one must
+    // not fall back to today on upgrade, but to the rolling period nearest it.
+    expect(StatusMode(saved: "week"), StatusMode.last7, "a saved this week comes back as the last 7 days")
+    expect(StatusMode(saved: "month"), StatusMode.last30, "a saved this month comes back as the last 30 days")
     expect(StatusMode(saved: StatusMode.allTime.rawValue), StatusMode.allTime, "all time round trips through settings")
     expect(StatusMode(saved: "fortnight"), StatusMode.today, "an unknown saved mode falls back to today")
     expect(StatusMode(saved: nil), StatusMode.today, "no saved mode means today")
@@ -185,11 +190,8 @@ func checkAveragesCountFromWhenCountingBegan() {
     near(day.averagePerHourToday(now: dayNow).bytesIn, 60 * Double(megabyte),
          "per hour today counts the hours since counting began, not since midnight")
 
-    // The menu and the dashboard read the same figures.
+    // The menu and the dashboard word the same projection.
     let snapshot = MenuSnapshot(aggregator: month, now: monthNow)
-    expect(snapshot.perDayMonth, month.averagePerDay(london.thisCycle(monthNow), now: monthNow), "the menu's per day this month")
-    expect(snapshot.perDayWeek, month.averagePerDay(london.thisWeek(monthNow), now: monthNow), "the menu's per day this week")
-    expect(snapshot.perHourToday, month.averagePerHourToday(now: monthNow), "the menu's per hour today")
     expect(snapshot.projection, ProjectionWording(projected: month.projection(now: monthNow), now: monthNow, cal: london),
            "the menu's projection is worded from the same figure the dashboard uses")
 }
@@ -255,13 +257,9 @@ func checkProjectionOnACyclesFirstDay() {
     check(!ProjectionWording(projected: Totals(bytesIn: 1), now: freshNow, cal: london).isTooEarly,
           "a figure, however small, is not too early")
     let lines = MenuModel.information(MenuSnapshot(aggregator: Aggregator(db: fresh, cal: london), now: freshNow),
-                                      options: MenuModel.Options(liveSpeed: false, rateIn: 0, rateOut: 0,
-                                                                 capEnabled: false, capBytes: 0, perAppSampling: true))
-    if let index = lines.firstIndex(of: .text("Too early to project October")), index + 1 < lines.count {
-        expect(lines[index + 1], .caption(ProjectionWording.tooEarlyBasis), "the menu says why, under the line")
-    } else {
-        check(false, "the menu says it is too early to project")
-    }
+                                      options: menuOptions())
+    expect(lines.last, .insight("Too early to project October", bar: nil, toolTip: ProjectionWording.tooEarlyBasis),
+           "the menu says it is too early to project, and its tooltip says why")
 
     let nothing = Aggregator(db: makeDatabase(), cal: london).projection(now: freshNow)
     check(nothing == nil, "with nothing counted at all, it is too early")
@@ -490,69 +488,62 @@ func checkAsOfAMomentMatchesThatMoment() {
     check(splitA.idle == splitB.idle && splitA.active == splitB.active, "idle against active matches")
 
     // The menu, line by line, as the demo would build it and as the app would have at that moment.
-    let options = MenuModel.Options(liveSpeed: false, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0,
-                                    perAppSampling: true)
+    let options = menuOptions()
     let menuLater = MenuModel.information(MenuSnapshot(aggregator: a, now: asOf), options: options)
     let menuThen = MenuModel.information(MenuSnapshot(aggregator: b, now: asOf), options: options)
     expect(menuLater, menuThen, "as of a moment, every menu line matches that moment")
+    expect(MenuModel.topApps(MenuSnapshot(aggregator: a, now: asOf), options: options),
+           MenuModel.topApps(MenuSnapshot(aggregator: b, now: asOf), options: options),
+           "and so does every app in Top Apps Today")
 
-    // The rule for the rows: the four totals in the click cycle are full
-    // contrast, and nothing else is.
-    let strong = menuLater.compactMap { line -> String? in
-        if case let .figure(label, _, _, true) = line { return label } else { return nil }
-    }
-    expect(strong, ["Today", "This week, from Monday", "This month, from 1 Oct", "All time"],
-           "exactly the four cycle rows are full contrast, in order")
+    // All time's start and day count moved from a caption to its tooltip.
     // 8,300 steps of 7 minutes before the moment: 40.35 days, from 23 Aug.
-    check(menuLater.contains(.caption("since 23 Aug 2026 · 40.3 days counted")),
-          "all time carries its start date and day count, got: \(menuLater.compactMap { if case let .caption(t) = $0 { return t } else { return nil } })")
-    check(menuLater.contains { if case .figure("Per day, all time", _, _, false) = $0 { return true } else { return false } },
-          "the all time average is a grey row in Averages")
-    expect(MenuModel.hint, "Right-click, two-finger click or Control-click the figure to cycle today, week, month and all time.",
-           "the hint names the new clicks and all four modes")
+    let allTime = menuLater.compactMap { line -> String? in
+        if case let .period(.allTime, _, _, _, toolTip) = line { return toolTip } else { return nil }
+    }
+    expect(allTime, ["Since 23 Aug 2026 · 40.3 days counted"], "all time's tooltip carries its start date and day count")
     let live = MenuModel.information(MenuSnapshot(aggregator: a, now: asOf),
-                                     options: MenuModel.Options(liveSpeed: true, rateIn: 2_100_000, rateOut: 0,
-                                                                capEnabled: true, capBytes: 100_000_000_000,
-                                                                perAppSampling: false))
-    expect(Array(live.prefix(2)), [.header("Live"), .figure(label: "Now", down: "2.1 MB/s", up: "0 B/s", strong: false)],
-           "live speed adds a grey Now row at the top")
-    check(live.contains(.header("Cap")) && live.contains(.text("Per-app sampling is off")),
-          "the cap row and the per-app note follow the settings")
+                                     options: menuOptions(liveSpeed: true, rateIn: 2_100_000,
+                                                          capEnabled: true, capBytes: 100_000_000_000,
+                                                          perAppSampling: false))
+    expect(live.first, .header(MenuModel.title, trailing: "↓ 2.1 MB/s"),
+           "live speed puts the download rate at the right of the header, not in a row of its own")
+    check(live.last.map { if case .insight(_, .some, _) = $0 { return true } else { return false } } == true,
+          "with a cap set, the cap's line, with its bar, is the insight")
 }
 
 // MARK: - One set of headline figures, and the menu bar's figure is one of them
 
 func checkHeadlinesAreOneSet() {
-    // Traffic on four days, so today, this week, this month and all time all
-    // differ, and a row after the moment that none of them may count.
+    // Traffic on four days, so today, the last 7 days, the last 30 days and
+    // all time all differ, and a row after the moment that none of them may count.
     let db = makeDatabase()
     addTraffic(db, at: "2026-08-20T10:00", 7_000_000_000, 700_000_000)
-    addTraffic(db, at: "2026-10-02T09:00", 3_000_000_000, 300_000_000)    // a Friday: this month, not this week
+    addTraffic(db, at: "2026-09-25T09:00", 3_000_000_000, 300_000_000)    // the last 30 days, not the last 7
     addTraffic(db, at: "2026-10-06T14:00", 2_000_000_000, 200_000_000)
     addTraffic(db, at: "2026-10-08T08:30", 1_000_000_000, 100_000_000)
     addTraffic(db, at: "2026-10-08T15:00", 9_000_000_000, 900_000_000)    // after the moment
     let now = london.parseLocal("2026-10-08T12:00")!
     let aggregator = Aggregator(db: db, cal: london)
     let headlines = Headlines(aggregator: aggregator, now: now)
-    let lines = MenuModel.information(MenuSnapshot(aggregator: aggregator, now: now), options: MenuModel.Options(
-        liveSpeed: false, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0, perAppSampling: true))
-    let strong = lines.compactMap { line -> (label: String, down: String, up: String)? in
-        if case let .figure(label, down, up, true) = line { return (label, down, up) } else { return nil }
+    let lines = MenuModel.information(MenuSnapshot(aggregator: aggregator, now: now), options: menuOptions())
+    let rows = lines.compactMap { line -> (label: String, down: String)? in
+        if case let .period(_, label, down, _, _) = line { return (label, down) } else { return nil }
     }
-    expect(strong.map(\.label), ["Today", "This week, from Monday", "This month, from 1 Oct", "All time"],
-           "the strong rows are the four the menu bar cycles through, in its order")
+    expect(rows.map(\.label), ["Today", "Last 7 days", "Last 30 days", "All time"],
+           "the period rows are the four the menu bar cycles through, in its order")
     let download: [UInt64] = [1_000_000_000, 3_000_000_000, 6_000_000_000, 13_000_000_000]
-    for (index, mode) in StatusMode.allCases.enumerated() where index < strong.count {
+    for (index, mode) in StatusMode.allCases.enumerated() where index < rows.count {
         let figure = headlines.figure(for: mode)
         expect(figure.totals.bytesIn, download[index], "\(mode.label): the figure is that period's download")
-        expect([Units.bytes(figure.totals.bytesIn), Units.bytes(figure.totals.bytesOut)], [strong[index].down, strong[index].up],
-               "\(mode.label): the menu bar's figure is the strong row \(strong[index].label)")
+        expect(Units.bytes(figure.totals.bytesIn), rows[index].down,
+               "\(mode.label): the menu bar's figure is the row \(rows[index].label)")
         let alone = Headlines.figure(for: mode, aggregator: aggregator, now: now)
         check(alone.totals == figure.totals && alone.since == figure.since,
               "\(mode.label): worked out on its own, as the menu bar does, it is the same figure")
     }
     expect(headlines.figure(for: .allTime).since, london.parseLocal("2026-08-20T10:00"), "all time carries its start date")
-    check([StatusMode.today, .week, .month].allSatisfy { headlines.figure(for: $0).since == nil },
+    check([StatusMode.today, .last7, .last30].allSatisfy { headlines.figure(for: $0).since == nil },
           "and only all time carries one")
     let none = Aggregator(db: makeDatabase(), cal: london)
     let empty = Headlines.figure(for: .allTime, aggregator: none, now: now)
@@ -563,13 +554,91 @@ func checkHeadlinesAreOneSet() {
 // MARK: - The menu offers the four periods the menu bar cycles through
 
 func checkMenuOffersThePeriods() {
-    let offered = MenuModel.periods(current: .week, cal: london)
+    let offered = MenuModel.periods(current: .last7)
     expect(offered.map(\.mode), StatusMode.allCases, "the menu offers the periods in the order a right-click cycles them")
-    expect(offered.map(\.title), ["Today", "This week", "This month", "All time"], "each under the menu bar's own name for it")
+    expect(offered.map(\.title), ["Today", "Last 7 days", "Last 30 days", "All time"],
+           "each under the menu bar's own name for it, as Tokenmeter names them")
     expect(offered.map(\.chosen), [false, true, false, false], "and marks the one showing now, and only that")
-    let onACycle = MenuModel.periods(current: .month, cal: BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15))
-    expect(onACycle.map(\.title), ["Today", "This week", "This cycle", "All time"], "on a billing cycle the month is offered as the cycle")
-    expect(onACycle.filter(\.chosen).map(\.mode), [.month], "and is the one marked when it is showing")
+}
+
+// MARK: - The menu is four periods, one ticked, in download only
+
+func checkMenuIsFourPeriodsInDownload() {
+    // Upload differs from download everywhere, so an upload figure that crept
+    // back into the menu would show up as a figure it does not expect.
+    let db = makeDatabase()
+    addTraffic(db, at: "2026-09-25T10:00", 4_000_000_000, 900_000_000)
+    addTraffic(db, at: "2026-09-29T10:00", 3_000_000_000, 700_000_000)
+    db.addProcBuckets(minute: londonMinute("2026-09-29T10:00"), deltas: [
+        "com.apple.WebKi": (bytesIn: 1_800_000_000, bytesOut: 50_000_000),
+        "Backup": (bytesIn: 10_000_000, bytesOut: 2_500_000_000),
+        "cloudd": (bytesIn: 300_000_000, bytesOut: 3_000_000)])
+    let now = london.parseLocal("2026-09-29T21:30")!
+    let headlines = Headlines(aggregator: Aggregator(db: db, cal: london), now: now)
+    let snapshot = MenuSnapshot(aggregator: Aggregator(db: db, cal: london), now: now)
+
+    for mode in StatusMode.allCases {
+        let lines = MenuModel.information(snapshot, options: menuOptions(statusMode: mode, liveSpeed: true, rateIn: 2_100_000))
+        let periods = lines.compactMap { line -> (mode: StatusMode, down: String, chosen: Bool)? in
+            if case let .period(mode, _, down, chosen, _) = line { return (mode, down, chosen) } else { return nil }
+        }
+        expect(periods.map(\.mode), StatusMode.allCases, "with \(mode.label) showing, exactly the four periods, in cycle order")
+        expect(periods.filter(\.chosen).map(\.mode), [mode], "and only \(mode.label), the one in the menu bar, is ticked")
+        expect(periods.map(\.down), StatusMode.allCases.map { Units.bytes(headlines.figure(for: $0).totals.bytesIn) },
+               "each period's one figure is its download")
+        let words = lines.map { line -> String in
+            switch line {
+            case let .header(text, trailing): return text + (trailing ?? "")
+            case let .warning(text, toolTip): return text + (toolTip ?? "")
+            case let .period(_, label, down, _, toolTip): return label + down + (toolTip ?? "")
+            case let .insight(text, _, _): return text
+            case .separator: return ""
+            }
+        }.joined()
+        check(!words.contains("↑") && !words.contains("700 MB") && !words.contains("1.60 GB"),
+              "no upload figure or upload arrow anywhere in the main menu, got: \(words)")
+        check(!lines.contains { if case .warning = $0 { return true } else { return false } },
+              "on a normal day there is no warning row")
+    }
+
+    let tooltips = MenuModel.information(snapshot, options: menuOptions()).compactMap { line -> String?? in
+        if case let .period(_, _, _, _, toolTip) = line { return toolTip } else { return nil }
+    }
+    expect(tooltips, [nil, "From 23 Sep", "From 31 Aug", "Since 25 Sep 2026 · 4.5 days counted"],
+           "each row's tooltip says where it starts, counting today as one of the days")
+    let cycle = BytemeterCalendar(timeZone: london.calendar.timeZone, cycleStartDay: 15)
+    let onACycle = MenuModel.information(MenuSnapshot(aggregator: Aggregator(db: db, cal: cycle), now: now),
+                                         options: menuOptions(statusMode: .last30))
+    check(onACycle.contains { line in
+        if case .period(.last30, "Last 30 days", _, true, "From 31 Aug") = line { return true } else { return false }
+    }, "a billing cycle does not move the rolling 30 days")
+
+    // Top Apps Today: download only, by download, under plain names.
+    let apps = MenuModel.topApps(snapshot, options: menuOptions())
+    expect(apps?.map(\.name), ["Web content (WebKit)", "iCloud", "Backup"],
+           "the apps are listed by download, which the menu shows, not by download and upload together")
+    expect(apps?.map(\.down), [Units.bytes(1_800_000_000), Units.bytes(300_000_000), Units.bytes(10_000_000)],
+           "each with its download only")
+    expect(apps?.first?.share, 1, "the first app's bar is full")
+    check(apps.map { $0.allSatisfy { $0.share > 0 && $0.share <= 1 } } == true, "and every other is a share of it")
+    check(MenuModel.topApps(snapshot, options: menuOptions(perAppSampling: false)) == nil,
+          "with per-app sampling off, the submenu is left out, not shown empty")
+}
+
+// MARK: - Plain names for background processes, and only true ones
+
+func checkProcessNames() {
+    // The WebKit process loads pages for Mail and other apps too, so calling
+    // it Safari would be untrue; a process not in the list must not be renamed.
+    expect(ProcessNames.plainNames, ["com.apple.WebKi": "Web content (WebKit)", "cloudd": "iCloud",
+                                     "nsurlsessiond": "Background downloads"],
+           "the list holds exactly the names agreed")
+    for (process, name) in ProcessNames.plainNames {
+        expect(ProcessNames.plain(process), name, "\(process) shows as \(name)")
+    }
+    for process in ["Safari", "mDNSResponder", "com.apple.WebKit", "Cloudd", ""] {
+        expect(ProcessNames.plain(process), process, "\(process.debugDescription) keeps its own name")
+    }
 }
 
 // MARK: - The menu bar's running total is the headline, through every kind of write
@@ -684,9 +753,9 @@ func checkMenuBarFigureIsARunningTotal() {
 
     // Emptying a table outright is the one change SQLite makes without
     // reporting a row, so `exec`, and `run` for a delete, end the kept sum
-    // themselves. This month keeps its start whatever the table holds, so
-    // only that can end its sum.
-    func month() -> Totals { Headlines.figure(for: .month, aggregator: aggregator, now: now).totals }
+    // themselves. The last 30 days keep their start whatever the table
+    // holds, so only that can end their sum.
+    func month() -> Totals { Headlines.figure(for: .last30, aggregator: aggregator, now: now).totals }
     addTraffic(db, at: "2026-12-05T10:00", 9_000, 900)
     expect(month(), Totals(bytesIn: 9_000, bytesOut: 900), "the month has traffic before the table is emptied")
     try? db.exec("DELETE FROM samples;")
@@ -823,40 +892,42 @@ func checkCapSaysWhatIsLeftOrOver() {
     func progress(_ used: UInt64, at local: String = "2026-09-29T21:30", cal: BytemeterCalendar = london) -> CapProgress {
         CapProgress(used: used, cap: cap, now: cal.parseLocal(local)!, cal: cal)
     }
-    let full = String(repeating: "▰", count: 12)
 
     // 29 September at 21:30: today and the 30th are left, so 2 days to go.
     let part = progress(27 * gb)
     expect(part.percent, 45, "27 GB of 60 GB is 45%")
-    expect(part.menuText, "▰▰▰▰▰▱▱▱▱▱▱▱  45% of 60.0 GB", "the menu shows the bar, then the percentage of the cap")
+    expect(part.menuText, "27.0 of 60.0 GB, 2 days left", "the menu says what is used of the cap, and for how long")
+    expect(part.barFill, 0.45, "and fills its bar to the percentage")
     expect(part.remainingText, "33.0 GB left, 2 days to go", "and says what is left and for how long")
 
     let nearly = progress(59_994_000_000)
     expect(nearly.percent, 99, "99.99% reads 99%: the cap is not reached until it is")
-    check(nearly.menuText.hasSuffix("  99% of 60.0 GB"), "the menu says 99%, got \(nearly.menuText)")
+    expect(nearly.menuText, "60.0 of 60.0 GB, 2 days left", "the menu still gives days left, not the cap reached")
     expect(nearly.remainingText, "6.0 MB left, 2 days to go", "and what is left, however little")
     // The bar rounds down like the percentage: it is full only from the cap on.
-    let eleven = String(repeating: "▰", count: 11) + "▱"
-    expect(nearly.barText, eleven, "at 99.99% the bar keeps one cell empty, as the 99% beside it says")
-    expect(progress(57_540_000_000).barText, eleven, "and at 95.9%, where rounding to the nearest cell filled it")
-    expect(progress(55 * gb).barText, eleven, "11 cells at exactly 11/12")
-    expect(progress(54_999_999_999).barText, String(repeating: "▰", count: 10) + "▱▱", "and 10 just under it")
+    expect(nearly.barFill, 0.99, "at 99.99% the bar is 99% full, not full")
+    expect(progress(57_540_000_000).barFill, 0.95, "and at 95.9%, where rounding to the nearest filled it, 95%")
+    expect(progress(54_999_999_999).barFill, 0.91, "just under 11/12 is 91%")
 
     let reached = progress(cap)
     expect(reached.percent, 100, "exactly the cap is 100%")
     expect(reached.remainingText, "Cap reached", "exactly the cap says it is reached")
-    expect(reached.barText, full, "and the bar is full")
+    expect(reached.barFill, 1, "and the bar is full")
+    expect(reached.menuText, "60.0 of 60.0 GB, cap reached", "and the menu says so")
 
     let over = progress(90 * gb)
     expect(over.percent, 150, "90 GB of 60 GB is 150%, not held at 100%")
     expect(over.fraction, 1.5, "the fraction is not clamped either")
-    expect(over.menuText, full + "  150% of 60.0 GB", "the bar stops at full while the figure goes on")
+    expect(over.barFill, 1, "the bar stops at full")
+    expect(over.menuText, "90.0 of 60.0 GB, 30.0 GB over the cap", "while the figure goes on, and says how far over")
+    expect(progress(820_000_000).menuText, "820 MB of 60.0 GB, 2 days left",
+           "a figure in another unit keeps its unit, so it cannot read as 820 GB")
     expect(over.remainingText, "30.0 GB over the cap", "and it says how far over")
 
     expect(CapProgress(used: 29, cap: 100, now: Date(), cal: london).percent, 29,
            "29 of 100 is 29%, worked out in whole numbers, where floating point gives 28.999...")
     let absurd = CapProgress(used: .max, cap: 1, now: Date(), cal: london)
-    check(absurd.percent == Int.max && absurd.barText == full, "an absurd figure is held at the largest, with no trap")
+    check(absurd.percent == Int.max && absurd.barFill == 1, "an absurd figure is held at the largest, with no trap")
 
     // Days to go run from today to the cycle's last day, both counted.
     expect(progress(gb, at: "2026-09-30T00:00").remainingText, "59.0 GB left, 1 day to go",
@@ -873,27 +944,21 @@ func checkCapSaysWhatIsLeftOrOver() {
     expect(progress(gb, at: "2026-10-20T12:00").remainingText, "59.0 GB left, 12 days to go",
            "October's extra hour from the clock change makes no extra day")
 
-    // The menu shows the three lines only with the cap on and above 0, and
-    // counts download and upload together, as a provider does.
+    // The cap's line replaces the projection only with the cap on and above
+    // 0, and counts download and upload together, as a provider does.
     let db = makeDatabase()
     db.addBuckets([BucketDelta(minute: londonMinute("2026-09-10T09:00"), iface: "en0",
                                bytesIn: 50 * gb, bytesOut: 2 * gb)], ssid: ssidPlaceholder, idle: false)
     let snapshot = MenuSnapshot(aggregator: Aggregator(db: db, cal: london), now: london.parseLocal("2026-09-29T21:30")!)
-    func menu(capEnabled: Bool, capBytes: UInt64) -> [MenuLine] {
-        MenuModel.information(snapshot, options: MenuModel.Options(liveSpeed: false, rateIn: 0, rateOut: 0,
-                                                                    capEnabled: capEnabled, capBytes: capBytes,
-                                                                    perAppSampling: true))
+    func insight(capEnabled: Bool, capBytes: UInt64) -> MenuLine? {
+        MenuModel.information(snapshot, options: menuOptions(capEnabled: capEnabled, capBytes: capBytes)).last
     }
-    check(!menu(capEnabled: false, capBytes: cap).contains(.header("Cap")), "with the cap off, the menu has no Cap section")
-    check(!menu(capEnabled: true, capBytes: 0).contains(.header("Cap")), "with no figure set, it has none either")
-    let capped = menu(capEnabled: true, capBytes: cap)
-    if let index = capped.firstIndex(of: .header("Cap")), index > 0, index + 2 < capped.count {
-        expect(Array(capped[(index - 1)...(index + 2)]),
-               [.separator, .header("Cap"), .text("▰▰▰▰▰▰▰▰▰▰▱▱  86% of 60.0 GB"), .caption("8.00 GB left, 2 days to go")],
-               "with a cap set, the menu shows the bar and the percentage of 52 GB, down and up, then what is left")
-    } else {
-        check(false, "with a cap set, the menu has a Cap section")
-    }
+    let projection = MenuLine.insight(snapshot.projection.headline, bar: nil, toolTip: ProjectionWording.basis)
+    expect(insight(capEnabled: false, capBytes: cap), projection, "with the cap off, the menu shows the projection")
+    expect(insight(capEnabled: true, capBytes: 0), projection, "and with no figure set, too")
+    expect(insight(capEnabled: true, capBytes: cap),
+           .insight("52.0 of 60.0 GB, 2 days left", bar: 0.86, toolTip: CapProgress.basis),
+           "with a cap set, its line and bar replace the projection, counting 52 GB down and up, not the 50 GB down")
 }
 
 // MARK: - The menu says when counting has only just started
@@ -901,20 +966,21 @@ func checkCapSaysWhatIsLeftOrOver() {
 func checkMenuSaysCountingHasJustStarted() {
     let db = makeDatabase()
     let now = london.parseLocal("2026-10-08T12:00")!
-    let options = MenuModel.Options(liveSpeed: true, rateIn: 0, rateOut: 0, capEnabled: false, capBytes: 0,
-                                    perAppSampling: true)
+    let options = menuOptions(liveSpeed: true)
     func menu() -> [MenuLine] {
         MenuModel.information(MenuSnapshot(aggregator: Aggregator(db: db, cal: london), now: now), options: options)
     }
-    let started = MenuLine.text("Counting has started: the first figures appear within a minute.")
+    let started = MenuLine.warning("Counting has started: the first figures appear within a minute.", toolTip: nil)
+    let header = MenuLine.header(MenuModel.title, trailing: "↓ 0 B/s")
 
-    expect(Array(menu().prefix(3)), [started, .separator, .header("Live")],
-           "before a byte is booked, the menu says first that counting has started")
+    expect(Array(menu().prefix(2)), [header, started],
+           "before a byte is booked, the menu says under its header that counting has started")
     db.addBuckets([BucketDelta(minute: BytemeterCalendar.minute(from: now), iface: "en0", bytesIn: 1, bytesOut: 0)],
                   ssid: ssidPlaceholder, idle: false)
     let counted = menu()
     check(!counted.contains(started), "once a byte is booked, the line is gone")
-    expect(counted.first, .header("Live"), "and the menu starts as it always does")
+    expect(counted.filter { if case .warning = $0 { return true } else { return false } }, [],
+           "and on a normal day there is no warning row at all")
 
     // Nothing booked and writes failing: the line says why nothing is being
     // booked, rather than that it soon will be.
@@ -924,8 +990,8 @@ func checkMenuSaysCountingHasJustStarted() {
     check(!failing.transaction { throw BytemeterError.sql("INSERT", "simulated failure") }, "a write fails")
     let lines = MenuModel.information(MenuSnapshot(aggregator: Aggregator(db: failing, cal: london), now: now),
                                       options: options)
-    check(!lines.contains(started) && lines.first.map { line in
-        if case let .text(text, _) = line { return text.hasPrefix("Not recording since 8 Oct 2026 at 12:00") }
+    check(!lines.contains(started) && lines.dropFirst().first.map { line in
+        if case let .warning(text, _) = line { return text.hasPrefix("Not recording since 8 Oct 2026 at 12:00") }
         return false
     } == true, "with nothing booked and writes failing, the menu says recording has stopped instead")
 }

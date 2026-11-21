@@ -4,42 +4,51 @@ import Foundation
 ///
 /// What the menu says is worked out here, in the shared engine, as plain
 /// values: the macOS app draws each line with a view, and the self-test reads
-/// exactly what the menu would show, including which rows are full contrast,
-/// without opening a menu. The demo mode and the real app build their menus
-/// through this same code, so the demo cannot drift from the real thing.
+/// exactly what the menu would show without opening a menu. The demo mode and
+/// the real app build their menus through this same code, so the demo cannot
+/// drift from the real thing.
+///
+/// Every figure in the menu is download, as the menu bar's is. Upload, the
+/// averages, the rolling periods and the peaks are on the dashboard.
 public enum MenuLine: Equatable {
-    case header(String)
-    /// `strong` is true for exactly the four totals the menu bar figure cycles
-    /// through, which are drawn in full contrast; every other row is grey.
-    case figure(label: String, down: String, up: String, strong: Bool)
-    case text(String, toolTip: String? = nil)
-    /// A small grey line belonging to the row above it.
-    case caption(String)
+    /// A small grey heading. `trailing` sits at its right edge: the live rate,
+    /// while live speed is on.
+    case header(String, trailing: String?)
+    /// Only while something is wrong or counting has only just begun.
+    case warning(String, toolTip: String?)
+    /// One of the four totals the menu bar cycles through, in full contrast.
+    /// Choosing it shows it in the menu bar; `chosen` is the one showing now.
+    case period(StatusMode, label: String, down: String, chosen: Bool, toolTip: String?)
+    /// The one sentence about where the month is heading. `bar` is how full
+    /// the cap is, from 0 to 1, when a cap is set and the line is about it.
+    case insight(String, bar: Double?, toolTip: String?)
     case separator
 }
 
+/// One app in the Top Apps Today submenu.
+public struct MenuApp: Equatable {
+    /// Its plain name, from `ProcessNames`.
+    public let name: String
+    public let down: String
+    /// Its download as a share of the first app's, from 0 to 1, for its bar.
+    public let share: Double
+}
+
 /// Everything the menu needs, gathered in one pass on the database queue.
-/// The totals, the projection and the peaks come from `Headlines`, the same
-/// figures the dashboard and the menu bar show.
+/// The totals and the projection come from `Headlines`, the same figures the
+/// dashboard and the menu bar show.
 public struct MenuSnapshot {
     public let today: Totals
-    public let yesterday: Totals
-    public let thisWeek: Totals
     public let last7: Totals
-    public let thisMonth: Totals
     public let last30: Totals
-    public let perHourToday: Totals
-    public let perDayWeek: Totals
-    public let perDayMonth: Totals
+    /// For the cap, which counts the month or billing cycle.
+    public let thisMonth: Totals
     /// Worded once, in `Headlines`, for the menu and the dashboard alike.
     public let projection: ProjectionWording
     public let allTime: AllTimeSummary
     public let cal: BytemeterCalendar
     /// The moment described, for the figures that count days from it.
     public let now: Date
-    public let cycleLabel: String
-    public let peakHourText: String
-    public let peakDayText: String
     public let topTalkers: [TopTalker]
     /// When writes to the database began failing, or nil while they go
     /// through. Read from the same database, on its queue, with the figures.
@@ -51,35 +60,14 @@ public struct MenuSnapshot {
         let cal = aggregator.cal
         let headlines = Headlines(aggregator: aggregator, now: now)
         today = headlines.today
-        yesterday = headlines.yesterday
-        thisWeek = headlines.thisWeek
         last7 = headlines.last7
-        thisMonth = headlines.thisMonth
         last30 = headlines.last30
-        // Each average divides a total the headlines have just read.
-        perHourToday = aggregator.averagePerHourToday(now: now, totals: today)
-        perDayWeek = aggregator.averagePerDay(cal.thisWeek(now), now: now, totals: thisWeek)
-        perDayMonth = aggregator.averagePerDay(cal.thisCycle(now), now: now, totals: thisMonth)
-
+        thisMonth = headlines.thisMonth
         projection = headlines.projection
         allTime = headlines.allTime
         self.cal = cal
         self.now = now
-        cycleLabel = cal.cycleLabel(now)
-
-        // The peaks are by download, so they are marked ↓.
-        if let peak = headlines.peakHour {
-            peakHourText = String(format: "Peak hour today: %02d:00, ↓ %@", peak.hour, Units.bytes(peak.totals.bytesIn))
-        } else {
-            peakHourText = "Peak hour today: nothing yet"
-        }
-        let period = cal.cycleName.lowercased()
-        if let peak = headlines.peakDay {
-            peakDayText = "Peak day \(period): \(peak.label), ↓ \(Units.bytes(peak.totals.bytesIn))"
-        } else {
-            peakDayText = "Peak day \(period): nothing yet"
-        }
-        topTalkers = aggregator.topTalkers(cal.today(now), limit: 5)
+        topTalkers = aggregator.topTalkers(cal.today(now), limit: MenuModel.topAppsLimit)
         notRecordingSince = aggregator.db.failingSince
     }
 }
@@ -88,131 +76,125 @@ public enum MenuModel {
 
     /// The settings that change what the menu shows.
     public struct Options {
+        public var statusMode: StatusMode
         public var liveSpeed: Bool
         public var rateIn: Double
-        public var rateOut: Double
         public var capEnabled: Bool
         public var capBytes: UInt64
         public var perAppSampling: Bool
 
-        public init(liveSpeed: Bool, rateIn: Double, rateOut: Double,
+        public init(statusMode: StatusMode, liveSpeed: Bool, rateIn: Double,
                     capEnabled: Bool, capBytes: UInt64, perAppSampling: Bool) {
+            self.statusMode = statusMode
             self.liveSpeed = liveSpeed
             self.rateIn = rateIn
-            self.rateOut = rateOut
             self.capEnabled = capEnabled
             self.capBytes = capBytes
             self.perAppSampling = perAppSampling
         }
     }
 
-    /// The title of the menu's item for choosing what the menu bar shows.
-    public static let periodsTitle = "Menu bar shows"
+    public static let title = "Data used"
+    public static let topAppsTitle = "Top Apps Today"
+    public static let topAppsHeader = "Today, by app"
+    public static let topAppsLimit = 5
+    public static let topAppsNote = "A guide, not an exact split"
+    public static let topAppsNoteDetail = "nettop reports totals per process, so a process that quits between samples "
+        + "takes its last few seconds with it. The interface counters are the source of truth, and the two will "
+        + "not reconcile exactly."
 
     /// The four totals the menu bar can show, in the order a right-click
     /// cycles through them, each as the menu offers it, with the one showing
-    /// now marked. The menu lists them so the choice can be seen, and made
-    /// from the keyboard or with VoiceOver, which a right-click cannot be.
-    /// On a billing cycle the month is called the cycle, as its row is.
-    public static func periods(current: StatusMode, cal: BytemeterCalendar)
-        -> [(mode: StatusMode, title: String, chosen: Bool)] {
-        StatusMode.allCases.map { mode in
-            let title = mode == .month ? cal.cycleName : mode.label
-            return (mode, title, mode == current)
-        }
+    /// now marked. The menu's rows are this choice, so it can be seen, and
+    /// made from the keyboard or with VoiceOver, which a right-click cannot be.
+    public static func periods(current: StatusMode) -> [(mode: StatusMode, title: String, chosen: Bool)] {
+        StatusMode.allCases.map { ($0, $0.label, $0 == current) }
     }
 
-    /// Shown under the actions, wrapped to the width of the figures.
-    public static let hint = "Right-click, two-finger click or Control-click the figure to cycle today, week, month and all time."
-
-    /// Everything above the actions, in order.
+    /// Everything above the submenu and the commands, in order.
     public static func information(_ data: MenuSnapshot, options: Options) -> [MenuLine] {
-        var lines: [MenuLine] = []
-        func figure(_ label: String, _ totals: Totals, strong: Bool = false) -> MenuLine {
-            .figure(label: label, down: Units.bytes(totals.bytesIn), up: Units.bytes(totals.bytesOut), strong: strong)
-        }
+        var lines: [MenuLine] = [.header(title, trailing: options.liveSpeed ? "↓ " + Units.rate(options.rateIn) : nil)]
 
-        // A line at the top while the figures below cannot be taken at face
-        // value. With a full disk they stop moving and nothing else looks
-        // wrong, so the first line says so. The baselines stay put while
-        // writes fail, so the next write that succeeds books the traffic in
-        // between, as long as the counters have not restarted.
+        // While the figures below cannot be taken at face value. With a full
+        // disk they stop moving and nothing else looks wrong, so the menu says
+        // so. The baselines stay put while writes fail, so the next write that
+        // succeeds books the traffic in between, as long as the counters have
+        // not restarted.
         if let since = data.notRecordingSince {
-            lines.append(.text("Not recording since \(data.cal.timestampLabel(since)): the database cannot be written",
-                               toolTip: "Bytemeter tries again every 5 seconds. Traffic in the meantime is counted "
-                                   + "once a write succeeds, unless the Mac restarts first. The reason is in "
-                                   + "~/Library/Logs/Bytemeter/bytemeter.err."))
-            lines.append(.separator)
+            lines.append(.warning("Not recording since \(data.cal.timestampLabel(since)): the database cannot be written",
+                                  toolTip: "Bytemeter tries again every 5 seconds. Traffic in the meantime is counted "
+                                      + "once a write succeeds, unless the Mac restarts first. The reason is in "
+                                      + "~/Library/Logs/Bytemeter/bytemeter.err."))
         } else if data.allTime.since == nil {
             // The menu opens by itself two seconds after the first launch,
             // before a byte is booked, so it says why every figure is 0 B.
-            lines.append(.text("Counting has started: the first figures appear within a minute."))
-            lines.append(.separator)
+            lines.append(.warning("Counting has started: the first figures appear within a minute.", toolTip: nil))
         }
 
-        if options.liveSpeed {
-            lines.append(.header("Live"))
-            lines.append(.figure(label: "Now", down: Units.rate(options.rateIn), up: Units.rate(options.rateOut),
-                                 strong: false))
-            lines.append(.separator)
-        }
-
-        // Strong rows are the four totals the menu bar figure cycles through,
-        // so the menu and the figure point at each other; the rest is grey.
-        lines.append(.header("Totals"))
-        lines.append(figure("Today", data.today, strong: true))
-        lines.append(figure("Yesterday", data.yesterday))
-        lines.append(figure("This week, from Monday", data.thisWeek, strong: true))
-        lines.append(figure("Last 7 days", data.last7))
-        lines.append(figure(data.cycleLabel, data.thisMonth, strong: true))
-        lines.append(figure("Last 30 days", data.last30))
-        if let since = data.allTime.since {
-            lines.append(figure("All time", data.allTime.totals, strong: true))
-            lines.append(.caption("since \(data.cal.dateLabel(since)) · \(data.allTime.daysText) counted"))
-        }
-
-        lines.append(.separator)
-        lines.append(.header("Averages"))
-        lines.append(figure("Per hour today", data.perHourToday))
-        lines.append(figure("Per day this week", data.perDayWeek))
-        lines.append(figure("Per day " + data.cal.cycleName.lowercased(), data.perDayMonth))
-        if data.allTime.since != nil {
-            lines.append(figure("Per day, all time", data.allTime.perDay))
+        for period in periods(current: options.statusMode) {
+            let totals: Totals
+            let toolTip: String?
+            switch period.mode {
+            case .today:
+                totals = data.today
+                toolTip = nil
+            case .last7:
+                totals = data.last7
+                toolTip = "From " + data.cal.dayLabel(data.cal.startOfDay(data.now, offsetBy: -6))
+            case .last30:
+                totals = data.last30
+                toolTip = "From " + data.cal.dayLabel(data.cal.startOfDay(data.now, offsetBy: -29))
+            case .allTime:
+                totals = data.allTime.totals
+                toolTip = data.allTime.since.map { "Since \(data.cal.dateLabel($0)) · \(data.allTime.daysText) counted" }
+            }
+            lines.append(.period(period.mode, label: period.title, down: Units.bytes(totals.bytesIn),
+                                 chosen: period.chosen, toolTip: toolTip))
         }
 
         lines.append(.separator)
-        lines.append(.header("Looking ahead"))
-        lines.append(.text(data.projection.headline))
-        lines.append(.caption(data.projection.isTooEarly ? ProjectionWording.tooEarlyBasis : ProjectionWording.basis))
-        lines.append(.text(data.peakHourText))
-        lines.append(.text(data.peakDayText))
-
-        // Shown only when a cap is set in Preferences; off by default.
+        // A cap, when one is set, is the question that matters this month,
+        // so it takes the projection's place. Both count download and upload
+        // together, as a provider does, and say so in the tooltip.
         if options.capEnabled, options.capBytes > 0 {
             let cap = CapProgress(used: data.thisMonth.total, cap: options.capBytes, now: data.now, cal: data.cal)
-            lines.append(.separator)
-            lines.append(.header("Cap"))
-            lines.append(.text(cap.menuText))
-            lines.append(.caption(cap.remainingText))
-        }
-
-        lines.append(.separator)
-        if options.perAppSampling {
-            lines.append(.header("Top talkers today"))
-            if data.topTalkers.isEmpty {
-                lines.append(.text("Nothing recorded yet"))
-            } else {
-                for talker in data.topTalkers {
-                    lines.append(figure(talker.name, talker.totals))
-                }
-            }
-            lines.append(.text("A guide, not an exact split. See the dashboard.",
-                               toolTip: "nettop reports totals per process, so a process that quits between samples "
-                                   + "takes its last few seconds with it. The interface counters are the source of "
-                                   + "truth, and the two will not reconcile exactly."))
+            lines.append(.insight(cap.menuText, bar: cap.barFill, toolTip: CapProgress.basis))
         } else {
-            lines.append(.text("Per-app sampling is off"))
+            lines.append(.insight(data.projection.headline, bar: nil,
+                                  toolTip: data.projection.isTooEarly ? ProjectionWording.tooEarlyBasis
+                                      : ProjectionWording.basis))
         }
         return lines
     }
+
+    /// Today's top apps by download, under their plain names, or nil while
+    /// per-app sampling is off, when the menu leaves the submenu out. They are
+    /// the five the dashboard ranks first by download and upload together,
+    /// listed here by download, the only figure the menu shows.
+    public static func topApps(_ data: MenuSnapshot, options: Options) -> [MenuApp]? {
+        guard options.perAppSampling else { return nil }
+        let ranked = data.topTalkers.sorted { $0.totals.bytesIn > $1.totals.bytesIn }
+        let most = Double(ranked.first?.totals.bytesIn ?? 0)
+        return ranked.map { talker in
+            MenuApp(name: ProcessNames.plain(talker.name), down: Units.bytes(talker.totals.bytesIn),
+                    share: most > 0 ? Double(talker.totals.bytesIn) / most : 0)
+        }
+    }
+}
+
+/// Plain names for the background processes `nettop` reports under names
+/// that mean nothing to most people. Only names that are true for every app
+/// behind the process: the WebKit networking process loads pages for Mail
+/// and every other WebKit app as well as Safari, so it is not called Safari.
+/// A process not listed here keeps the name `nettop` gave it.
+public enum ProcessNames {
+    /// `nettop` reports the kernel's short process name, which stops at 15
+    /// characters, so the WebKit process arrives cut short.
+    public static let plainNames: [String: String] = [
+        "com.apple.WebKi": "Web content (WebKit)",
+        "cloudd": "iCloud",
+        "nsurlsessiond": "Background downloads",
+    ]
+
+    public static func plain(_ process: String) -> String { plainNames[process] ?? process }
 }

@@ -7,7 +7,7 @@ app you tested.
 
 | When you are | Read |
 |---|---|
-| changing the code | [Before anything else](#before-anything-else), [How it fits together](#how-it-fits-together), [Measuring](#measuring) |
+| changing the code | [Before anything else](#before-anything-else), [How it fits together](#how-it-fits-together), [The menu](#the-menu), [Measuring](#measuring) |
 | releasing | [A release at a glance](#a-release-at-a-glance), then [The version](#the-version), [Checks before a release](#checks-before-a-release), [Cutting a release](#cutting-a-release), [After a release](#after-a-release), [Homebrew](#homebrew) |
 | touching the icon, the fonts or the README's pictures | [The icon](#the-icon), [The dashboard's fonts](#the-dashboards-fonts), [Screenshots and clips](#screenshots-and-clips) |
 | working on the installed app | [The login item](#the-login-item), [Where things live on an installed Mac](#where-things-live-on-an-installed-mac) |
@@ -60,6 +60,15 @@ for each product linked.
 
 `./install.sh --help` lists its options. `--dry-run` works with all of them and
 says exactly what would happen, with full paths, without changing anything.
+
+## The menu
+
+Short on purpose: Data used, four period rows, one line about the month, Top Apps Today, then the commands. Everything else is on the dashboard. Tokenmeter's menu follows the same pattern and copies `Sources/Bytemeter/MenuRows.swift`.
+
+- **The period rows are standard menu items; every other row is a drawn view.** AppKit gives a view in a menu item no key events, so a drawn period row could not be chosen with Return; tested on macOS 27 on 21 November 2026, which is why they are standard items. Each period row's figure sits at a right tab stop (`MenuRows.period`). AppKit keeps its shortcut column to the right of a standard item's title, so the figures end about 30 points short of the ⌘D column, and the drawn rows end theirs on the same edge (`MenuRows.figureColumn`). The rows that only inform stay views because AppKit draws a disabled item grey whatever its title's colour.
+- **The periods are Today, Last 7 days, Last 30 days and All time**, Tokenmeter's four, for the rows and the right-click cycle alike. `StatusMode(saved:)` maps the week and month that 1.3.1 and earlier saved to the last 7 and 30 days.
+- **Plain process names** live in `ProcessNames`, in the engine. A name goes in only if it is true for every app behind the process: the WebKit networking process serves Mail too, so it is "Web content (WebKit)", not Safari. Anything not listed keeps its own name.
+- **The menu is pinned by the self-test through `MenuModel`**, without opening a menu: four rows, one ticked, download only, the warning row only when it should be, the cap line in place of the projection, no submenu while sampling is off.
 
 ## Measuring
 

@@ -67,8 +67,8 @@ public struct Headlines {
         let cal = aggregator.cal
         switch mode {
         case .today: return (aggregator.runningTotals(cal.today(now), now: now), nil)
-        case .week: return (aggregator.runningTotals(cal.thisWeek(now), now: now), nil)
-        case .month: return (aggregator.runningTotals(cal.thisCycle(now), now: now), nil)
+        case .last7: return (aggregator.runningTotals(cal.rollingDays(7, now: now), now: now), nil)
+        case .last30: return (aggregator.runningTotals(cal.rollingDays(30, now: now), now: now), nil)
         case .allTime:
             guard let range = aggregator.allTimeRange(now: now) else { return (Totals(), nil) }
             return (aggregator.runningTotals(range, now: now), BytemeterCalendar.date(fromMinute: range.start))
